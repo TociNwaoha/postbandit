@@ -1,7 +1,7 @@
 """add caption styles
 
 Revision ID: 0010_add_caption_styles
-Revises: 0009_youtube_import_state_and_events
+Revises: 0009
 Create Date: 2026-04-30 00:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0010_add_caption_styles"
-down_revision: Union[str, None] = "0009_youtube_import_state_and_events"
+down_revision: Union[str, None] = "0009"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -27,4 +27,3 @@ def downgrade() -> None:
     # PostgreSQL enum values cannot be removed safely in-place.
     # Keep downgrade as a no-op to preserve existing data compatibility.
     pass
-
