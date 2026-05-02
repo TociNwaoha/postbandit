@@ -21,11 +21,13 @@ class Settings(BaseSettings):
     nextauth_url: str = "http://localhost:3001"
     admin_email: str = "admin@clipbandit.com"
     admin_password: str = "changeme123"
+    google_client_id: str = "placeholder"
+    google_client_secret: str = "placeholder"
 
     # JWT
     jwt_secret_key: str = "changeme-jwt-secret-key-32-chars-min"
     jwt_algorithm: str = "HS256"
-    jwt_expiry_hours: int = 24
+    jwt_expiry_hours: int = 120
 
     # Public URLs
     backend_public_url: str = "http://localhost:8000"
@@ -55,11 +57,22 @@ class Settings(BaseSettings):
     youtube_client_id: str = "placeholder"
     youtube_client_secret: str = "placeholder"
 
+    facebook_app_id: str = "placeholder"
+    facebook_app_secret: str = "placeholder"
+    instagram_app_id: str = "placeholder"
+    instagram_app_secret: str = "placeholder"
+    threads_app_id: str = "placeholder"
+    threads_app_secret: str = "placeholder"
+
     meta_app_id: str = "placeholder"
     meta_app_secret: str = "placeholder"
+    meta_graph_api_version: str = "v21.0"
+    threads_graph_api_version: str = "v1.0"
 
     tiktok_client_key: str = "placeholder"
     tiktok_client_secret: str = "placeholder"
+    tiktok_publish_poll_interval_seconds: int = 5
+    tiktok_publish_poll_timeout_seconds: int = 720
 
     x_client_id: str = "placeholder"
     x_client_secret: str = "placeholder"
@@ -72,6 +85,25 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     max_upload_size_mb: int = 5000
     max_concurrent_jobs: int = 2
+    youtube_import_max_playlist_items: int = 50
+    youtube_import_concurrency: int = 3
+    ytdlp_timeout_seconds: int = 60
+    enable_youtube_api_metadata: bool = False
+    youtube_api_key: str = "placeholder"
+    youtube_local_helper_ttl_minutes: int = 15
+    youtube_import_admission_mode: str = "warn"
+    youtube_import_min_free_disk_gb: int = 20
+    youtube_import_max_ingest_queue_depth: int = 100
+    youtube_import_max_active_per_user: int = 3
+    youtube_import_max_active_global: int = 12
+    youtube_import_rate_limit_per_hour: int = 25
+    youtube_helper_session_rate_limit_per_hour: int = 20
+    youtube_import_admission_storage_path: str = "/tmp/clipbandit-storage"
+    workspace_lease_ttl_seconds: int = 3600
+    workspace_cleanup_enabled: bool = True
+    workspace_cleanup_dry_run: bool = True
+    workspace_cleanup_retention_hours: int = 24
+    workspace_cleanup_orphan_grace_minutes: int = 45
 
     # Transcription
     whisper_model_size: str = "small"

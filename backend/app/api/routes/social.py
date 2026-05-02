@@ -1,5 +1,7 @@
 import logging
 import uuid
+from collections import defaultdict
+from typing import Any
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -43,6 +45,15 @@ from app.services.social.x import build_pkce_challenge, generate_pkce_verifier
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+PRIVACY_OPTIONS_BY_PLATFORM: dict[SocialPlatform, set[str]] = {
+    SocialPlatform.youtube: {"private", "unlisted", "public"},
+}
+TIKTOK_DEFAULT_PRIVACY_OPTIONS = [
+    "PUBLIC_TO_EVERYONE",
+    "MUTUAL_FOLLOW_FRIENDS",
+    "FOLLOWER_OF_CREATOR",
+    "SELF_ONLY",
+]
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -149,6 +160,93 @@ def _normalize_hashtags(values: list[str] | None) -> list[str] | None:
     return normalized or None
 
 
+def _extract_tiktok_privacy_options(metadata_json: Any) -> list[str]:
+    options: list[str] = []
+    seen: set[str] = set()
+
+    if not isinstance(metadata_json, dict):
+        return options
+
+    creator_info = metadata_json.get("tiktok_creator_info")
+    if isinstance(creator_info, dict):
+        privacy_values = creator_info.get("privacy_level_options")
+        if isinstance(privacy_values, list):
+            for item in privacy_values:
+                if not isinstance(item, str):
+                    continue
+                value = item.strip().upper()
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                options.append(value)
+    return options
+
+
+def _normalize_privacy(
+    platform: SocialPlatform,
+    value: str | None,
+    *,
+    destination_metadata: Any = None,
+) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+
+    if platform == SocialPlatform.tiktok:
+        allowed_tiktok = _extract_tiktok_privacy_options(destination_metadata) or list(
+            TIKTOK_DEFAULT_PRIVACY_OPTIONS
+        )
+        if not allowed_tiktok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TikTok privacy options are unavailable for this account. Reconnect TikTok.",
+            )
+        allowed_lookup = {item.lower(): item for item in allowed_tiktok}
+        resolved = allowed_lookup.get(normalized)
+        if not resolved:
+            allowed_values = ", ".join(allowed_tiktok)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid privacy value for {platform.value}. Allowed: {allowed_values}",
+            )
+        return resolved
+
+    allowed = PRIVACY_OPTIONS_BY_PLATFORM.get(platform)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Privacy is not supported for {platform.value}",
+        )
+
+    if normalized not in allowed:
+        allowed_values = ", ".join(sorted(allowed))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid privacy value for {platform.value}. Allowed: {allowed_values}",
+        )
+
+    return normalized
+
+
+def _destination_type_from_metadata(platform: SocialPlatform, metadata_json: Any) -> str:
+    if isinstance(metadata_json, dict):
+        value = metadata_json.get("destination_type")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return f"{platform.value}_account"
+
+
+def _destination_type_for_account(account: ConnectedAccount) -> str:
+    destination_type = _destination_type_from_metadata(account.platform, account.metadata_json)
+    if account.platform == SocialPlatform.facebook:
+        if destination_type in {"facebook_account", "facebook_page"}:
+            return destination_type
+        return "facebook_page"
+    return destination_type
+
+
 async def _enqueue_publish(db: AsyncSession, publish_job: PublishJob, eta: datetime | None = None):
     from app.worker.tasks.publish import execute_publish_job
 
@@ -201,16 +299,73 @@ async def list_social_providers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    counts_result = await db.execute(
-        select(ConnectedAccount.platform, func.count(ConnectedAccount.id))
-        .where(ConnectedAccount.user_id == current_user.id)
-        .group_by(ConnectedAccount.platform)
+    accounts_result = await db.execute(
+        select(ConnectedAccount).where(ConnectedAccount.user_id == current_user.id)
     )
-    counts = {platform.value: count for platform, count in counts_result.all()}
+    connected_rows = accounts_result.scalars().all()
+    counts: dict[str, int] = defaultdict(int)
+    destination_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for row in connected_rows:
+        platform_key = row.platform.value
+        counts[platform_key] += 1
+        destination_type = _destination_type_for_account(row)
+        destination_counts[platform_key][destination_type] += 1
 
     items: list[SocialProviderResponse] = []
     for adapter in all_adapters():
         setup_status, setup_message, setup_details = _provider_setup(adapter)
+        if adapter.platform == SocialPlatform.facebook:
+            facebook_account_count = destination_counts["facebook"].get("facebook_account", 0)
+            facebook_page_count = destination_counts["facebook"].get("facebook_page", 0)
+            setup_details = {
+                **setup_details,
+                "supports_page_auto_publish": True,
+                "supports_profile_auto_publish": False,
+                "supports_profile_manual_share": True,
+                "pages_discovery_ready": setup_status == "ready",
+                "pages_publish_ready": setup_status == "ready" and facebook_page_count > 0,
+                "facebook_account_count": facebook_account_count,
+                "facebook_page_count": facebook_page_count,
+            }
+        if adapter.platform == SocialPlatform.instagram:
+            instagram_professional_count = destination_counts["instagram"].get("instagram_professional", 0)
+            setup_details = {
+                **setup_details,
+                "login_model": "instagram_login",
+                "connect_ready": setup_status == "ready",
+                "publish_ready": setup_status == "ready" and instagram_professional_count > 0,
+                "instagram_professional_count": instagram_professional_count,
+            }
+        if adapter.platform == SocialPlatform.threads:
+            threads_profile_count = destination_counts["threads"].get("threads_profile", 0)
+            threads_caps = adapter.capabilities()
+            setup_details = {
+                **setup_details,
+                "connect_ready": setup_status == "ready",
+                "publish_text_ready": setup_status == "ready" and threads_profile_count > 0,
+                "publish_media_ready": setup_status == "ready"
+                and threads_profile_count > 0
+                and bool(threads_caps.supports_video_upload),
+                "threads_profile_count": threads_profile_count,
+                "supports_text_publish": True,
+                "supports_media_publish": bool(threads_caps.supports_video_upload),
+            }
+        if adapter.platform == SocialPlatform.tiktok:
+            tiktok_profile_count = destination_counts["tiktok"].get("tiktok_profile", 0)
+            setup_details = {
+                **setup_details,
+                "connect_ready": setup_status == "ready",
+                "publish_direct_ready": setup_status == "ready" and tiktok_profile_count > 0,
+                "publish_upload_ready": setup_status == "ready" and tiktok_profile_count > 0,
+                "mode_support": {
+                    "direct": True,
+                    "inbox_upload": True,
+                },
+                "tiktok_profile_count": tiktok_profile_count,
+                "supports_text_publish": False,
+                "supports_media_publish": True,
+            }
 
         logger.info(
             "[social] provider readiness platform=%s status=%s missing_fields=%s",
@@ -245,7 +400,24 @@ async def list_connected_accounts(
         .where(ConnectedAccount.user_id == current_user.id)
         .order_by(ConnectedAccount.created_at.desc())
     )
-    return result.scalars().all()
+    accounts = result.scalars().all()
+    return [
+        ConnectedAccountResponse(
+            id=account.id,
+            user_id=account.user_id,
+            platform=account.platform,
+            external_account_id=account.external_account_id,
+            display_name=account.display_name,
+            username_or_channel_name=account.username_or_channel_name,
+            destination_type=_destination_type_for_account(account),
+            token_expires_at=account.token_expires_at,
+            scopes=account.scopes,
+            metadata_json=account.metadata_json or {},
+            created_at=account.created_at,
+            updated_at=account.updated_at,
+        )
+        for account in accounts
+    ]
 
 
 @router.post("/social/{platform}/connect", response_model=ConnectStartResponse)
@@ -286,14 +458,11 @@ async def start_connect(
         oauth_context = {"code_challenge": code_challenge}
 
     try:
-        if platform == SocialPlatform.x:
-            authorization_url = adapter.build_connect_url(
-                state=state,
-                redirect_uri=_callback_url(platform),
-                oauth_context=oauth_context,
-            )
-        else:
-            authorization_url = adapter.build_connect_url(state=state, redirect_uri=_callback_url(platform))
+        authorization_url = adapter.build_connect_url(
+            state=state,
+            redirect_uri=_callback_url(platform),
+            oauth_context=oauth_context,
+        )
     except ProviderOperationError as exc:
         if platform == SocialPlatform.x:
             await discard_pkce_verifier(platform=platform, nonce=nonce)
@@ -357,18 +526,14 @@ async def oauth_callback(
         oauth_context = {"code_verifier": code_verifier}
 
     try:
-        if platform == SocialPlatform.x:
-            oauth_payload = adapter.exchange_code(
-                code=code,
-                redirect_uri=_callback_url(platform),
-                oauth_context=oauth_context,
-            )
-        else:
-            oauth_payload = adapter.exchange_code(code=code, redirect_uri=_callback_url(platform))
-        access_token_encrypted = encrypt_secret(oauth_payload.access_token)
-        refresh_token_encrypted = (
-            encrypt_secret(oauth_payload.refresh_token) if oauth_payload.refresh_token else None
+        exchange_result = adapter.exchange_code_result(
+            code=code,
+            redirect_uri=_callback_url(platform),
+            oauth_context=oauth_context,
         )
+        oauth_accounts = exchange_result.accounts
+        if not oauth_accounts:
+            raise ProviderOperationError("OAuth completed but no destination accounts were returned.")
     except (ProviderOperationError, ProviderNotConfiguredError, CryptoConfigError) as exc:
         logging.warning(
             "[social] callback failed platform=%s user_id=%s reason=%s",
@@ -389,41 +554,51 @@ async def oauth_callback(
             f"{target_base}?status=error&platform={platform.value}&message=internal_callback_error"
         )
 
-    existing_result = await db.execute(
-        select(ConnectedAccount).where(
-            ConnectedAccount.user_id == user_id,
-            ConnectedAccount.platform == platform,
-            ConnectedAccount.external_account_id == oauth_payload.external_account_id,
+    upserted_count = 0
+    for oauth_payload in oauth_accounts:
+        access_token_encrypted = encrypt_secret(oauth_payload.access_token)
+        refresh_token_encrypted = (
+            encrypt_secret(oauth_payload.refresh_token) if oauth_payload.refresh_token else None
         )
-    )
-    existing = existing_result.scalar_one_or_none()
 
-    if existing:
-        existing.display_name = oauth_payload.display_name
-        existing.username_or_channel_name = oauth_payload.username_or_channel_name
-        existing.access_token_encrypted = access_token_encrypted
-        existing.refresh_token_encrypted = refresh_token_encrypted
-        existing.token_expires_at = oauth_payload.token_expires_at
-        existing.scopes = oauth_payload.scopes
-        existing.metadata_json = oauth_payload.metadata_json
-    else:
-        db.add(
-            ConnectedAccount(
-                user_id=user_id,
-                platform=platform,
-                external_account_id=oauth_payload.external_account_id,
-                display_name=oauth_payload.display_name,
-                username_or_channel_name=oauth_payload.username_or_channel_name,
-                access_token_encrypted=access_token_encrypted,
-                refresh_token_encrypted=refresh_token_encrypted,
-                token_expires_at=oauth_payload.token_expires_at,
-                scopes=oauth_payload.scopes,
-                metadata_json=oauth_payload.metadata_json,
+        existing_result = await db.execute(
+            select(ConnectedAccount).where(
+                ConnectedAccount.user_id == user_id,
+                ConnectedAccount.platform == platform,
+                ConnectedAccount.external_account_id == oauth_payload.external_account_id,
             )
         )
+        existing = existing_result.scalar_one_or_none()
+
+        if existing:
+            existing.display_name = oauth_payload.display_name
+            existing.username_or_channel_name = oauth_payload.username_or_channel_name
+            existing.access_token_encrypted = access_token_encrypted
+            existing.refresh_token_encrypted = refresh_token_encrypted
+            existing.token_expires_at = oauth_payload.token_expires_at
+            existing.scopes = oauth_payload.scopes
+            existing.metadata_json = oauth_payload.metadata_json
+        else:
+            db.add(
+                ConnectedAccount(
+                    user_id=user_id,
+                    platform=platform,
+                    external_account_id=oauth_payload.external_account_id,
+                    display_name=oauth_payload.display_name,
+                    username_or_channel_name=oauth_payload.username_or_channel_name,
+                    access_token_encrypted=access_token_encrypted,
+                    refresh_token_encrypted=refresh_token_encrypted,
+                    token_expires_at=oauth_payload.token_expires_at,
+                    scopes=oauth_payload.scopes,
+                    metadata_json=oauth_payload.metadata_json,
+                )
+            )
+        upserted_count += 1
 
     await db.commit()
-    return RedirectResponse(f"{target_base}?status=connected&platform={platform.value}")
+    return RedirectResponse(
+        f"{target_base}?status=connected&platform={platform.value}&destinations={upserted_count}"
+    )
 
 
 @router.delete("/social/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -483,14 +658,67 @@ async def create_publish_jobs(
             raise HTTPException(status_code=404, detail=f"Connected account not found: {target.connected_account_id}")
         if account.platform != target.platform:
             raise HTTPException(status_code=400, detail="Connected account platform mismatch")
+        if target.platform == SocialPlatform.facebook:
+            destination_type = _destination_type_for_account(account)
+            if destination_type != "facebook_page":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Automated Facebook publishing requires a connected Facebook Page destination.",
+                )
+        if target.platform == SocialPlatform.instagram:
+            destination_type = _destination_type_for_account(account)
+            if destination_type != "instagram_professional":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Instagram publishing requires a connected Instagram professional account. Reconnect Instagram.",
+                )
+        if target.platform == SocialPlatform.threads:
+            destination_type = _destination_type_for_account(account)
+            if destination_type != "threads_profile":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Threads publishing requires a connected Threads profile destination.",
+                )
+        if target.platform == SocialPlatform.tiktok:
+            destination_type = _destination_type_for_account(account)
+            if destination_type != "tiktok_profile":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="TikTok publishing requires a connected TikTok profile destination.",
+                )
 
         content = _merge_content(body.universal, target.override)
         hashtags = _normalize_hashtags(content["hashtags"])
+        privacy = _normalize_privacy(
+            target.platform,
+            content["privacy"],
+            destination_metadata=account.metadata_json,
+        )
+        if target.platform == SocialPlatform.tiktok and not privacy:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TikTok publishing requires an explicit privacy selection.",
+            )
 
         scheduled_for = content["scheduled_for"]
-        mode = PublishMode.scheduled if scheduled_for and scheduled_for > datetime.now(timezone.utc) else PublishMode.now
-
         adapter = get_adapter(target.platform)
+        capabilities = adapter.capabilities()
+        now_utc = datetime.now(timezone.utc)
+
+        if scheduled_for:
+            if scheduled_for <= now_utc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Scheduled time for {target.platform.value} must be in the future",
+                )
+            if not capabilities.supports_schedule:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Scheduling is not supported for {target.platform.value}",
+                )
+
+        mode = PublishMode.scheduled if scheduled_for else PublishMode.now
+
         setup_status, setup_message, setup_details = _provider_setup(adapter)
         initial_status = PublishStatus.queued
         initial_error = None
@@ -514,7 +742,7 @@ async def create_publish_jobs(
             title=content["title"],
             description=content["description"],
             hashtags=hashtags,
-            privacy=content["privacy"],
+            privacy=privacy,
             scheduled_for=scheduled_for,
             error_message=initial_error,
             provider_metadata_json={

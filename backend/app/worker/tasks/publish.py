@@ -18,6 +18,12 @@ from app.services.social.registry import get_adapter
 from app.services.social.types import PublishPayload
 
 logger = logging.getLogger(__name__)
+X_REQUIRED_MEDIA_SCOPES = {"media.write"}
+
+
+def _missing_x_media_scopes(scopes: list[str] | None) -> list[str]:
+    present = {scope.strip().lower() for scope in (scopes or []) if isinstance(scope, str) and scope.strip()}
+    return sorted(X_REQUIRED_MEDIA_SCOPES - present)
 
 
 @celery_app.task(name="app.worker.tasks.publish.execute_publish_job", bind=True, queue="publish", max_retries=0)
@@ -77,6 +83,7 @@ def execute_publish_job(self, publish_job_id: str):
             adapter = get_adapter(publish_job.platform)
             setup_status, setup_message = adapter.setup_status()
             setup_details = adapter.setup_details() if hasattr(adapter, "setup_details") else {}
+            capabilities = adapter.capabilities()
             if not encryption_available() or setup_status != "ready":
                 message = (
                     "SOCIAL_TOKEN_ENCRYPTION_KEY is not configured"
@@ -101,8 +108,40 @@ def execute_publish_job(self, publish_job_id: str):
             if export.status != ExportStatus.ready or not export.storage_key:
                 raise RuntimeError("Export is not ready for publishing")
 
+            if publish_job.platform.value == "x":
+                missing_scopes = _missing_x_media_scopes(account.scopes)
+                if missing_scopes:
+                    message = "Reconnect X to grant media.write scope before posting media."
+                    metadata = {
+                        "stage": "preflight_permissions",
+                        "reason": "missing_scope",
+                        "action": "reconnect_x",
+                        "missing_scopes": missing_scopes,
+                        "account_scopes": account.scopes or [],
+                    }
+                    publish_job.status = PublishStatus.waiting_user_action
+                    publish_job.error_message = message
+                    publish_job.provider_metadata_json = {
+                        **(publish_job.provider_metadata_json or {}),
+                        **metadata,
+                    }
+                    attempt.response_payload_json = {
+                        "status": publish_job.status.value,
+                        "provider_metadata_json": metadata,
+                    }
+                    attempt.error_message = message
+                    attempt.finished_at = datetime.now(timezone.utc)
+                    db.commit()
+                    return {
+                        "publish_job_id": str(publish_job.id),
+                        "status": publish_job.status.value,
+                        "error": message,
+                    }
+
             media_path = tmp_dir / "export.mp4"
             r2_client.download_file(export.storage_key, str(media_path))
+            media_url = r2_client.get_presigned_download_url(export.storage_key, expiry=3600)
+            media_url_for_publish = media_url if capabilities.supports_video_upload else None
 
             access_token = decrypt_secret(account.access_token_encrypted)
             refresh_token = decrypt_secret(account.refresh_token_encrypted) if account.refresh_token_encrypted else None
@@ -114,10 +153,17 @@ def execute_publish_job(self, publish_job_id: str):
                 hashtags=publish_job.hashtags,
                 privacy=publish_job.privacy,
                 scheduled_for=publish_job.scheduled_for,
+                media_url=media_url_for_publish,
+                destination_external_id=str(account.external_account_id),
+                destination_metadata={
+                    **(account.metadata_json or {}),
+                    "scopes": account.scopes or [],
+                },
             )
 
             result = adapter.publish(
                 media_path=str(media_path),
+                media_url=media_url_for_publish,
                 payload=payload,
                 access_token=access_token,
                 refresh_token=refresh_token,
