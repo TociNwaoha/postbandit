@@ -179,7 +179,7 @@ async def import_youtube(
 
     video = Video(
         user_id=current_user.id,
-        source_type=VideoSourceType.youtube,
+        source_type=VideoSourceType.youtube_single,
         source_url=url,
         status=VideoStatus.downloading,
         title="Importing...",

@@ -10,6 +10,8 @@ import enum
 class VideoSourceType(str, enum.Enum):
     upload = "upload"
     youtube = "youtube"
+    youtube_single = "youtube_single"
+    youtube_playlist = "youtube_playlist"
 
 
 class VideoStatus(str, enum.Enum):

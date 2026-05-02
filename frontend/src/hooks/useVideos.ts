@@ -17,7 +17,12 @@ export function useVideos() {
       setVideos(data);
       setError(null);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load videos";
+      const message =
+        err instanceof ApiError
+          ? err.status === 401 || err.status === 403
+            ? "Session expired, please log in again."
+            : err.message
+          : "Failed to load videos";
       setError(message);
     } finally {
       setLoading(false);

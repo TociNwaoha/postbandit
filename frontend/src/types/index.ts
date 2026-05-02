@@ -9,7 +9,7 @@ export interface User {
   updated_at: string;
 }
 
-export type VideoSourceType = "upload" | "youtube";
+export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist";
 export type VideoStatus =
   | "queued"
   | "downloading"

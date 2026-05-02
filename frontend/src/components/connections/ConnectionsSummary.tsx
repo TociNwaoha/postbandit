@@ -18,7 +18,13 @@ export function ConnectionsSummary() {
         setProviders(data);
         setError(null);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Failed to load connections");
+        const message =
+          err instanceof ApiError
+            ? err.status === 401 || err.status === 403
+              ? "Session expired, please log in again."
+              : err.message
+            : "Failed to load connections";
+        setError(message);
       }
     };
     void load();
