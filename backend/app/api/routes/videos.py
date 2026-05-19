@@ -2,6 +2,7 @@ import json
 import logging
 import secrets
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,8 +15,10 @@ from app.database import get_db
 from app.models.clip import Clip
 from app.models.export import Export
 from app.models.job import Job, JobStatus
+from app.models.transcript import TranscriptSegment
 from app.models.user import User
 from app.models.video import (
+    ClipProfile,
     Video,
     VideoImportMode,
     VideoImportState,
@@ -26,6 +29,8 @@ from app.models.youtube_playlist_import import YoutubePlaylistImport
 from app.schemas.video import (
     VideoConfirmUploadRequest,
     VideoConfirmUploadResponse,
+    VideoGenerateClipsRequest,
+    VideoGenerateClipsResponse,
     VideoImportYoutubeRequest,
     VideoImportYoutubeResponse,
     VideoListItem,
@@ -52,13 +57,20 @@ from app.services.youtube.local_helper_state import (
     consume_local_helper_session,
     create_local_helper_session as create_local_helper_token_session,
 )
+from app.services.youtube.blocked_source_cache import get_blocked_source_hint
 from app.services.youtube import (
+    embed_url_for_video_id,
     derive_youtube_ui_state,
     initialize_import_state,
     is_retryable_import_state,
+    is_non_retryable_blocked_error_code,
     is_youtube_source,
     normalize_youtube_input,
     transition_import_state,
+    YT_BOT_VERIFICATION,
+    YT_NO_FORMATS,
+    YT_PO_TOKEN_REQUIRED,
+    YT_SIGNIN_REQUIRED,
 )
 from app.services.youtube.admission import evaluate_youtube_admission
 
@@ -72,6 +84,11 @@ ALLOWED_VIDEO_TYPES = {
     "video/x-matroska",
 }
 MAX_UPLOAD_BYTES = 5_368_709_120
+CLIP_PROFILE_KEY = "clip_profile"
+UPLOAD_CONFIRMED_KEY = "upload_confirmed"
+UPLOAD_STARTED_AT_KEY = "upload_started_at"
+UPLOAD_CONFIRMED_AT_KEY = "upload_confirmed_at"
+LONG_FORM_CLIP_PROFILE_ALIASES = {"long_form_speaking"}
 
 
 def _file_ext_from_upload(filename: str, content_type: str) -> str:
@@ -91,6 +108,39 @@ def _file_ext_from_upload(filename: str, content_type: str) -> str:
 def _title_from_filename(filename: str) -> str:
     stem = Path(filename).stem.strip()
     return stem or "Untitled"
+
+
+def _resolve_clip_profile(value: ClipProfile | str | None) -> ClipProfile:
+    if isinstance(value, ClipProfile):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized == ClipProfile.sermon.value or normalized in LONG_FORM_CLIP_PROFILE_ALIASES:
+            return ClipProfile.sermon
+    return ClipProfile.viral
+
+
+def _clip_profile_for_video(video: Video) -> ClipProfile:
+    metadata = video.external_metadata_json or {}
+    if isinstance(metadata, dict):
+        return _resolve_clip_profile(metadata.get(CLIP_PROFILE_KEY))
+    return ClipProfile.viral
+
+
+def _with_upload_confirmation_metadata(
+    existing_metadata: dict | None,
+    *,
+    confirmed: bool,
+) -> dict:
+    metadata = dict(existing_metadata or {})
+    timestamp = datetime.now(timezone.utc).isoformat()
+    metadata[UPLOAD_CONFIRMED_KEY] = bool(confirmed)
+    if confirmed:
+        metadata[UPLOAD_CONFIRMED_AT_KEY] = timestamp
+    else:
+        metadata[UPLOAD_STARTED_AT_KEY] = timestamp
+        metadata.pop(UPLOAD_CONFIRMED_AT_KEY, None)
+    return metadata
 
 
 def _assert_upload_constraints(body: VideoUploadUrlRequest) -> None:
@@ -148,6 +198,32 @@ async def _enqueue_transcribe_job(db: AsyncSession, video: Video) -> None:
         logger.warning("[videos] Unable to enqueue transcribe task for video %s: %s", video.id, exc)
 
 
+async def _enqueue_score_job(db: AsyncSession, video: Video, clip_profile: ClipProfile) -> None:
+    job = Job(
+        video_id=video.id,
+        type="score",
+        status=JobStatus.queued,
+        payload={"reason": "manual_clip_regeneration", "clip_profile": clip_profile.value},
+    )
+    db.add(job)
+    await db.flush()
+    await db.commit()
+    await db.refresh(job)
+
+    try:
+        from app.worker.tasks.score import score_job
+
+        task = score_job.apply_async(
+            args=[str(video.id)],
+            countdown=1,
+            queue="score",
+        )
+        job.celery_task_id = task.id
+        await db.commit()
+    except Exception as exc:
+        logger.warning("[videos] Unable to enqueue score task for video %s: %s", video.id, exc)
+
+
 def _is_youtube_source_type(source_type: VideoSourceType) -> bool:
     return is_youtube_source(source_type)
 
@@ -168,6 +244,18 @@ def _is_youtube_single_source(video: Video) -> bool:
     if video.source_type == VideoSourceType.youtube_single:
         return True
     return video.source_type == VideoSourceType.youtube and not video.source_playlist_id
+
+
+def _blocked_recovery_user_message(error_code: str | None) -> str:
+    if error_code == YT_SIGNIN_REQUIRED:
+        return "This video requires sign-in to download from server. Upload replacement file or keep as embed."
+    if error_code == YT_BOT_VERIFICATION:
+        return "YouTube blocked server download for this item. Upload replacement file or keep as embed."
+    if error_code == YT_PO_TOKEN_REQUIRED:
+        return "This video currently requires extra YouTube verification on server imports. Upload replacement file or keep as embed."
+    if error_code == YT_NO_FORMATS:
+        return "No downloadable format was available from server runtime. Upload replacement file or keep as embed."
+    return "Server download is currently blocked for this video. Upload replacement file or keep as embed."
 
 
 async def _finalize_manual_upload_transition(
@@ -209,6 +297,7 @@ async def _finalize_manual_upload_transition(
 
 def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListItem:
     import_state = _import_state_for_response(video)
+    clip_profile = _clip_profile_for_video(video)
     return VideoListItem(
         id=video.id,
         title=video.title,
@@ -217,6 +306,7 @@ def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListIte
         clip_count=video.clip_count,
         created_at=video.created_at,
         thumbnail_url=thumbnail_url,
+        clip_profile=clip_profile,
         source_type=video.source_type,
         source_url=video.source_url,
         source_video_id=video.source_video_id,
@@ -236,6 +326,7 @@ def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListIte
 
 def _video_to_response(video: Video, source_download_url: str | None) -> VideoResponse:
     import_state = _import_state_for_response(video)
+    clip_profile = _clip_profile_for_video(video)
     return VideoResponse(
         id=video.id,
         user_id=video.user_id,
@@ -249,6 +340,7 @@ def _video_to_response(video: Video, source_download_url: str | None) -> VideoRe
         import_parent_id=video.import_parent_id,
         embed_url=video.embed_url,
         thumbnail_url=video.thumbnail_url,
+        clip_profile=clip_profile,
         import_state=import_state,
         import_state_ui=_import_state_ui_for_response(video),
         import_mode=video.import_mode,
@@ -276,6 +368,7 @@ async def create_upload_url(
     current_user: User = Depends(get_current_user),
 ):
     _assert_upload_constraints(body)
+    clip_profile = _resolve_clip_profile(body.clip_profile)
 
     video = Video(
         user_id=current_user.id,
@@ -285,6 +378,10 @@ async def create_upload_url(
         title=_title_from_filename(body.filename),
         file_size_bytes=body.file_size,
         import_mode=VideoImportMode.manual_upload,
+        external_metadata_json=_with_upload_confirmation_metadata(
+            {CLIP_PROFILE_KEY: clip_profile.value},
+            confirmed=False,
+        ),
     )
     db.add(video)
     await db.flush()
@@ -316,11 +413,25 @@ async def confirm_upload(
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
     if video.status != VideoStatus.queued:
+        logger.warning(
+            "[upload_confirm_failed] video_id=%s reason=invalid_state status=%s",
+            video.id,
+            video.status.value,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video is not in queued state")
     if not video.storage_key or not r2_client.file_exists(video.storage_key):
+        logger.warning(
+            "[upload_confirm_failed] video_id=%s reason=uploaded_file_missing storage_key=%s",
+            video.id,
+            video.storage_key,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file not found in storage")
 
     video.status = VideoStatus.transcribing
+    video.external_metadata_json = _with_upload_confirmation_metadata(
+        video.external_metadata_json,
+        confirmed=True,
+    )
     await db.flush()
     await db.commit()
     await db.refresh(video)
@@ -336,6 +447,130 @@ async def import_youtube(
     current_user: User = Depends(get_current_user),
 ):
     raw_url = body.url.strip()
+    clip_profile = _resolve_clip_profile(body.clip_profile)
+    try:
+        normalized = normalize_youtube_input(raw_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    if normalized.source_type == "youtube_playlist":
+        admission = await evaluate_youtube_admission(db, user_id=current_user.id)
+        if admission.reasons:
+            logger.warning(
+                "[youtube_admission] user_id=%s mode=%s allow=%s reasons=%s snapshot=%s",
+                current_user.id,
+                admission.mode,
+                admission.allow,
+                ",".join(admission.reasons),
+                admission.snapshot,
+            )
+        if not admission.allow:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    "YouTube import capacity is currently limited. "
+                    "Please retry shortly or upload a file directly."
+                ),
+            )
+        parent = YoutubePlaylistImport(
+            user_id=current_user.id,
+            source_url=normalized.normalized_url,
+            playlist_id=normalized.normalized_playlist_id or "unknown",
+            title=None,
+            status="queued",
+            total_items=0,
+            completed_items=0,
+            failed_items=0,
+        )
+        db.add(parent)
+        await db.flush()
+        await db.commit()
+        await db.refresh(parent)
+
+        try:
+            from app.worker.tasks.ingest_playlist import ingest_playlist_job
+
+            ingest_playlist_job.apply_async(
+                args=[str(parent.id), clip_profile.value],
+                countdown=1,
+                queue="ingest",
+            )
+        except Exception as exc:
+            logger.warning("[videos] Unable to enqueue playlist ingest %s: %s", parent.id, exc)
+
+        return VideoImportYoutubeResponse(
+            video_id=None,
+            playlist_import_id=parent.id,
+            import_kind="playlist",
+            status="queued",
+            message="Playlist import started",
+        )
+
+    blocked_hint = await get_blocked_source_hint(normalized.normalized_video_id)
+    if blocked_hint and is_non_retryable_blocked_error_code(blocked_hint.error_code):
+        logger.info(
+            "[youtube_blocked_cache_hit] user_id=%s source_video_id=%s error_code=%s",
+            current_user.id,
+            blocked_hint.source_video_id,
+            blocked_hint.error_code,
+        )
+        video = Video(
+            user_id=current_user.id,
+            source_type=VideoSourceType.youtube_single,
+            source_url=normalized.normalized_url,
+            source_video_id=normalized.normalized_video_id,
+            source_playlist_id=normalized.normalized_playlist_id,
+            status=VideoStatus.error,
+            title="Importing...",
+            embed_url=embed_url_for_video_id(normalized.normalized_video_id or blocked_hint.source_video_id),
+            import_mode=VideoImportMode.embed_only,
+            is_download_blocked=True,
+            error_code=blocked_hint.error_code,
+            error_message=_blocked_recovery_user_message(blocked_hint.error_code),
+            external_metadata_json={CLIP_PROFILE_KEY: clip_profile.value},
+        )
+        db.add(video)
+        await db.flush()
+        initialize_import_state(
+            db,
+            video,
+            actor="api",
+            reason_code="youtube_import_created",
+            metadata={"source_url": normalized.normalized_url},
+        )
+        transition_import_state(
+            db,
+            video,
+            to_state=VideoImportState.blocked,
+            reason_code="blocked_cache_short_circuit",
+            actor="api",
+            metadata={"error_code": blocked_hint.error_code},
+            allow_noop=True,
+            strict=False,
+        )
+        transition_import_state(
+            db,
+            video,
+            to_state=VideoImportState.replacement_upload_required,
+            reason_code="blocked_cache_short_circuit",
+            actor="api",
+            metadata={"error_code": blocked_hint.error_code},
+            allow_noop=True,
+            strict=False,
+        )
+        await db.commit()
+        await db.refresh(video)
+        return VideoImportYoutubeResponse(
+            video_id=video.id,
+            playlist_import_id=None,
+            import_kind="single",
+            status=video.status,
+            message="Server download is currently blocked for this link. Use Upload replacement file on the new row to continue.",
+            recovery_required=True,
+            recovery_reason=blocked_hint.error_code,
+            recovery_action="upload_replacement_or_embed",
+        )
+
     admission = await evaluate_youtube_admission(db, user_id=current_user.id)
     if admission.reasons:
         logger.warning(
@@ -355,42 +590,6 @@ async def import_youtube(
             ),
         )
 
-    try:
-        normalized = normalize_youtube_input(raw_url)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-    if normalized.source_type == "youtube_playlist":
-        parent = YoutubePlaylistImport(
-            user_id=current_user.id,
-            source_url=normalized.normalized_url,
-            playlist_id=normalized.normalized_playlist_id or "unknown",
-            title=None,
-            status="queued",
-            total_items=0,
-            completed_items=0,
-            failed_items=0,
-        )
-        db.add(parent)
-        await db.flush()
-        await db.commit()
-        await db.refresh(parent)
-
-        try:
-            from app.worker.tasks.ingest_playlist import ingest_playlist_job
-
-            ingest_playlist_job.apply_async(args=[str(parent.id)], countdown=1, queue="ingest")
-        except Exception as exc:
-            logger.warning("[videos] Unable to enqueue playlist ingest %s: %s", parent.id, exc)
-
-        return VideoImportYoutubeResponse(
-            video_id=None,
-            playlist_import_id=parent.id,
-            import_kind="playlist",
-            status="queued",
-            message="Playlist import started",
-        )
-
     video = Video(
         user_id=current_user.id,
         source_type=VideoSourceType.youtube_single,
@@ -401,6 +600,7 @@ async def import_youtube(
         title="Importing...",
         import_mode=VideoImportMode.server_download,
         is_download_blocked=False,
+        external_metadata_json={CLIP_PROFILE_KEY: clip_profile.value},
     )
     db.add(video)
     await db.flush()
@@ -566,6 +766,89 @@ async def list_videos(
     return rows
 
 
+@router.post("/videos/{video_id}/generate-clips", response_model=VideoGenerateClipsResponse)
+async def generate_clips(
+    video_id: uuid.UUID,
+    body: VideoGenerateClipsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Video).where(Video.id == video_id, Video.user_id == current_user.id))
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+
+    clip_profile = _resolve_clip_profile(body.clip_profile)
+
+    if video.status in {VideoStatus.queued, VideoStatus.downloading, VideoStatus.transcribing}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clip regeneration is unavailable until ingest/transcription completes",
+        )
+    if not video.storage_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Source media is unavailable for this video",
+        )
+
+    transcript_exists_result = await db.execute(
+        select(TranscriptSegment.id).where(TranscriptSegment.video_id == video.id).limit(1)
+    )
+    if transcript_exists_result.first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transcript is not available yet for this video",
+        )
+
+    active_score_job_result = await db.execute(
+        select(Job.id).where(
+            Job.video_id == video.id,
+            Job.type == "score",
+            Job.status.in_([JobStatus.queued, JobStatus.running]),
+        )
+    )
+    active_score_job = active_score_job_result.first()
+    if active_score_job:
+        return VideoGenerateClipsResponse(
+            video_id=video.id,
+            status="already_scoring",
+            clip_profile=_clip_profile_for_video(video),
+            message="A clip generation job is already in progress for this video.",
+        )
+
+    metadata = dict(video.external_metadata_json or {})
+    metadata[CLIP_PROFILE_KEY] = clip_profile.value
+    video.external_metadata_json = metadata
+    video.status = VideoStatus.scoring
+    video.error_message = None
+    video.error_code = None
+    video.debug_error_message = None
+    video.clip_count = 0
+
+    if _is_youtube_source_type(video.source_type):
+        transition_import_state(
+            db,
+            video,
+            to_state=VideoImportState.processing,
+            reason_code="manual_clip_regeneration_started",
+            actor="api",
+            metadata={"clip_profile": clip_profile.value},
+            allow_noop=True,
+            strict=False,
+        )
+    await db.commit()
+    await db.refresh(video)
+
+    await _enqueue_score_job(db, video, clip_profile)
+
+    return VideoGenerateClipsResponse(
+        video_id=video.id,
+        status="queued",
+        clip_profile=clip_profile,
+        message="Clip generation started.",
+    )
+
+
 @router.post("/videos/{video_id}/retry-import", response_model=VideoImportYoutubeResponse)
 async def retry_import(
     video_id: uuid.UUID,
@@ -580,6 +863,21 @@ async def retry_import(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Retry only supports YouTube imports")
     if not video.source_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Source URL missing for retry")
+    if is_non_retryable_blocked_error_code(video.error_code):
+        logger.info(
+            "[youtube_retry_rejected_nonretryable] user_id=%s video_id=%s error_code=%s import_state=%s",
+            current_user.id,
+            video.id,
+            video.error_code,
+            video.import_state.value if video.import_state else "unknown",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Server retry is disabled for this blocked YouTube state. "
+                "Upload replacement file or keep as embed."
+            ),
+        )
     retry_allowed = is_retryable_import_state(video.import_state) or video.status in {
         VideoStatus.error,
         VideoStatus.downloading,

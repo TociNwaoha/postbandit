@@ -8,12 +8,12 @@ interface PlaylistImportCardProps {
 }
 
 const statusStyles: Record<string, string> = {
-  queued: "bg-slate-700/80 text-slate-200",
-  expanding: "bg-blue-500/20 text-blue-300 animate-pulse",
-  importing: "bg-blue-500/20 text-blue-300 animate-pulse",
-  completed: "bg-emerald-500/20 text-emerald-300",
-  partial: "bg-amber-500/20 text-amber-300",
-  failed: "bg-red-500/20 text-red-300",
+  queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  expanding: "bg-blue-500/20 text-blue-700 animate-pulse",
+  importing: "bg-blue-500/20 text-blue-700 animate-pulse",
+  completed: "bg-emerald-500/20 text-emerald-700",
+  partial: "bg-amber-500/20 text-amber-700",
+  failed: "bg-red-500/20 text-red-700",
 };
 
 function statusLabel(status: string): string {
@@ -40,10 +40,10 @@ export function PlaylistImportCard({ playlist }: PlaylistImportCardProps) {
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">
+            <p className="truncate text-sm font-semibold text-[var(--app-text)]">
               {playlist.title || `Playlist ${playlist.playlist_id}`}
             </p>
-            <p className="mt-1 truncate text-xs text-slate-400">{playlist.source_url}</p>
+            <p className="mt-1 truncate text-xs text-[var(--app-muted)]">{playlist.source_url}</p>
           </div>
           <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[playlist.status] || statusStyles.queued}`}>
             {statusLabel(playlist.status)}
@@ -51,38 +51,38 @@ export function PlaylistImportCard({ playlist }: PlaylistImportCardProps) {
         </div>
 
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+          <div className="flex items-center justify-between text-xs text-[var(--app-muted)]">
             <span>Playlist import</span>
             <span>
               {done}/{total || 0}
             </span>
           </div>
-          <div className="h-2 rounded-full bg-slate-800">
-            <div className="h-2 rounded-full bg-[#7C3AED]" style={{ width: `${progress}%` }} />
+          <div className="h-2 rounded-full bg-[var(--app-surface-soft)]">
+            <div className="h-2 rounded-full bg-[#1D3FD0]" style={{ width: `${progress}%` }} />
           </div>
         </div>
 
         {playlist.items.length > 0 ? (
           <div className="max-h-48 space-y-2 overflow-auto pr-1">
             {playlist.items.map((item) => (
-              <div key={item.id} className="rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2">
+              <div key={item.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="truncate text-xs text-slate-200">
+                  <p className="truncate text-xs text-[var(--app-text)]">
                     {(item.playlist_index ?? 0) + 1}. {item.title || item.source_video_id || "Unknown video"}
                   </p>
-                  <span className="text-[10px] uppercase text-slate-400">
+                  <span className="text-[10px] uppercase text-[var(--app-muted)]">
                     {item.import_state === "processing" ? item.status : importStateLabel(item.import_state)}
                   </span>
                 </div>
                 {item.is_download_blocked ? (
                   <div className="mt-1 flex flex-wrap gap-1">
-                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300">
+                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-700">
                       Blocked on server
                     </span>
-                    <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-300">
+                    <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-700">
                       Can still embed
                     </span>
-                    <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-200">
+                    <span className="rounded bg-[var(--app-surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--app-text)]">
                       Upload file manually
                     </span>
                   </div>

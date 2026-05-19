@@ -37,6 +37,12 @@ const ACCEPTED_TYPES = new Set([
   "video/x-msvideo",
   "video/x-matroska",
 ]);
+const NON_RETRYABLE_RETRY_CODES = new Set([
+  "YT_SIGNIN_REQUIRED",
+  "YT_BOT_VERIFICATION",
+  "YT_PO_TOKEN_REQUIRED",
+  "YT_NO_FORMATS",
+]);
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
@@ -160,6 +166,7 @@ export function BlockedImportActions({ video, onActionDone }: BlockedImportActio
     () => (helperSession ? formatTimeRemaining(helperSession.expires_at, nowMs) : null),
     [helperSession, nowMs]
   );
+  const canRetry = !video.error_code || !NON_RETRYABLE_RETRY_CODES.has(video.error_code);
 
   const setError = (err: unknown, fallback: string) => {
     const text = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
@@ -274,7 +281,7 @@ export function BlockedImportActions({ video, onActionDone }: BlockedImportActio
 
   return (
     <div className="mt-3 space-y-2">
-      <p className="text-xs text-slate-300">
+      <p className="text-xs text-[var(--app-muted)]">
         Why this happens: some YouTube videos block server downloads from datacenter IPs. You can still recover this row
         by uploading a replacement file or running the helper on your machine.
       </p>
@@ -282,15 +289,17 @@ export function BlockedImportActions({ video, onActionDone }: BlockedImportActio
         <Button type="button" onClick={onPickFile} disabled={busyAction !== null} className="text-xs px-3 py-1.5">
           {busyAction === "upload" ? "Uploading..." : "Upload replacement file"}
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={handleRetry}
-          disabled={busyAction !== null}
-          className="text-xs px-3 py-1.5"
-        >
-          {busyAction === "retry" ? "Retrying..." : "Retry"}
-        </Button>
+        {canRetry ? (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleRetry}
+            disabled={busyAction !== null}
+            className="text-xs px-3 py-1.5"
+          >
+            {busyAction === "retry" ? "Retrying..." : "Retry"}
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="secondary"
@@ -310,13 +319,18 @@ export function BlockedImportActions({ video, onActionDone }: BlockedImportActio
           {busyAction === "helper" ? "Creating..." : "Use Local Helper"}
         </Button>
       </div>
+      {!canRetry ? (
+        <p className="text-[11px] text-[var(--app-muted)]">
+          Retry is disabled for this blocked error. Use upload replacement, embed-only, or local helper.
+        </p>
+      ) : null}
       {helperSession ? (
-        <div className="rounded-md border border-slate-700/80 bg-slate-900/60 p-3 space-y-2">
-          <p className="text-xs text-slate-200">Runs on your machine; server block remains unchanged.</p>
-          <p className="text-[11px] text-slate-400">
+        <div className="rounded-md border border-[var(--app-border)]/80 bg-[var(--app-surface-soft)] p-3 space-y-2">
+          <p className="text-xs text-[var(--app-text)]">Runs on your machine; server block remains unchanged.</p>
+          <p className="text-[11px] text-[var(--app-muted)]">
             Session expires: {new Date(helperSession.expires_at).toLocaleString()} ({helperTimeRemaining || "unknown"}).
           </p>
-          <div className="space-y-1 text-[11px] text-slate-300">
+          <div className="space-y-1 text-[11px] text-[var(--app-muted)]">
             <p>1. Download helper launcher.</p>
             <p>2. Run the launcher on your machine.</p>
             <p>3. Return here and refresh; this row should resume processing.</p>
@@ -329,12 +343,12 @@ export function BlockedImportActions({ video, onActionDone }: BlockedImportActio
               Copy CLI fallback
             </Button>
           </div>
-          <details className="rounded-md border border-slate-700 bg-slate-950/70 p-2">
-            <summary className="cursor-pointer text-[11px] text-slate-300">Advanced: show raw command</summary>
+          <details className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2">
+            <summary className="cursor-pointer text-[11px] text-[var(--app-muted)]">Advanced: show raw command</summary>
             <textarea
               readOnly
               value={helperCommand || ""}
-              className="mt-2 h-20 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200"
+              className="mt-2 h-20 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1 text-[11px] text-[var(--app-text)]"
             />
           </details>
           <Button
@@ -359,7 +373,7 @@ export function BlockedImportActions({ video, onActionDone }: BlockedImportActio
           event.currentTarget.value = "";
         }}
       />
-      {message ? <p className="text-xs text-slate-300">{message}</p> : null}
+      {message ? <p className="text-xs text-[var(--app-muted)]">{message}</p> : null}
     </div>
   );
 }

@@ -8,7 +8,14 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.database import SyncSessionLocal
 from app.models.job import Job, JobStatus
-from app.models.video import Video, VideoImportMode, VideoImportState, VideoSourceType, VideoStatus
+from app.models.video import (
+    ClipProfile,
+    Video,
+    VideoImportMode,
+    VideoImportState,
+    VideoSourceType,
+    VideoStatus,
+)
 from app.models.youtube_playlist_import import YoutubePlaylistImport
 from app.services.youtube import (
     enrich_playlist_items_with_youtube_api,
@@ -20,6 +27,16 @@ from app.worker.tasks.ingest import ingest_job
 
 logger = logging.getLogger(__name__)
 
+LONG_FORM_CLIP_PROFILE_ALIASES = {"long_form_speaking"}
+
+
+def _resolve_clip_profile(value: str | None) -> ClipProfile:
+    if value:
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized == ClipProfile.sermon.value or normalized in LONG_FORM_CLIP_PROFILE_ALIASES:
+            return ClipProfile.sermon
+    return ClipProfile.viral
+
 
 @celery_app.task(
     name="app.worker.tasks.ingest_playlist.ingest_playlist_job",
@@ -27,7 +44,8 @@ logger = logging.getLogger(__name__)
     queue="ingest",
     max_retries=1,
 )
-def ingest_playlist_job(self, playlist_import_id: str):
+def ingest_playlist_job(self, playlist_import_id: str, clip_profile: str = ClipProfile.viral.value):
+    resolved_clip_profile = _resolve_clip_profile(clip_profile)
     try:
         import_uuid = uuid.UUID(playlist_import_id)
     except ValueError as exc:
@@ -88,6 +106,7 @@ def ingest_playlist_job(self, playlist_import_id: str):
                     import_state=VideoImportState.queued,
                     is_download_blocked=False,
                     external_metadata_json={
+                        "clip_profile": resolved_clip_profile.value,
                         "youtube": {
                             "video_id": item.video_id,
                             "title": item.title,

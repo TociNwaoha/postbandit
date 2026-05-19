@@ -4,6 +4,8 @@ import GoogleProvider from "next-auth/providers/google";
 
 import { SERVER_API_URL } from "@/lib/serverApi";
 
+const SESSION_MAX_AGE_SECONDS = 5 * 24 * 60 * 60;
+
 type BackendAuthResponse = {
   access_token: string;
   user: {
@@ -130,7 +132,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   },
   secret: process.env.NEXTAUTH_SECRET,
 };

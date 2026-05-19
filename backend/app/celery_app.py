@@ -24,6 +24,18 @@ if settings.workspace_cleanup_enabled:
         "schedule": 3600.0,
         "args": (bool(settings.workspace_cleanup_dry_run),),
     }
+if settings.failed_import_cleanup_enabled:
+    beat_schedule["failed-import-cleanup-hourly"] = {
+        "task": "app.worker.tasks.cleanup.sweep_failed_imports",
+        "schedule": 3600.0,
+        "args": (bool(settings.failed_import_cleanup_dry_run),),
+    }
+if settings.stale_queued_upload_cleanup_enabled:
+    beat_schedule["stale-queued-upload-cleanup-hourly"] = {
+        "task": "app.worker.tasks.cleanup.sweep_stale_queued_uploads",
+        "schedule": 3600.0,
+        "args": (bool(settings.stale_queued_upload_cleanup_dry_run),),
+    }
 
 celery_app.conf.update(
     task_serializer="json",

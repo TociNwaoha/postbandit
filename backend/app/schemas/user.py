@@ -36,3 +36,37 @@ class LoginRequest(BaseModel):
 
 class GoogleLoginRequest(BaseModel):
     id_token: str
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class SignupResponse(BaseModel):
+    message: str
+    user: UserResponse
+
+
+class UpdateEmailRequest(BaseModel):
+    new_email: EmailStr
+    current_password: str
+
+
+class UpdateEmailResponse(BaseModel):
+    message: str
+    user: UserResponse
+
+
+class UpdatePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class DeleteAccountRequest(BaseModel):
+    current_password: str
+    confirm_text: str

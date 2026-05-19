@@ -23,7 +23,7 @@ export function VideosDashboard() {
       <ConnectionsSummary />
 
       <div className="mb-6 flex items-center justify-between gap-4">
-        <h2 className="text-2xl font-semibold text-white">Videos</h2>
+        <h2 className="text-2xl font-semibold text-[var(--app-text)]">Videos</h2>
         <Button onClick={() => setIsUploadOpen(true)}>Upload Video</Button>
       </div>
 
@@ -37,7 +37,7 @@ export function VideosDashboard() {
 
       {imports.length > 0 ? (
         <div className="mt-6 space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Playlist Imports</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--app-muted)]">Playlist Imports</h3>
           {imports.map((playlist) => (
             <PlaylistImportCard key={playlist.id} playlist={playlist} />
           ))}

@@ -155,7 +155,10 @@ def execute_publish_job(self, publish_job_id: str):
                 scheduled_for=publish_job.scheduled_for,
                 media_url=media_url_for_publish,
                 destination_external_id=str(account.external_account_id),
-                destination_metadata=account.metadata_json or {},
+                destination_metadata={
+                    **(account.metadata_json or {}),
+                    "scopes": account.scopes or [],
+                },
             )
 
             result = adapter.publish(

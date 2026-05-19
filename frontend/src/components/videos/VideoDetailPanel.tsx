@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { Clip, Video, VideoTranscript } from "@/types";
+import { api, ApiError } from "@/lib/api";
+import { Clip, ClipProfile, Video, VideoGenerateClipsResponse, VideoTranscript } from "@/types";
 
 type TabKey = "transcript" | "clips";
 
@@ -17,20 +19,20 @@ interface VideoDetailPanelProps {
 }
 
 const statusStyles: Record<string, string> = {
-  queued: "bg-slate-700/80 text-slate-200",
-  downloading: "bg-blue-500/20 text-blue-300 animate-pulse",
-  transcribing: "bg-blue-500/20 text-blue-300 animate-pulse",
-  scoring: "bg-purple-500/20 text-purple-300 animate-pulse",
-  ready: "bg-emerald-500/20 text-emerald-300",
-  error: "bg-red-500/20 text-red-300",
-  metadata_extracting: "bg-blue-500/20 text-blue-300 animate-pulse",
-  downloadable: "bg-blue-500/20 text-blue-300 animate-pulse",
-  blocked: "bg-amber-500/20 text-amber-300",
-  replacement_upload_required: "bg-amber-500/20 text-amber-300",
-  helper_required: "bg-amber-500/20 text-amber-300",
-  embed_only: "bg-slate-600/50 text-slate-200",
-  failed_retryable: "bg-red-500/20 text-red-300",
-  failed_terminal: "bg-red-500/20 text-red-300",
+  queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  downloading: "bg-blue-500/20 text-blue-700 animate-pulse",
+  transcribing: "bg-blue-500/20 text-blue-700 animate-pulse",
+  scoring: "bg-purple-500/20 text-purple-700 animate-pulse",
+  ready: "bg-emerald-500/20 text-emerald-700",
+  error: "bg-red-500/20 text-red-700",
+  metadata_extracting: "bg-blue-500/20 text-blue-700 animate-pulse",
+  downloadable: "bg-blue-500/20 text-blue-700 animate-pulse",
+  blocked: "bg-amber-500/20 text-amber-700",
+  replacement_upload_required: "bg-amber-500/20 text-amber-700",
+  helper_required: "bg-amber-500/20 text-amber-700",
+  embed_only: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  failed_retryable: "bg-red-500/20 text-red-700",
+  failed_terminal: "bg-red-500/20 text-red-700",
 };
 
 const YOUTUBE_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist"]);
@@ -75,7 +77,12 @@ function importStateLabel(state: string): string {
 }
 
 export function VideoDetailPanel({ video, transcript, transcriptError, clips, clipsError }: VideoDetailPanelProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("transcript");
+  const [batchProfile, setBatchProfile] = useState<ClipProfile>(video.clip_profile || "viral");
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchMessage, setBatchMessage] = useState<string | null>(null);
 
   const transcriptText = useMemo(() => {
     if (!transcript) return "";
@@ -94,26 +101,58 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
   const isBlockedImport =
     Boolean(video.is_download_blocked) ||
     Boolean(effectiveImportState && BLOCKED_IMPORT_STATES.has(effectiveImportState));
+  const canGenerateByStatus = !["queued", "downloading", "transcribing"].includes(video.status);
+  const canGenerateByMedia = Boolean(video.storage_key);
+  const generationDisabled = batchLoading || !canGenerateByStatus || !canGenerateByMedia;
+  const selectedBatchLabel = batchProfile === "sermon" ? "Long-form Speaking" : "Viral";
+
+  useEffect(() => {
+    setBatchProfile(video.clip_profile || "viral");
+    setBatchError(null);
+    setBatchMessage(null);
+  }, [video.id, video.clip_profile]);
+
+  const handleGenerateBatch = async () => {
+    if (generationDisabled) return;
+    setBatchLoading(true);
+    setBatchError(null);
+    setBatchMessage(null);
+    try {
+      const payload = await api.post<VideoGenerateClipsResponse>(`/api/videos/${video.id}/generate-clips`, {
+        clip_profile: batchProfile,
+      });
+      setBatchMessage(payload.message);
+      router.refresh();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to start clip generation";
+      setBatchError(message);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <Card>
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-xl font-semibold text-white">{video.title || "Untitled Video"}</h2>
+          <h2 className="text-xl font-semibold text-[var(--app-text)]">{video.title || "Untitled Video"}</h2>
           <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[displayStateKey] || statusStyles.queued}`}>
             {displayStateLabel}
           </span>
         </div>
-        <div className="mt-4 flex flex-wrap gap-6 text-sm text-slate-300">
+        <div className="mt-4 flex flex-wrap gap-6 text-sm text-[var(--app-muted)]">
           <p>
-            <span className="text-slate-500">Duration:</span> {formatDuration(video.duration_sec)}
+            <span className="text-[var(--app-subtle)]">Duration:</span> {formatDuration(video.duration_sec)}
           </p>
           <p>
-            <span className="text-slate-500">Resolution:</span> {video.resolution || "Unknown"}
+            <span className="text-[var(--app-subtle)]">Clip profile:</span> {video.clip_profile === "sermon" ? "Long-form Speaking" : "Viral"}
+          </p>
+          <p>
+            <span className="text-[var(--app-subtle)]">Resolution:</span> {video.resolution || "Unknown"}
           </p>
           {video.source_type.startsWith("youtube") ? (
             <p>
-              <span className="text-slate-500">Import mode:</span>{" "}
+              <span className="text-[var(--app-subtle)]">Import mode:</span>{" "}
               {video.import_mode === "embed_only"
                 ? "Embed only"
                 : video.import_mode === "manual_upload"
@@ -123,7 +162,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
           ) : null}
         </div>
         {isBlockedImport ? (
-          <p className="mt-3 text-xs text-amber-300">
+          <p className="mt-3 text-xs text-amber-700">
             Server download was blocked for this source. You can keep it as embed reference or upload file manually.
           </p>
         ) : null}
@@ -132,7 +171,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
       {video.source_download_url ? (
         <Card>
           <video
-            className="w-full rounded-lg border border-slate-800 bg-black"
+            className="w-full rounded-lg border border-[var(--app-border)] bg-black"
             controls
             playsInline
             preload="metadata"
@@ -143,7 +182,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
         </Card>
       ) : video.embed_url ? (
         <Card>
-          <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-800 bg-black">
+          <div className="aspect-video w-full overflow-hidden rounded-lg border border-[var(--app-border)] bg-black">
             <iframe
               src={video.embed_url}
               title={video.title || "YouTube embed"}
@@ -156,10 +195,10 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
       ) : null}
 
       <Card>
-        <div className="mb-4 inline-flex rounded-lg bg-slate-900 p-1">
+        <div className="mb-4 inline-flex rounded-lg bg-[var(--app-surface-soft)] p-1">
           <button
             className={`rounded-md px-4 py-2 text-sm transition-colors ${
-              activeTab === "transcript" ? "bg-[#7C3AED] text-white" : "text-slate-300 hover:text-white"
+              activeTab === "transcript" ? "bg-[#1D3FD0] text-white" : "text-[var(--app-muted)] hover:text-[var(--app-text)]"
             }`}
             onClick={() => setActiveTab("transcript")}
           >
@@ -167,7 +206,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
           </button>
           <button
             className={`rounded-md px-4 py-2 text-sm transition-colors ${
-              activeTab === "clips" ? "bg-[#7C3AED] text-white" : "text-slate-300 hover:text-white"
+              activeTab === "clips" ? "bg-[#1D3FD0] text-white" : "text-[var(--app-muted)] hover:text-[var(--app-text)]"
             }`}
             onClick={() => setActiveTab("clips")}
           >
@@ -175,21 +214,72 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
           </button>
         </div>
 
+        {activeTab === "clips" ? (
+          <div className="mb-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-[var(--app-text)]">Generate New Clip Batch</h4>
+                <p className="mt-1 text-xs text-[var(--app-muted)]">
+                  Regenerate clips using a different profile. Existing clips for this video will be replaced when scoring completes.
+                </p>
+              </div>
+              <span className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[11px] text-[var(--app-muted)]">
+                Selected: {selectedBatchLabel}
+              </span>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="text-xs text-[var(--app-muted)]">
+                Clip profile
+                <select
+                  value={batchProfile}
+                  onChange={(event) => setBatchProfile(event.target.value as ClipProfile)}
+                  className="mt-1 block min-w-[220px] rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                >
+                  <option value="viral">Viral</option>
+                  <option value="sermon">Long-form Speaking</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleGenerateBatch()}
+                disabled={generationDisabled}
+                className="rounded-md bg-[#1D3FD0] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1633B8] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {batchLoading ? "Starting..." : "Generate New Clip Batch"}
+              </button>
+            </div>
+
+            {!canGenerateByMedia ? (
+              <p className="mt-2 text-xs text-amber-700">
+                Source media is unavailable for this video, so clip regeneration is currently disabled.
+              </p>
+            ) : null}
+            {!canGenerateByStatus ? (
+              <p className="mt-2 text-xs text-[var(--app-muted)]">
+                Clip regeneration is available after ingest/transcription completes.
+              </p>
+            ) : null}
+            {batchError ? <p className="mt-2 text-xs text-red-700">{batchError}</p> : null}
+            {batchMessage ? <p className="mt-2 text-xs text-emerald-700">{batchMessage}</p> : null}
+          </div>
+        ) : null}
+
         {activeTab === "clips" && video.status === "scoring" && clips.length === 0 ? (
-          <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-slate-200">
+          <div className="flex items-center gap-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-6 text-[var(--app-text)]">
             <LoadingSpinner />
             <p>Scoring clips... This usually completes shortly after transcription.</p>
           </div>
         ) : null}
 
         {activeTab === "clips" && clipsError ? (
-          <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-6 text-red-300">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
             {clipsError}
           </div>
         ) : null}
 
         {activeTab === "clips" && !clipsError && video.status === "ready" && clips.length === 0 ? (
-          <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-slate-300">
+          <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-6 text-[var(--app-muted)]">
             No strong clips found for this video yet.
           </div>
         ) : null}
@@ -198,7 +288,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
         !clipsError &&
         clips.length === 0 &&
         ["queued", "downloading", "transcribing"].includes(video.status) ? (
-          <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-slate-300">
+          <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-6 text-[var(--app-muted)]">
             Clips will appear after processing reaches scoring.
           </div>
         ) : null}
@@ -206,27 +296,27 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
         {activeTab === "clips" && !clipsError && clips.length > 0 ? (
           <div className="space-y-4">
             {clips.map((clip, index) => (
-              <div key={clip.id} className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+              <div key={clip.id} className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4">
                 <div className="flex gap-4">
                   {clip.thumbnail_url ? (
                     <img
                       src={clip.thumbnail_url}
                       alt={`Clip ${index + 1} thumbnail`}
-                      className="h-24 w-40 rounded-md border border-slate-700 object-cover"
+                      className="h-24 w-40 rounded-md border border-[var(--app-border)] object-cover"
                     />
                   ) : (
-                    <div className="h-24 w-40 rounded-md border border-slate-700 bg-slate-800/80" />
+                    <div className="h-24 w-40 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)]/80" />
                   )}
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h4 className="text-sm font-semibold text-white">{clip.title || `Clip ${index + 1}`}</h4>
-                      <span className="rounded-full bg-purple-500/20 px-2.5 py-1 text-xs text-purple-200">
+                      <h4 className="text-sm font-semibold text-[var(--app-text)]">{clip.title || `Clip ${index + 1}`}</h4>
+                      <span className="rounded-full bg-purple-500/20 px-2.5 py-1 text-xs text-purple-700">
                         Score {(clip.score ?? 0).toFixed(2)}
                       </span>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-400">
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-[var(--app-muted)]">
                       <span>{formatClipDuration(clip.duration_sec)}</span>
                       <span>
                         {formatTimeBoundary(clip.start_time)} - {formatTimeBoundary(clip.end_time)}
@@ -235,14 +325,14 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
                       <span>Energy {(clip.energy_score ?? 0).toFixed(2)}</span>
                     </div>
 
-                    <p className="mt-3 line-clamp-3 text-sm text-slate-300">
+                    <p className="mt-3 line-clamp-3 text-sm text-[var(--app-muted)]">
                       {clip.transcript_text || "Transcript excerpt unavailable."}
                     </p>
 
                     <div className="mt-4">
                       <Link
                         href={`/videos/${video.id}/clips/${clip.id}`}
-                        className="inline-flex items-center rounded-md bg-[#7C3AED] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#6D28D9]"
+                        className="inline-flex items-center rounded-md bg-[#1D3FD0] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#1633B8]"
                       >
                         Review & Export
                       </Link>
@@ -255,14 +345,14 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
         ) : null}
 
         {activeTab === "transcript" && video.status === "transcribing" ? (
-          <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-slate-200">
+          <div className="flex items-center gap-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-6 text-[var(--app-text)]">
             <LoadingSpinner />
             <p>Transcribing your video... This takes about 6 minutes per hour of content</p>
           </div>
         ) : null}
 
         {activeTab === "transcript" && video.status === "error" ? (
-          <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-6 text-red-300">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
             {video.error_message || "This video failed during processing."}
           </div>
         ) : null}
@@ -270,16 +360,16 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
         {activeTab === "transcript" && (video.status === "scoring" || video.status === "ready") ? (
           transcript ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-4 text-xs text-slate-400">
+              <div className="flex flex-wrap gap-4 text-xs text-[var(--app-muted)]">
                 <p>Words: {transcript.word_count}</p>
                 <p>Language: {transcript.language || "Unknown"}</p>
               </div>
-              <div className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-900/40 p-4 text-sm leading-7 text-slate-200">
+              <div className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4 text-sm leading-7 text-[var(--app-text)]">
                 {transcriptText || "Transcript text is empty."}
               </div>
             </div>
           ) : (
-            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-slate-300">
+            <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-6 text-[var(--app-muted)]">
               {transcriptError || "Transcript not ready yet"}
             </div>
           )

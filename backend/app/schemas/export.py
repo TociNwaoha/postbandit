@@ -1,13 +1,20 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel
-from app.models.export import AspectRatio, CaptionStyle, CaptionFormat, ExportStatus
+from app.models.export import (
+    AspectRatio,
+    CaptionColorVariant,
+    CaptionStyle,
+    CaptionFormat,
+    ExportStatus,
+)
 
 
 class ExportCreate(BaseModel):
     clip_id: uuid.UUID
     aspect_ratio: AspectRatio
     caption_style: CaptionStyle | None = None
+    caption_color_variant: CaptionColorVariant | None = None
     caption_format: CaptionFormat
     caption_vertical_position: float | None = None
     caption_scale: float | None = None
@@ -23,6 +30,7 @@ class ExportResponse(BaseModel):
     user_id: uuid.UUID
     aspect_ratio: AspectRatio
     caption_style: CaptionStyle | None
+    caption_color_variant: CaptionColorVariant
     caption_format: CaptionFormat
     caption_vertical_position: float | None = None
     caption_scale: float | None = None

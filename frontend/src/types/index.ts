@@ -34,6 +34,13 @@ export type VideoImportState =
   | "failed_retryable"
   | "failed_terminal";
 
+export interface VideoGenerateClipsResponse {
+  video_id: string;
+  status: "queued" | "already_scoring";
+  clip_profile: ClipProfile;
+  message: string;
+}
+
 export interface Video {
   id: string;
   user_id: string;
@@ -189,6 +196,7 @@ export type CaptionStyle =
   | "kinetic_bold"
   | "cinema_outline"
   | "clean_highlight";
+export type CaptionColorVariant = "classic" | "warm" | "cool";
 export type CaptionFormat = "burned_in" | "srt";
 export type ExportStatus = "queued" | "rendering" | "ready" | "error";
 
@@ -199,6 +207,7 @@ export interface Export {
   user_id: string;
   aspect_ratio: AspectRatio;
   caption_style: CaptionStyle | null;
+  caption_color_variant: CaptionColorVariant;
   caption_format: CaptionFormat;
   caption_vertical_position?: number | null;
   caption_scale?: number | null;

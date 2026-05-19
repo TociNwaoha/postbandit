@@ -28,9 +28,18 @@ docker-compose up --build
 
 Default login: `admin@clipbandit.com` / `changeme123`
 
+## Public Entry + Signup
+
+- Root path `/` is the public landing page.
+- Primary CTA routes to `/signup`.
+- `/signup` supports:
+  - Google OAuth signup/signin via NextAuth.
+  - Email/password signup via `POST /api/auth/signup`.
+- Successful email signup redirects to `/login` with a success message.
+
 ## Google OAuth Login Config
 
-To enable Google sign-in on `/login`:
+To enable Google sign-in on `/login` and `/signup`:
 
 - Set `GOOGLE_CLIENT_ID`
 - Set `GOOGLE_CLIENT_SECRET`
@@ -45,6 +54,17 @@ Notes:
 - Google login exchanges the Google `id_token` for a backend JWT via `/api/auth/google/login`.
 - New Google users are auto-created as `starter` tier.
 - Existing email/password login stays unchanged.
+
+## Email/Password Signup API
+
+Backend endpoint:
+
+- `POST /api/auth/signup`
+- Request body: `{ "email": "user@example.com", "password": "min-8-chars" }`
+- Responses:
+  - `201` account created
+  - `409` email already exists
+  - `400/422` validation error
 
 ## YouTube OAuth Provider Config
 
@@ -74,6 +94,8 @@ Import behavior is honest by design:
 - Blocked videos can still be kept as embed metadata
 - Users can upload replacement media manually when server download is blocked
 - Blocked single-video rows also support a one-time local-helper session (`Use Local Helper`) that runs `yt-dlp` on the user machine and uploads back to the same row
+- Repeated blocked single-video links are short-circuited for 24 hours into recovery mode (no repeated failing server attempt)
+- Retry is disabled for non-retryable blocked codes (`YT_SIGNIN_REQUIRED`, `YT_BOT_VERIFICATION`, `YT_PO_TOKEN_REQUIRED`, `YT_NO_FORMATS`)
 
 Local helper notes:
 
@@ -145,7 +167,7 @@ Notes:
 
 ## Threads Provider Config
 
-To enable real Threads connection + text publishing:
+To enable real Threads connection + publishing:
 
 - Set `THREADS_APP_ID` and `THREADS_APP_SECRET`
   - or use shared fallback `META_APP_ID` and `META_APP_SECRET`
@@ -159,8 +181,34 @@ Threads callback URI must match:
 
 Notes:
 
-- Threads integration is real for connect + text posting in this pass.
-- Threads media/video posting is deferred and reported honestly in status metadata.
+- Threads integration is real for connect + text posting.
+- Threads video posting is enabled through the same publish job flow when export media is available.
+- OAuth callback performs short-lived code exchange followed by long-lived token exchange; publish attempts refresh long-lived tokens near expiry.
+- If Threads app permissions/tester/review state block publishing, jobs return honest actionable status (for example `waiting_user_action`) instead of fake success.
+
+## TikTok Provider Config
+
+To enable real TikTok connection + publishing:
+
+- Set `TIKTOK_CLIENT_KEY`
+- Set `TIKTOK_CLIENT_SECRET`
+- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
+- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
+- Optional poll tuning:
+  - `TIKTOK_PUBLISH_POLL_INTERVAL_SECONDS` (default `5`)
+  - `TIKTOK_PUBLISH_POLL_TIMEOUT_SECONDS` (default `720`)
+
+TikTok callback URI must match:
+
+- `{BACKEND_PUBLIC_URL}/api/social/tiktok/callback`
+
+Notes:
+
+- TikTok uses Login Kit for Web OAuth and Content Posting APIs.
+- Provider diagnostics include callback URL, required scopes, mode support, and readiness.
+- Publish flow attempts direct post first; if direct post is blocked and upload scope is available, it falls back to inbox upload.
+- `SEND_TO_USER_INBOX` is treated as `waiting_user_action` (user must complete posting in TikTok).
+- TikTok privacy is required and must match creator options returned by TikTok (`privacy_level_options`).
 
 ## X (Twitter) OAuth Provider Config
 

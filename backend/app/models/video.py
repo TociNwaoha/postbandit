@@ -39,6 +39,11 @@ class VideoImportMode(str, enum.Enum):
     manual_upload = "manual_upload"
 
 
+class ClipProfile(str, enum.Enum):
+    viral = "viral"
+    sermon = "sermon"
+
+
 class VideoImportState(str, enum.Enum):
     not_applicable = "not_applicable"
     queued = "queued"

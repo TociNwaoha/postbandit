@@ -1,7 +1,13 @@
 import uuid
 from datetime import datetime
-from pydantic import BaseModel
-from app.models.video import VideoImportMode, VideoImportState, VideoSourceType, VideoStatus
+from pydantic import BaseModel, field_validator
+from app.models.video import (
+    ClipProfile,
+    VideoImportMode,
+    VideoImportState,
+    VideoSourceType,
+    VideoStatus,
+)
 
 
 class VideoResponse(BaseModel):
@@ -17,6 +23,7 @@ class VideoResponse(BaseModel):
     import_parent_id: uuid.UUID | None
     embed_url: str | None
     thumbnail_url: str | None
+    clip_profile: ClipProfile
     import_state: VideoImportState
     import_state_ui: str | None = None
     import_mode: VideoImportMode
@@ -48,6 +55,16 @@ class VideoUploadUrlRequest(BaseModel):
     filename: str
     file_size: int
     content_type: str
+    clip_profile: ClipProfile | None = None
+
+    @field_validator("clip_profile", mode="before")
+    @classmethod
+    def normalize_clip_profile_alias(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+            if normalized == "long_form_speaking":
+                return ClipProfile.sermon.value
+        return value
 
 
 class VideoUploadUrlResponse(BaseModel):
@@ -69,6 +86,36 @@ class VideoConfirmUploadResponse(BaseModel):
 
 class VideoImportYoutubeRequest(BaseModel):
     url: str
+    clip_profile: ClipProfile | None = None
+
+    @field_validator("clip_profile", mode="before")
+    @classmethod
+    def normalize_clip_profile_alias(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+            if normalized == "long_form_speaking":
+                return ClipProfile.sermon.value
+        return value
+
+
+class VideoGenerateClipsRequest(BaseModel):
+    clip_profile: ClipProfile | None = None
+
+    @field_validator("clip_profile", mode="before")
+    @classmethod
+    def normalize_clip_profile_alias(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+            if normalized == "long_form_speaking":
+                return ClipProfile.sermon.value
+        return value
+
+
+class VideoGenerateClipsResponse(BaseModel):
+    video_id: uuid.UUID
+    status: str
+    clip_profile: ClipProfile
+    message: str
 
 
 class VideoImportYoutubeResponse(BaseModel):
@@ -77,6 +124,9 @@ class VideoImportYoutubeResponse(BaseModel):
     import_kind: str
     status: VideoStatus | str
     message: str
+    recovery_required: bool = False
+    recovery_reason: str | None = None
+    recovery_action: str | None = None
 
 
 class VideoListItem(BaseModel):
@@ -87,6 +137,7 @@ class VideoListItem(BaseModel):
     clip_count: int
     created_at: datetime
     thumbnail_url: str | None
+    clip_profile: ClipProfile
     source_type: VideoSourceType
     source_url: str | None
     source_video_id: str | None

@@ -46,14 +46,26 @@ const PRIVACY_OPTIONS_BY_PLATFORM: Partial<Record<SocialPlatform, Array<{ value:
     { value: "public", label: "Public" },
   ],
 };
+const TIKTOK_DEFAULT_PRIVACY_OPTIONS = [
+  "PUBLIC_TO_EVERYONE",
+  "MUTUAL_FOLLOW_FRIENDS",
+  "FOLLOWER_OF_CREATOR",
+  "SELF_ONLY",
+];
+const TIKTOK_PRIVACY_LABELS: Record<string, string> = {
+  PUBLIC_TO_EVERYONE: "Public to everyone",
+  MUTUAL_FOLLOW_FRIENDS: "Mutual follow friends",
+  FOLLOWER_OF_CREATOR: "Followers of creator",
+  SELF_ONLY: "Only me",
+};
 
 const statusStyles: Record<PublishJobStatus, string> = {
-  queued: "bg-slate-700/80 text-slate-200",
-  publishing: "bg-blue-500/20 text-blue-300 animate-pulse",
-  published: "bg-emerald-500/20 text-emerald-300",
-  failed: "bg-red-500/20 text-red-300",
-  waiting_user_action: "bg-amber-500/20 text-amber-300",
-  provider_not_configured: "bg-yellow-500/20 text-yellow-300",
+  queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  publishing: "bg-blue-500/20 text-blue-700 animate-pulse",
+  published: "bg-emerald-500/20 text-emerald-700",
+  failed: "bg-red-500/20 text-red-700",
+  waiting_user_action: "bg-amber-500/20 text-amber-700",
+  provider_not_configured: "bg-yellow-500/20 text-yellow-700",
 };
 
 function emptyFields(): PublishFormFields {
@@ -106,6 +118,46 @@ function parseHashtags(value: string): string[] | null {
     }
   }
   return deduped.length ? deduped : null;
+}
+
+function privacyLabelForValue(platform: SocialPlatform, value: string): string {
+  if (platform === "tiktok") {
+    return TIKTOK_PRIVACY_LABELS[value] || value;
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function tiktokPrivacyOptionsForAccount(account: ConnectedAccount | undefined): Array<{ value: string; label: string }> {
+  const creatorInfo = account?.metadata_json?.tiktok_creator_info;
+  const rawOptions = Array.isArray((creatorInfo as Record<string, unknown> | undefined)?.privacy_level_options)
+    ? (((creatorInfo as Record<string, unknown>).privacy_level_options as unknown[]) || [])
+    : [];
+
+  const options: Array<{ value: string; label: string }> = [];
+  const seen = new Set<string>();
+  for (const item of rawOptions) {
+    if (typeof item !== "string") continue;
+    const value = item.trim().toUpperCase();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    options.push({ value, label: privacyLabelForValue("tiktok", value) });
+  }
+
+  if (options.length) return options;
+  return TIKTOK_DEFAULT_PRIVACY_OPTIONS.map((value) => ({
+    value,
+    label: privacyLabelForValue("tiktok", value),
+  }));
+}
+
+function privacyOptionsForTarget(
+  platform: SocialPlatform,
+  selectedAccount: ConnectedAccount | undefined
+): Array<{ value: string; label: string }> {
+  if (platform === "tiktok") {
+    return tiktokPrivacyOptionsForAccount(selectedAccount);
+  }
+  return PRIVACY_OPTIONS_BY_PLATFORM[platform] || [];
 }
 
 function toIsoDatetime(value: string): string | null {
@@ -261,6 +313,7 @@ interface SchedulePickerProps {
 function SchedulePicker({ value, onChange, disabled = false, disabledReason }: SchedulePickerProps) {
   const [open, setOpen] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [timezone, setTimezone] = useState("Local time");
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const parsedValue = parseLocalDatetimeInput(value);
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => {
@@ -268,7 +321,10 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
     return new Date(base.getFullYear(), base.getMonth(), 1);
   });
   const now = new Date(nowTick);
-  const timezone = getBrowserTimeZone();
+
+  useEffect(() => {
+    setTimezone(getBrowserTimeZone());
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -374,27 +430,27 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         disabled={disabled}
-        className="flex w-full items-center justify-between rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex w-full items-center justify-between rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-left text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span>{value ? formatScheduleLabel(value) : "Post now (no schedule)"}</span>
-        <span className="text-xs text-slate-400">{open ? "Close" : "Pick"}</span>
+        <span className="text-xs text-[var(--app-muted)]">{open ? "Close" : "Pick"}</span>
       </button>
-      <p className="mt-1 text-[11px] text-slate-500">Timezone: {timezone}</p>
-      {disabledReason ? <p className="mt-1 text-[11px] text-slate-500">{disabledReason}</p> : null}
+      <p className="mt-1 text-[11px] text-[var(--app-subtle)]">Timezone: {timezone}</p>
+      {disabledReason ? <p className="mt-1 text-[11px] text-[var(--app-subtle)]">{disabledReason}</p> : null}
 
       {open && !disabled ? (
-        <div className="absolute z-30 mt-2 w-[320px] rounded-md border border-slate-700 bg-slate-950 p-3 shadow-2xl">
+        <div className="absolute z-30 mt-2 w-[320px] rounded-md border border-[var(--app-border)] bg-white p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"
               onClick={() =>
                 setVisibleMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
               }
-              className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+              className="rounded border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
             >
               Prev
             </button>
-            <p className="text-sm font-medium text-slate-100">
+            <p className="text-sm font-medium text-[var(--app-text)]">
               {visibleMonth.toLocaleString(undefined, { month: "long", year: "numeric" })}
             </p>
             <button
@@ -402,13 +458,13 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
               onClick={() =>
                 setVisibleMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
               }
-              className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+              className="rounded border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
             >
               Next
             </button>
           </div>
 
-          <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-wide text-slate-500">
+          <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-wide text-[var(--app-subtle)]">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
               <span key={label}>{label}</span>
             ))}
@@ -424,10 +480,10 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
                   onClick={() => handleDaySelect(cell.date as Date)}
                   className={`rounded px-2 py-1 text-xs ${
                     selectedDateKey === cell.key
-                      ? "bg-[#7C3AED] text-white"
+                      ? "bg-[#1D3FD0] text-white"
                       : cell.disabled
-                        ? "cursor-not-allowed text-slate-600"
-                        : "text-slate-200 hover:bg-slate-800"
+                        ? "cursor-not-allowed text-[var(--app-muted)]"
+                        : "text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
                   }`}
                 >
                   {cell.date.getDate()}
@@ -441,13 +497,13 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
           </div>
 
           <div className="mt-3">
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-[var(--app-muted)]">
               Time
               <select
                 value={timeOptions.includes(selectedTime) ? selectedTime : ""}
                 onChange={(event) => handleTimeSelect(event.target.value)}
                 disabled={!selectedDate || !timeOptions.length}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none disabled:opacity-50"
+                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
               >
                 {!selectedDate ? <option value="">Select a day first</option> : null}
                 {selectedDate && !timeOptions.length ? <option value="">No future times left today</option> : null}
@@ -467,14 +523,14 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
                 onChange("");
                 setOpen(false);
               }}
-              className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+              className="rounded border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
             >
               Post now
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded bg-[#7C3AED] px-2 py-1 text-xs font-medium text-white hover:bg-[#6D28D9]"
+              className="rounded bg-[#1D3FD0] px-2 py-1 text-xs font-medium text-white hover:bg-[#1633B8]"
             >
               Done
             </button>
@@ -733,32 +789,51 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
       ...universalFields,
       privacy: "",
     });
-    const universalPrivacy = normalizeText(universalFields.privacy)?.toLowerCase() || null;
+    const universalPrivacy = normalizeText(universalFields.privacy) || null;
 
-    const targets = PLATFORM_ORDER.flatMap((platform) => {
+    const targets: Array<Record<string, unknown>> = [];
+    for (const platform of PLATFORM_ORDER) {
       const draft = targetDrafts[platform];
-      if (!draft?.enabled || !draft.connected_account_id) return [];
+      if (!draft?.enabled || !draft.connected_account_id) continue;
 
       const target: Record<string, unknown> = {
         platform,
         connected_account_id: draft.connected_account_id,
       };
 
-      const privacyOptions = PRIVACY_OPTIONS_BY_PLATFORM[platform] || [];
-      let overridePayload: PublishPayloadFields | null = draft.use_override && hasAnyOverrideValue(draft.override)
+      const platformAccounts = accountsByPlatform[platform] || [];
+      const selectedAccount = platformAccounts.find((account) => account.id === draft.connected_account_id);
+      const privacyOptions = privacyOptionsForTarget(platform, selectedAccount);
+
+      const useOverridePayload = platform === "tiktok" ? true : draft.use_override;
+      let overridePayload: PublishPayloadFields | null = useOverridePayload && hasAnyOverrideValue(draft.override)
         ? toPayloadFields(draft.override)
         : null;
 
-      const overridePrivacy = draft.use_override ? normalizeText(draft.override.privacy)?.toLowerCase() || null : null;
+      const overridePrivacy = useOverridePayload ? normalizeText(draft.override.privacy) || null : null;
       if (privacyOptions.length) {
-        const resolvedPrivacy = overridePrivacy ?? universalPrivacy;
+        const resolvedPrivacy = platform === "tiktok" ? overridePrivacy : (overridePrivacy ?? universalPrivacy);
+        if (platform === "tiktok" && !resolvedPrivacy) {
+          setError(
+            "TikTok requires an explicit privacy selection. Choose a privacy option in the TikTok platform section."
+          );
+          return;
+        }
         if (resolvedPrivacy) {
+          const matchingOption = privacyOptions.find(
+            (option) => option.value.toLowerCase() === resolvedPrivacy.toLowerCase()
+          );
+          if (!matchingOption) {
+            const allowed = privacyOptions.map((option) => option.label).join(", ");
+            setError(`Invalid TikTok privacy selection. Allowed options: ${allowed}`);
+            return;
+          }
           overridePayload = {
             caption: overridePayload?.caption ?? null,
             title: overridePayload?.title ?? null,
             description: overridePayload?.description ?? null,
             hashtags: overridePayload?.hashtags ?? null,
-            privacy: resolvedPrivacy,
+            privacy: matchingOption.value,
             scheduled_for: overridePayload?.scheduled_for ?? null,
           };
         }
@@ -776,8 +851,8 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
       if (overridePayload) {
         target.override = overridePayload;
       }
-      return [target];
-    });
+      targets.push(target);
+    }
 
     if (!targets.length) {
       setError("Select at least one platform and connected account.");
@@ -847,33 +922,33 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-white">Publish to Social</h3>
-          <p className="mt-1 text-xs text-slate-400">
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">Publish to Social</h3>
+          <p className="mt-1 text-xs text-[var(--app-muted)]">
             Publish from a ready export. One publish job is created per selected platform/account.
           </p>
         </div>
-        <Link href="/connections" className="text-xs text-[#A78BFA] hover:text-[#C4B5FD]">
+        <Link href="/connections" className="text-xs text-[#1D3FD0] hover:text-[#1633B8]">
           Manage Connections
         </Link>
       </div>
 
-      {message ? <p className="text-sm text-emerald-300">{message}</p> : null}
-      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="text-sm text-red-700">{error}</p> : null}
 
       {loadingMeta ? (
-        <p className="inline-flex items-center gap-2 text-sm text-slate-300">
+        <p className="inline-flex items-center gap-2 text-sm text-[var(--app-muted)]">
           <LoadingSpinner size="sm" />
           Loading social providers...
         </p>
       ) : null}
 
-      <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-        <label className="text-xs text-slate-400">
+      <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+        <label className="text-xs text-[var(--app-muted)]">
           Ready Export Asset
           <select
             value={selectedExportId}
             onChange={(event) => setSelectedExportId(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+            className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
           >
             {readyExports.length ? null : <option value="">No ready exports available</option>}
             {readyExports.map((item) => (
@@ -884,37 +959,37 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           </select>
         </label>
         {!readyExports.length ? (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-[var(--app-subtle)]">
             Create and wait for a ready export before publishing.
           </p>
         ) : null}
       </div>
 
-      <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">Universal Content</h4>
+      <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Universal Content</h4>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => void handleGenerateCopy()}
             disabled={generatingCopy}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+            className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs font-medium text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
           >
             {generatingCopy ? "Generating..." : "Generate Copy"}
           </button>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-[var(--app-subtle)]">
             Fills title, caption, and description from this clip&apos;s AI copy.
           </p>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <label className="text-xs text-slate-400">
+          <label className="text-xs text-[var(--app-muted)]">
             Title
             <input
               value={universalFields.title}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, title: event.target.value }))}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-[var(--app-muted)]">
             YouTube Privacy (default)
             <div className="mt-1 flex flex-wrap gap-2">
               <button
@@ -922,8 +997,8 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                 onClick={() => setUniversalFields((prev) => ({ ...prev, privacy: "" }))}
                 className={`rounded-full border px-3 py-1 text-xs ${
                   !universalFields.privacy
-                    ? "border-[#7C3AED] bg-[#7C3AED]/20 text-[#C4B5FD]"
-                    : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                    ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-[#1633B8]"
+                    : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
                 }`}
               >
                 Not set
@@ -935,46 +1010,46 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                   onClick={() => setUniversalFields((prev) => ({ ...prev, privacy: option.value }))}
                   className={`rounded-full border px-3 py-1 text-xs ${
                     universalFields.privacy === option.value
-                      ? "border-[#7C3AED] bg-[#7C3AED]/20 text-[#C4B5FD]"
-                      : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                      ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-[#1633B8]"
+                      : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
                   }`}
                 >
                   {option.label}
                 </button>
               ))}
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">
+            <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
               Applied only to providers that support privacy controls.
             </p>
           </div>
-          <label className="text-xs text-slate-400 md:col-span-2">
+          <label className="text-xs text-[var(--app-muted)] md:col-span-2">
             Caption
             <textarea
               value={universalFields.caption}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, caption: event.target.value }))}
               rows={2}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
-          <label className="text-xs text-slate-400 md:col-span-2">
+          <label className="text-xs text-[var(--app-muted)] md:col-span-2">
             Description
             <textarea
               value={universalFields.description}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, description: event.target.value }))}
               rows={3}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
-          <label className="text-xs text-slate-400">
+          <label className="text-xs text-[var(--app-muted)]">
             Hashtags
             <input
               value={universalFields.hashtags}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, hashtags: event.target.value }))}
               placeholder="#postbandit #podcast"
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-[var(--app-muted)]">
             Schedule Time (optional)
             <SchedulePicker
               value={universalFields.scheduled_for}
@@ -1001,24 +1076,34 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
             ? platformAccounts.filter((account) => isFacebookPageDestination(account))
             : platformAccounts;
           const draft = targetDrafts[platform];
+          const selectedAccount = selectableAccounts.find(
+            (account) => account.id === draft?.connected_account_id
+          );
           const latestJob = latestJobsByPlatform.get(platform);
           const providerName = provider?.display_name || platform;
           const providerReady = provider?.setup_status === "ready";
           const providerSupportsSchedule = Boolean(provider?.capabilities?.supports_schedule);
           const hasConnectedAccounts = selectableAccounts.length > 0;
-          const privacyOptions = PRIVACY_OPTIONS_BY_PLATFORM[platform] || [];
+          const privacyOptions = privacyOptionsForTarget(platform, selectedAccount);
           const reconnectRequired = isReconnectRequiredXJob(latestJob);
+          const providerSetupDetails = (provider?.setup_details || {}) as Record<string, unknown>;
+          const threadsSupportsMedia = Boolean(provider?.capabilities?.supports_video_upload);
+          const threadsPublishTextReady = Boolean(providerSetupDetails.publish_text_ready);
+          const threadsPublishMediaReady = Boolean(providerSetupDetails.publish_media_ready);
+          const tiktokDirectReady = Boolean(providerSetupDetails.publish_direct_ready);
+          const tiktokUploadReady = Boolean(providerSetupDetails.publish_upload_ready);
+          const showOverrideEditor = Boolean(draft?.use_override || platform === "tiktok");
 
           return (
-            <div key={platform} className="rounded-md border border-slate-700 bg-slate-900/30 p-3">
+            <div key={platform} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="inline-flex items-center gap-2 text-sm text-slate-200">
+                <label className="inline-flex items-center gap-2 text-sm text-[var(--app-text)]">
                   <input
                     type="checkbox"
                     checked={draft?.enabled || false}
                     disabled={!providerReady || !hasConnectedAccounts}
                     onChange={(event) => handlePlatformToggle(platform, event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-[#7C3AED] focus:ring-[#7C3AED]"
+                    className="h-4 w-4 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
                   />
                   <span className="font-medium">{providerName}</span>
                 </label>
@@ -1027,11 +1112,11 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                     {prettyStatus(latestJob.status)}
                   </span>
                 ) : (
-                  <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">No jobs yet</span>
+                  <span className="rounded-full bg-[var(--app-surface-soft)] px-2.5 py-1 text-xs text-[var(--app-muted)]">No jobs yet</span>
                 )}
               </div>
 
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2 text-xs text-[var(--app-muted)]">
                 {!providerReady
                   ? provider?.setup_message || "Provider is not configured"
                   : platform === "facebook"
@@ -1045,24 +1130,39 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                       : "No connected accounts. Connect one first."}
               </p>
               {platform === "threads" ? (
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Threads currently publishes text posts. Media/video publish is deferred.
+                <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                  {threadsSupportsMedia
+                    ? threadsPublishMediaReady
+                      ? "Threads text and video publishing are enabled."
+                      : threadsPublishTextReady
+                        ? "Threads text publishing is enabled. Video publishing may be blocked until app permissions/tester setup are complete."
+                        : "Connect a Threads profile to publish text/video."
+                    : "Threads text publishing is enabled. Video publishing is not enabled for this provider."}
                 </p>
               ) : null}
               {platform === "facebook" ? (
-                <p className="mt-1 text-[11px] text-slate-500">
+                <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                   Facebook Pages support automated publishing. Personal profile sharing is manual.
+                </p>
+              ) : null}
+              {platform === "tiktok" ? (
+                <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                  {tiktokDirectReady
+                    ? "TikTok direct post is enabled. If direct post is blocked at runtime, PostBandit falls back to TikTok inbox upload."
+                    : tiktokUploadReady
+                      ? "TikTok direct post is unavailable right now; inbox upload fallback will be used."
+                      : "Connect TikTok and complete app setup to enable publish."}
                 </p>
               ) : null}
 
               <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <label className="text-xs text-slate-400">
+                <label className="text-xs text-[var(--app-muted)]">
                   {platform === "facebook" ? "Page Destination" : "Account"}
                   <select
                     value={draft?.connected_account_id || ""}
                     onChange={(event) => handlePlatformAccountChange(platform, event.target.value)}
                     disabled={!hasConnectedAccounts}
-                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none disabled:opacity-50"
+                    className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
                   >
                     {selectableAccounts.length ? null : (
                       <option value="">
@@ -1077,42 +1177,50 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                   </select>
                 </label>
 
-                <label className="inline-flex items-center gap-2 text-xs text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={draft?.use_override || false}
-                    onChange={(event) => handleOverrideToggle(platform, event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-[#7C3AED] focus:ring-[#7C3AED]"
-                  />
-                  Use per-platform overrides
-                </label>
+                {platform === "tiktok" ? (
+                  <p className="inline-flex items-center text-xs text-[var(--app-muted)]">
+                    TikTok privacy selection is required.
+                  </p>
+                ) : (
+                  <label className="inline-flex items-center gap-2 text-xs text-[var(--app-muted)]">
+                    <input
+                      type="checkbox"
+                      checked={draft?.use_override || false}
+                      onChange={(event) => handleOverrideToggle(platform, event.target.checked)}
+                      className="h-4 w-4 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
+                    />
+                    Use per-platform overrides
+                  </label>
+                )}
               </div>
 
-              {draft?.use_override ? (
-                <div className="mt-3 grid gap-3 rounded-md border border-slate-700 bg-slate-950/50 p-3 md:grid-cols-2">
-                  <label className="text-xs text-slate-400">
+              {showOverrideEditor ? (
+                <div className="mt-3 grid gap-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3 md:grid-cols-2">
+                  <label className="text-xs text-[var(--app-muted)]">
                     Title
                     <input
                       value={draft.override.title}
                       onChange={(event) => handleOverrideFieldChange(platform, "title", event.target.value)}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
                   </label>
-                  <label className="text-xs text-slate-400">
+                  <label className="text-xs text-[var(--app-muted)]">
                     Privacy
                     {privacyOptions.length ? (
                       <div className="mt-1 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleOverrideFieldChange(platform, "privacy", "")}
-                          className={`rounded-full border px-3 py-1 text-xs ${
-                            !draft.override.privacy
-                              ? "border-[#7C3AED] bg-[#7C3AED]/20 text-[#C4B5FD]"
-                              : "border-slate-700 text-slate-300 hover:bg-slate-800"
-                          }`}
-                        >
-                          Use default
-                        </button>
+                        {platform !== "tiktok" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOverrideFieldChange(platform, "privacy", "")}
+                            className={`rounded-full border px-3 py-1 text-xs ${
+                              !draft.override.privacy
+                                ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-[#1633B8]"
+                                : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
+                            }`}
+                          >
+                            Use default
+                          </button>
+                        ) : null}
                         {privacyOptions.map((option) => (
                           <button
                             key={`${platform}-privacy-${option.value}`}
@@ -1120,45 +1228,50 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                             onClick={() => handleOverrideFieldChange(platform, "privacy", option.value)}
                             className={`rounded-full border px-3 py-1 text-xs ${
                               draft.override.privacy === option.value
-                                ? "border-[#7C3AED] bg-[#7C3AED]/20 text-[#C4B5FD]"
-                                : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                                ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-[#1633B8]"
+                                : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
                             }`}
                           >
-                            {option.label}
+                            {privacyLabelForValue(platform, option.value)}
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-1 text-[11px] text-slate-500">Privacy is not configurable for this provider.</p>
+                      <p className="mt-1 text-[11px] text-[var(--app-subtle)]">Privacy is not configurable for this provider.</p>
                     )}
+                    {platform === "tiktok" ? (
+                      <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                        Required by TikTok. Select one option returned for the connected TikTok account.
+                      </p>
+                    ) : null}
                   </label>
-                  <label className="text-xs text-slate-400 md:col-span-2">
+                  <label className="text-xs text-[var(--app-muted)] md:col-span-2">
                     Caption
                     <textarea
                       value={draft.override.caption}
                       onChange={(event) => handleOverrideFieldChange(platform, "caption", event.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
                   </label>
-                  <label className="text-xs text-slate-400 md:col-span-2">
+                  <label className="text-xs text-[var(--app-muted)] md:col-span-2">
                     Description
                     <textarea
                       value={draft.override.description}
                       onChange={(event) => handleOverrideFieldChange(platform, "description", event.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
                   </label>
-                  <label className="text-xs text-slate-400">
+                  <label className="text-xs text-[var(--app-muted)]">
                     Hashtags
                     <input
                       value={draft.override.hashtags}
                       onChange={(event) => handleOverrideFieldChange(platform, "hashtags", event.target.value)}
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
                   </label>
-                  <div className="text-xs text-slate-400">
+                  <div className="text-xs text-[var(--app-muted)]">
                     Schedule Time
                     <SchedulePicker
                       value={draft.override.scheduled_for}
@@ -1172,35 +1285,40 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                 </div>
               ) : null}
 
-              {latestJob?.error_message ? <p className="mt-3 text-xs text-red-400">{latestJob.error_message}</p> : null}
+              {latestJob?.error_message ? <p className="mt-3 text-xs text-red-700">{latestJob.error_message}</p> : null}
               {platform === "facebook" ? (
-                <div className="mt-3 rounded-md border border-slate-700 bg-slate-950/50 p-3">
-                  <p className="text-xs font-medium text-slate-200">Share to personal profile (manual)</p>
-                  <p className="mt-1 text-[11px] text-slate-500">
+                <div className="mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                  <p className="text-xs font-medium text-[var(--app-text)]">Share to personal profile (manual)</p>
+                  <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                     Opens Facebook&apos;s manual share flow. This does not create a publish job.
                   </p>
                   <button
                     type="button"
                     onClick={openFacebookManualShare}
                     disabled={!selectedExportId}
-                    className="mt-2 inline-flex rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                    className="mt-2 inline-flex rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
                   >
                     Share to Personal Profile
                   </button>
                 </div>
               ) : null}
               {platform === "x" && reconnectRequired ? (
-                <p className="mt-1 text-[11px] text-amber-300">
+                <p className="mt-1 text-[11px] text-amber-700">
                   Reconnect X in{" "}
-                  <Link href="/connections" className="underline hover:text-amber-200">
+                  <Link href="/connections" className="underline hover:text-amber-800">
                     Connections
                   </Link>{" "}
                   to grant media permissions, then publish again.
                 </p>
               ) : null}
               {platform === "x" && latestJob?.error_message && !reconnectRequired ? (
-                <p className="mt-1 text-[11px] text-amber-300">
+                <p className="mt-1 text-[11px] text-amber-700">
                   X media posting can fail due to account-tier limits, provider credits, or media policy restrictions.
+                </p>
+              ) : null}
+              {platform === "tiktok" && latestJob?.status === "waiting_user_action" ? (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  TikTok may require you to finish posting in the TikTok app inbox, or to complete app review/setup for direct post.
                 </p>
               ) : null}
               {latestJob?.external_post_url ? (
@@ -1208,7 +1326,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                   href={latestJob.external_post_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-3 inline-flex text-xs text-[#A78BFA] hover:text-[#C4B5FD]"
+                  className="mt-3 inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                 >
                   Open published post
                 </a>
@@ -1220,7 +1338,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                   type="button"
                   onClick={() => void handleRetry(latestJob.id)}
                   disabled={retryingJobId === latestJob.id}
-                  className="mt-3 inline-flex rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                  className="mt-3 inline-flex rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
                 >
                   {retryingJobId === latestJob.id ? "Retrying..." : "Retry"}
                 </button>
@@ -1235,7 +1353,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           type="button"
           onClick={() => void handleCreatePublishJobs()}
           disabled={publishing || !selectedExportId || !readyExports.length}
-          className="rounded-md bg-[#7C3AED] px-4 py-2 text-sm font-medium text-white hover:bg-[#6D28D9] disabled:opacity-60"
+          className="rounded-md bg-[#1D3FD0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
         >
           {publishing ? "Publishing..." : "Publish Selected Platforms"}
         </button>
@@ -1243,18 +1361,18 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           type="button"
           onClick={() => void loadPublishJobs(selectedExportId)}
           disabled={loadingJobs || !selectedExportId}
-          className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+          className="rounded-md border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
         >
           {loadingJobs ? "Refreshing..." : "Refresh Status"}
         </button>
       </div>
 
       {publishJobs.length ? (
-        <div className="space-y-2 rounded-md border border-slate-700 bg-slate-900/40 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Per-platform Publish Jobs</p>
+        <div className="space-y-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Per-platform Publish Jobs</p>
           {publishJobs.map((job) => (
-            <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2">
-              <div className="text-xs text-slate-300">
+            <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+              <div className="text-xs text-[var(--app-muted)]">
                 <span className="font-medium">{providersByPlatform[job.platform]?.display_name || job.platform}</span>{" "}
                 • {job.id.slice(0, 8)}
                 {job.external_post_id ? ` • ${job.external_post_id}` : ""}

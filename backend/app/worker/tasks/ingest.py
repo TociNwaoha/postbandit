@@ -19,10 +19,12 @@ from app.services.youtube import (
     classify_yt_dlp_error,
     embed_url_for_video_id,
     extract_single_video_metadata,
+    is_non_retryable_blocked_error_code,
     normalize_youtube_input,
     ytdlp_common_options,
     transition_import_state,
 )
+from app.services.youtube.blocked_source_cache import set_blocked_source_hint_sync
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.worker.tasks.transcribe import transcribe_job
 
@@ -330,6 +332,12 @@ def ingest_job(self, video_id: str):
 
     except DownloadError as exc:
         classification = classify_yt_dlp_error(exc)
+        logger.info(
+            "[youtube_blocked_code_distribution] video_id=%s code=%s fallback=%s",
+            video_id,
+            classification.code,
+            classification.fallback_action,
+        )
 
         with SyncSessionLocal() as db:
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
@@ -399,6 +407,11 @@ def ingest_job(self, video_id: str):
                             video.embed_url = embed_url_for_video_id(normalized.normalized_video_id)
                     except Exception:
                         pass
+                if is_non_retryable_blocked_error_code(classification.code) and video.source_video_id:
+                    set_blocked_source_hint_sync(
+                        source_video_id=video.source_video_id,
+                        error_code=classification.code,
+                    )
 
             ingest_row = _latest_ingest_job(db, video_uuid)
             if ingest_row:

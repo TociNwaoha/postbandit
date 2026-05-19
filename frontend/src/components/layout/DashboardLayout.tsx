@@ -10,7 +10,7 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ title, children }: DashboardLayoutProps) {
   return (
-    <div className="flex min-h-screen bg-[#0F172A]">
+    <div className="app-shell app-body flex min-h-screen">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
         <Header title={title} />

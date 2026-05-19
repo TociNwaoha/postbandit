@@ -13,13 +13,14 @@ from app.models.clip import Clip, ClipStatus
 from app.models.exclude_zone import ExcludeZone
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
-from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
+from app.models.video import ClipProfile, Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, extract_thumbnail
 from app.services.ai_copy import AICopyUnavailableError, generate_clip_copy, provider_configured
 from app.services.r2 import r2_client
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
 from app.services.scoring import (
+    ClipSelectionProfile,
     CandidateWindow,
     apply_exclude_zones,
     build_chunks,
@@ -29,6 +30,7 @@ from app.services.scoring import (
     calculate_hook_score,
     extract_window_text,
     generate_candidate_ranges,
+    get_clip_selection_profile,
     select_top_candidates,
 )
 from app.services.storage import clip_thumbnail_key
@@ -36,13 +38,19 @@ from app.services.storage import clip_thumbnail_key
 logger = logging.getLogger(__name__)
 
 
-MIN_CLIP_DURATION_SEC = 15.0
-MAX_CLIP_DURATION_SEC = 40.0
-TOP_N_CLIPS = 10
-MAX_OVERLAP_RATIO = 0.55
-PAUSE_GAP_SEC = 1.0
 ENERGY_BUCKET_SEC = 0.5
-MIN_WORDS_PER_CLIP = 20
+LONG_FORM_CLIP_PROFILE_ALIASES = {"long_form_speaking"}
+
+
+def _resolve_clip_profile(video: Video) -> ClipProfile:
+    metadata = video.external_metadata_json or {}
+    if isinstance(metadata, dict):
+        raw = metadata.get("clip_profile")
+        if isinstance(raw, str):
+            normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
+            if normalized == ClipProfile.sermon.value or normalized in LONG_FORM_CLIP_PROFILE_ALIASES:
+                return ClipProfile.sermon
+    return ClipProfile.viral
 
 
 def _latest_score_job(db, video_uuid: uuid.UUID) -> Job | None:
@@ -88,7 +96,8 @@ def _build_scored_candidates(
     transcript_words: list[TranscriptSegment],
     exclude_zones: list[ExcludeZone],
     audio_path: str,
-) -> tuple[list[CandidateWindow], dict[str, int | float]]:
+    selection_profile: ClipSelectionProfile,
+) -> tuple[list[CandidateWindow], dict[str, int | float | str]]:
     tokens = build_word_tokens(transcript_words)
     if not tokens:
         return [], {
@@ -98,13 +107,14 @@ def _build_scored_candidates(
             "selected_candidate_count": 0,
         }
 
-    chunks = build_chunks(tokens, pause_gap_sec=PAUSE_GAP_SEC)
+    chunks = build_chunks(tokens, pause_gap_sec=selection_profile.pause_gap_sec)
     candidate_ranges = generate_candidate_ranges(
         chunks=chunks,
         tokens=tokens,
-        min_duration_sec=MIN_CLIP_DURATION_SEC,
-        max_duration_sec=MAX_CLIP_DURATION_SEC,
-        min_words=MIN_WORDS_PER_CLIP,
+        min_duration_sec=selection_profile.min_duration_sec,
+        max_duration_sec=selection_profile.max_duration_sec,
+        min_words=selection_profile.min_words,
+        chunk_merge_gap_sec=selection_profile.chunk_merge_gap_sec,
     )
 
     energy_profile = build_energy_profile(audio_path, bucket_size_sec=ENERGY_BUCKET_SEC)
@@ -116,19 +126,28 @@ def _build_scored_candidates(
             start=start,
             end=end,
             zones=exclude_zones,
-            min_duration_sec=MIN_CLIP_DURATION_SEC,
+            min_duration_sec=selection_profile.min_duration_sec,
         )
         if not adjusted:
             continue
 
         adjusted_start, adjusted_end = adjusted
         transcript_text = extract_window_text(tokens, adjusted_start, adjusted_end)
-        if len(transcript_text.split()) < MIN_WORDS_PER_CLIP:
+        if len(transcript_text.split()) < selection_profile.min_words:
             continue
 
-        hook_score = calculate_hook_score(transcript_text, adjusted_start)
+        hook_score = calculate_hook_score(
+            transcript_text,
+            adjusted_start,
+            hook_word_bonus_min=selection_profile.hook_word_bonus_min,
+            hook_word_bonus_max=selection_profile.hook_word_bonus_max,
+        )
         energy_score = calculate_energy_score(adjusted_start, adjusted_end, energy_profile)
-        combined_score = round((0.65 * hook_score) + (0.35 * energy_score), 4)
+        combined_score = round(
+            (selection_profile.hook_weight * hook_score)
+            + (selection_profile.energy_weight * energy_score),
+            4,
+        )
 
         filtered_candidates.append(
             CandidateWindow(
@@ -143,10 +162,12 @@ def _build_scored_candidates(
 
     selected = select_top_candidates(
         candidates=filtered_candidates,
-        top_n=TOP_N_CLIPS,
-        max_overlap_ratio=MAX_OVERLAP_RATIO,
+        top_n=selection_profile.top_n,
+        max_overlap_ratio=selection_profile.max_overlap_ratio,
+        clip_profile=selection_profile.clip_profile,
     )
     stats = {
+        "clip_profile": selection_profile.clip_profile.value,
         "word_count": len(tokens),
         "raw_candidate_count": raw_count,
         "filtered_candidate_count": len(filtered_candidates),
@@ -161,6 +182,8 @@ def score_job(self, video_id: str):
     logger.info("[score] score_job received for video_id=%s", video_id)
     video_uuid: uuid.UUID | None = None
     storage_key: str | None = None
+    clip_profile = ClipProfile.viral
+    selection_profile = get_clip_selection_profile(clip_profile)
     workspace = None
 
     try:
@@ -173,6 +196,8 @@ def score_job(self, video_id: str):
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
             if not video:
                 raise ValueError(f"Video not found: {video_id}")
+            clip_profile = _resolve_clip_profile(video)
+            selection_profile = get_clip_selection_profile(clip_profile)
             workspace = start_workspace(
                 job_type="score",
                 workspace_key=f"{video_id}-score-{self.request.id or uuid.uuid4().hex[:8]}",
@@ -259,20 +284,23 @@ def score_job(self, video_id: str):
             )
 
             logger.info(
-                "[score] transcript loaded for video_id=%s word_rows=%s exclude_zones=%s",
+                "[score] transcript loaded for video_id=%s word_rows=%s exclude_zones=%s clip_profile=%s",
                 video_id,
                 len(transcript_words),
                 len(exclude_zones),
+                selection_profile.clip_profile.value,
             )
 
         selected_candidates, stats = _build_scored_candidates(
             transcript_words=transcript_words,
             exclude_zones=exclude_zones,
             audio_path=str(local_audio_path),
+            selection_profile=selection_profile,
         )
         logger.info(
-            "[score] candidate counts video_id=%s raw=%s filtered=%s selected=%s",
+            "[score] candidate counts video_id=%s profile=%s raw=%s filtered=%s selected=%s",
             video_id,
+            selection_profile.clip_profile.value,
             stats["raw_candidate_count"],
             stats["filtered_candidate_count"],
             stats["selected_candidate_count"],

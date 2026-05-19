@@ -19,20 +19,20 @@ interface VideoListProps {
 }
 
 const statusStyles: Record<string, string> = {
-  queued: "bg-slate-700/80 text-slate-200",
-  downloading: "bg-blue-500/20 text-blue-300 animate-pulse",
-  transcribing: "bg-blue-500/20 text-blue-300 animate-pulse",
-  scoring: "bg-purple-500/20 text-purple-300 animate-pulse",
-  ready: "bg-emerald-500/20 text-emerald-300",
-  error: "bg-red-500/20 text-red-300",
-  metadata_extracting: "bg-blue-500/20 text-blue-300 animate-pulse",
-  downloadable: "bg-blue-500/20 text-blue-300 animate-pulse",
-  blocked: "bg-amber-500/20 text-amber-300",
-  replacement_upload_required: "bg-amber-500/20 text-amber-300",
-  helper_required: "bg-amber-500/20 text-amber-300",
-  embed_only: "bg-slate-600/50 text-slate-200",
-  failed_retryable: "bg-red-500/20 text-red-300",
-  failed_terminal: "bg-red-500/20 text-red-300",
+  queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  downloading: "bg-blue-500/20 text-blue-700 animate-pulse",
+  transcribing: "bg-blue-500/20 text-blue-700 animate-pulse",
+  scoring: "bg-purple-500/20 text-purple-700 animate-pulse",
+  ready: "bg-emerald-500/20 text-emerald-700",
+  error: "bg-red-500/20 text-red-700",
+  metadata_extracting: "bg-blue-500/20 text-blue-700 animate-pulse",
+  downloadable: "bg-blue-500/20 text-blue-700 animate-pulse",
+  blocked: "bg-amber-500/20 text-amber-700",
+  replacement_upload_required: "bg-amber-500/20 text-amber-700",
+  helper_required: "bg-amber-500/20 text-amber-700",
+  embed_only: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  failed_retryable: "bg-red-500/20 text-red-700",
+  failed_terminal: "bg-red-500/20 text-red-700",
 };
 
 const YOUTUBE_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist"]);
@@ -162,7 +162,7 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
   if (loading) {
     return (
       <Card className="min-h-72 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-slate-300">
+        <div className="flex items-center gap-3 text-[var(--app-muted)]">
           <LoadingSpinner />
           Loading videos...
         </div>
@@ -173,7 +173,7 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
   if (error) {
     return (
       <Card className="min-h-72 flex flex-col items-center justify-center text-center">
-        <p className="text-red-400">{error}</p>
+        <p className="text-red-700">{error}</p>
         <Button onClick={() => void onRefresh()} className="mt-4">
           Retry
         </Button>
@@ -184,8 +184,8 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
   if (!sortedVideos.length) {
     return (
       <Card className="min-h-80 flex flex-col items-center justify-center text-center">
-        <p className="text-2xl font-semibold text-white">No videos yet</p>
-        <p className="mt-2 text-slate-400">Upload a video or import from YouTube to get started</p>
+        <p className="text-2xl font-semibold text-[var(--app-text)]">No videos yet</p>
+        <p className="mt-2 text-[var(--app-muted)]">Upload a video or import from YouTube to get started</p>
         <Button className="mt-6" onClick={onOpenUpload}>
           Get Started
         </Button>
@@ -195,8 +195,8 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
 
   return (
     <div className="space-y-4">
-      {actionMessage && <p className="text-sm text-emerald-300">{actionMessage}</p>}
-      {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
+      {actionMessage && <p className="text-sm text-emerald-700">{actionMessage}</p>}
+      {deleteError && <p className="text-sm text-red-700">{deleteError}</p>}
       {sortedVideos.map((video) => {
         const thumbnailUrl = video.thumbnail_url;
         const showThumbnail = Boolean(thumbnailUrl && !failedThumbnailUrls[thumbnailUrl]);
@@ -218,7 +218,7 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                 <img
                   src={thumbnailUrl!}
                   alt={video.title ? `${video.title} thumbnail` : "Video thumbnail"}
-                  className="h-20 w-36 rounded-lg border border-slate-600 object-cover flex-shrink-0 bg-slate-700/60 group-hover:border-[#7C3AED]/70 transition-colors"
+                  className="h-20 w-36 rounded-lg border border-[var(--app-border)] object-cover flex-shrink-0 bg-[var(--app-surface-soft)] group-hover:border-[#1D3FD0]/70 transition-colors"
                   onError={() => {
                     if (!thumbnailUrl) return;
                     setFailedThumbnailUrls((previous) =>
@@ -227,20 +227,21 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                   }}
                 />
               ) : (
-                <div className="h-20 w-36 rounded-lg bg-slate-700/60 border border-slate-600 flex-shrink-0 group-hover:border-[#7C3AED]/70 transition-colors" />
+                <div className="h-20 w-36 rounded-lg bg-[var(--app-surface-soft)] border border-[var(--app-border)] flex-shrink-0 group-hover:border-[#1D3FD0]/70 transition-colors" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="truncate text-base font-semibold text-white group-hover:text-[#A78BFA] transition-colors">
+                  <h3 className="truncate text-base font-semibold text-[var(--app-text)] group-hover:text-[#1D3FD0] transition-colors">
                     {video.title || "Untitled video"}
                   </h3>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[stateKey] || statusStyles.queued}`}>
                     {stateLabel}
                   </span>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-400">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[var(--app-muted)]">
                   {formatDuration(video.duration_sec) && <span>{formatDuration(video.duration_sec)}</span>}
                   {video.clip_count > 0 && <span>{video.clip_count} clips</span>}
+                  <span>Profile: {video.clip_profile === "sermon" ? "Long-form Speaking" : "Viral"}</span>
                   <span>{formatRelativeTime(video.created_at)}</span>
                   {video.source_type === "youtube_playlist" && video.playlist_index !== null ? (
                     <span>Playlist item #{(video.playlist_index || 0) + 1}</span>
@@ -248,19 +249,19 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                 </div>
                 {showBlockedActions ? (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-300">
+                    <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-700">
                       Blocked on server
                     </span>
-                    <span className="rounded bg-blue-500/20 px-2 py-0.5 text-[11px] text-blue-300">
+                    <span className="rounded bg-blue-500/20 px-2 py-0.5 text-[11px] text-blue-700">
                       Can still embed
                     </span>
-                    <span className="rounded bg-slate-700 px-2 py-0.5 text-[11px] text-slate-200">
+                    <span className="rounded bg-[var(--app-surface-soft)] px-2 py-0.5 text-[11px] text-[var(--app-text)]">
                       Upload file manually
                     </span>
                   </div>
                 ) : null}
                 {showErrorText ? (
-                  <p className="mt-2 text-xs text-red-300">{video.error_message}</p>
+                  <p className="mt-2 text-xs text-red-700">{video.error_message}</p>
                 ) : null}
               </div>
             </Link>
@@ -271,14 +272,14 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                   type="button"
                   onClick={() => void handlePrepareFullExport(video.id)}
                   disabled={preparingVideoId === video.id}
-                  className="rounded-md border border-[#7C3AED]/40 bg-[#7C3AED]/10 px-3 py-1.5 text-xs font-medium text-[#C4B5FD] hover:bg-[#7C3AED]/20 disabled:opacity-50"
+                  className="rounded-md border border-[#1D3FD0]/40 bg-[#1D3FD0]/10 px-3 py-1.5 text-xs font-medium text-[#1633B8] hover:bg-[#1D3FD0]/20 disabled:opacity-50"
                 >
                   {preparingVideoId === video.id ? "Preparing..." : "Prepare Full Export"}
                 </button>
               ) : null}
               <div className="relative">
                 <button
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                  className="rounded-lg p-2 text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)] hover:text-[var(--app-text)] transition-colors"
                   onClick={() => setMenuVideoId(menuVideoId === video.id ? null : video.id)}
                   aria-label="More options"
                 >
@@ -289,9 +290,9 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                   </svg>
                 </button>
                 {menuVideoId === video.id && (
-                  <div className="absolute right-0 mt-1 w-28 rounded-lg border border-slate-700 bg-[#0F172A] p-1 shadow-xl">
+                  <div className="absolute right-0 mt-1 w-28 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-xl">
                     <button
-                      className="w-full rounded-md px-3 py-2 text-left text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                      className="w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-500/10 disabled:opacity-50"
                       onClick={() => void handleDeleteVideo(video.id)}
                       disabled={deletingVideoId === video.id}
                     >

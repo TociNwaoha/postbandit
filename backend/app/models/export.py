@@ -30,6 +30,12 @@ class CaptionFormat(str, enum.Enum):
     srt = "srt"
 
 
+class CaptionColorVariant(str, enum.Enum):
+    classic = "classic"
+    warm = "warm"
+    cool = "cool"
+
+
 class ExportStatus(str, enum.Enum):
     queued = "queued"
     rendering = "rendering"
@@ -59,6 +65,9 @@ class Export(Base):
         nullable=False,
     )
     caption_style: Mapped[CaptionStyle | None] = mapped_column(SAEnum(CaptionStyle, name="caption_style"))
+    caption_color_variant: Mapped[CaptionColorVariant | None] = mapped_column(
+        SAEnum(CaptionColorVariant, name="caption_color_variant")
+    )
     caption_format: Mapped[CaptionFormat] = mapped_column(SAEnum(CaptionFormat, name="caption_format"), nullable=False)
     caption_vertical_position: Mapped[float | None] = mapped_column(Float)
     caption_scale: Mapped[float | None] = mapped_column(Float)

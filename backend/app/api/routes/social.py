@@ -48,6 +48,12 @@ logger = logging.getLogger(__name__)
 PRIVACY_OPTIONS_BY_PLATFORM: dict[SocialPlatform, set[str]] = {
     SocialPlatform.youtube: {"private", "unlisted", "public"},
 }
+TIKTOK_DEFAULT_PRIVACY_OPTIONS = [
+    "PUBLIC_TO_EVERYONE",
+    "MUTUAL_FOLLOW_FRIENDS",
+    "FOLLOWER_OF_CREATOR",
+    "SELF_ONLY",
+]
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -154,12 +160,58 @@ def _normalize_hashtags(values: list[str] | None) -> list[str] | None:
     return normalized or None
 
 
-def _normalize_privacy(platform: SocialPlatform, value: str | None) -> str | None:
+def _extract_tiktok_privacy_options(metadata_json: Any) -> list[str]:
+    options: list[str] = []
+    seen: set[str] = set()
+
+    if not isinstance(metadata_json, dict):
+        return options
+
+    creator_info = metadata_json.get("tiktok_creator_info")
+    if isinstance(creator_info, dict):
+        privacy_values = creator_info.get("privacy_level_options")
+        if isinstance(privacy_values, list):
+            for item in privacy_values:
+                if not isinstance(item, str):
+                    continue
+                value = item.strip().upper()
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                options.append(value)
+    return options
+
+
+def _normalize_privacy(
+    platform: SocialPlatform,
+    value: str | None,
+    *,
+    destination_metadata: Any = None,
+) -> str | None:
     if value is None:
         return None
     normalized = value.strip().lower()
     if not normalized:
         return None
+
+    if platform == SocialPlatform.tiktok:
+        allowed_tiktok = _extract_tiktok_privacy_options(destination_metadata) or list(
+            TIKTOK_DEFAULT_PRIVACY_OPTIONS
+        )
+        if not allowed_tiktok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TikTok privacy options are unavailable for this account. Reconnect TikTok.",
+            )
+        allowed_lookup = {item.lower(): item for item in allowed_tiktok}
+        resolved = allowed_lookup.get(normalized)
+        if not resolved:
+            allowed_values = ", ".join(allowed_tiktok)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid privacy value for {platform.value}. Allowed: {allowed_values}",
+            )
+        return resolved
 
     allowed = PRIVACY_OPTIONS_BY_PLATFORM.get(platform)
     if not allowed:
@@ -284,6 +336,35 @@ async def list_social_providers(
                 "connect_ready": setup_status == "ready",
                 "publish_ready": setup_status == "ready" and instagram_professional_count > 0,
                 "instagram_professional_count": instagram_professional_count,
+            }
+        if adapter.platform == SocialPlatform.threads:
+            threads_profile_count = destination_counts["threads"].get("threads_profile", 0)
+            threads_caps = adapter.capabilities()
+            setup_details = {
+                **setup_details,
+                "connect_ready": setup_status == "ready",
+                "publish_text_ready": setup_status == "ready" and threads_profile_count > 0,
+                "publish_media_ready": setup_status == "ready"
+                and threads_profile_count > 0
+                and bool(threads_caps.supports_video_upload),
+                "threads_profile_count": threads_profile_count,
+                "supports_text_publish": True,
+                "supports_media_publish": bool(threads_caps.supports_video_upload),
+            }
+        if adapter.platform == SocialPlatform.tiktok:
+            tiktok_profile_count = destination_counts["tiktok"].get("tiktok_profile", 0)
+            setup_details = {
+                **setup_details,
+                "connect_ready": setup_status == "ready",
+                "publish_direct_ready": setup_status == "ready" and tiktok_profile_count > 0,
+                "publish_upload_ready": setup_status == "ready" and tiktok_profile_count > 0,
+                "mode_support": {
+                    "direct": True,
+                    "inbox_upload": True,
+                },
+                "tiktok_profile_count": tiktok_profile_count,
+                "supports_text_publish": False,
+                "supports_media_publish": True,
             }
 
         logger.info(
@@ -591,10 +672,33 @@ async def create_publish_jobs(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Instagram publishing requires a connected Instagram professional account. Reconnect Instagram.",
                 )
+        if target.platform == SocialPlatform.threads:
+            destination_type = _destination_type_for_account(account)
+            if destination_type != "threads_profile":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Threads publishing requires a connected Threads profile destination.",
+                )
+        if target.platform == SocialPlatform.tiktok:
+            destination_type = _destination_type_for_account(account)
+            if destination_type != "tiktok_profile":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="TikTok publishing requires a connected TikTok profile destination.",
+                )
 
         content = _merge_content(body.universal, target.override)
         hashtags = _normalize_hashtags(content["hashtags"])
-        privacy = _normalize_privacy(target.platform, content["privacy"])
+        privacy = _normalize_privacy(
+            target.platform,
+            content["privacy"],
+            destination_metadata=account.metadata_json,
+        )
+        if target.platform == SocialPlatform.tiktok and not privacy:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TikTok publishing requires an explicit privacy selection.",
+            )
 
         scheduled_for = content["scheduled_for"]
         adapter = get_adapter(target.platform)

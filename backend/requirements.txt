@@ -21,3 +21,4 @@ faster-whisper==1.0.3
 ctranslate2==4.4.0
 cryptography==42.0.8
 yt-dlp==2024.12.13
+pytest==8.3.3

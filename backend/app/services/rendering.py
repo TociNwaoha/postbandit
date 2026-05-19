@@ -138,6 +138,7 @@ def write_ass(
     cues: list[SubtitleCue],
     output_path: str,
     caption_style: str | None,
+    caption_color_variant: str | None,
     aspect_ratio: str,
     target_width: int,
     target_height: int,
@@ -155,7 +156,7 @@ def write_ass(
         caption_vertical_position=caption_vertical_position,
         caption_scale=caption_scale,
     )
-    style_line = _ass_style_line(caption_style, layout)
+    style_line = _ass_style_line(caption_style, caption_color_variant, layout)
 
     header = [
         "[Script Info]",
@@ -425,82 +426,61 @@ def _format_ass_timestamp(seconds: float) -> str:
     return f"{hours}:{minutes:02}:{secs:02}.{centis:02}"
 
 
-def _ass_style_line(caption_style: str | None, layout: CaptionLayout) -> str:
+def _ass_style_line(
+    caption_style: str | None,
+    caption_color_variant: str | None,
+    layout: CaptionLayout,
+) -> str:
     style = caption_style or "clean_minimal"
-    style_presets: dict[str, dict[str, str | int | float]] = {
+    variant = caption_color_variant or "classic"
+    typography_presets: dict[str, dict[str, int | float]] = {
+        "bold_boxed": {"bold": -1, "italic": 0, "border_style": 3, "outline": 1.0, "shadow": 0},
+        "sermon_quote": {"bold": 0, "italic": 1, "border_style": 1, "outline": 2.2, "shadow": 0},
+        "clean_minimal": {"bold": 0, "italic": 0, "border_style": 1, "outline": 1.8, "shadow": 0},
+        "kinetic_bold": {"bold": -1, "italic": 0, "border_style": 3, "outline": 0.8, "shadow": 0},
+        "cinema_outline": {"bold": -1, "italic": 0, "border_style": 1, "outline": 3.0, "shadow": 1},
+        "clean_highlight": {"bold": 0, "italic": 0, "border_style": 3, "outline": 0.6, "shadow": 0},
+    }
+    variant_palettes: dict[str, dict[str, dict[str, str]]] = {
         "bold_boxed": {
-            "primary": "&H00FFFFFF",
-            "secondary": "&H000000FF",
-            "outline_colour": "&H00141414",
-            "back_colour": "&H96000000",
-            "bold": -1,
-            "italic": 0,
-            "border_style": 3,
-            "outline": 1.0,
-            "shadow": 0,
+            "classic": {"primary": "&H00FFFFFF", "outline_colour": "&H00141414", "back_colour": "&H96000000"},
+            "warm": {"primary": "&H00C5F8FF", "outline_colour": "&H0014232E", "back_colour": "&H96411A00"},
+            "cool": {"primary": "&H00FFF2D9", "outline_colour": "&H002B1B12", "back_colour": "&H96803B00"},
         },
         "sermon_quote": {
-            "primary": "&H00F5F5F5",
-            "secondary": "&H000000FF",
-            "outline_colour": "&H00202020",
-            "back_colour": "&H5A000000",
-            "bold": 0,
-            "italic": 1,
-            "border_style": 1,
-            "outline": 2.2,
-            "shadow": 0,
+            "classic": {"primary": "&H00F5F5F5", "outline_colour": "&H00202020", "back_colour": "&H5A000000"},
+            "warm": {"primary": "&H00D9F0FF", "outline_colour": "&H001E2B38", "back_colour": "&H5A2A1200"},
+            "cool": {"primary": "&H00FFF0DB", "outline_colour": "&H00331E15", "back_colour": "&H5A4D2300"},
         },
         "clean_minimal": {
-            "primary": "&H00FFFFFF",
-            "secondary": "&H000000FF",
-            "outline_colour": "&H00141414",
-            "back_colour": "&H46000000",
-            "bold": 0,
-            "italic": 0,
-            "border_style": 1,
-            "outline": 1.8,
-            "shadow": 0,
+            "classic": {"primary": "&H00FFFFFF", "outline_colour": "&H00141414", "back_colour": "&H46000000"},
+            "warm": {"primary": "&H00D5F4FF", "outline_colour": "&H001A2B38", "back_colour": "&H46321900"},
+            "cool": {"primary": "&H00FFF4E3", "outline_colour": "&H00362618", "back_colour": "&H46513100"},
         },
         "kinetic_bold": {
-            "primary": "&H00FFFFFF",
-            "secondary": "&H000000FF",
-            "outline_colour": "&H000E0E0E",
-            "back_colour": "&HAA000000",
-            "bold": -1,
-            "italic": 0,
-            "border_style": 3,
-            "outline": 0.8,
-            "shadow": 0,
+            "classic": {"primary": "&H00FFFFFF", "outline_colour": "&H000E0E0E", "back_colour": "&HAA000000"},
+            "warm": {"primary": "&H00BFF3FF", "outline_colour": "&H001D2E3A", "back_colour": "&HAA3D1800"},
+            "cool": {"primary": "&H00FFEBD1", "outline_colour": "&H003E2815", "back_colour": "&HAA6D3400"},
         },
         "cinema_outline": {
-            "primary": "&H00FFFFFF",
-            "secondary": "&H000000FF",
-            "outline_colour": "&H000A0A0A",
-            "back_colour": "&H22000000",
-            "bold": -1,
-            "italic": 0,
-            "border_style": 1,
-            "outline": 3.0,
-            "shadow": 1,
+            "classic": {"primary": "&H00FFFFFF", "outline_colour": "&H000A0A0A", "back_colour": "&H22000000"},
+            "warm": {"primary": "&H00CBEFFF", "outline_colour": "&H001D2E40", "back_colour": "&H22301A00"},
+            "cool": {"primary": "&H00FFF0DE", "outline_colour": "&H003D2516", "back_colour": "&H22482700"},
         },
         "clean_highlight": {
-            "primary": "&H00FFFFFF",
-            "secondary": "&H000000FF",
-            "outline_colour": "&H00141414",
-            "back_colour": "&H76000000",
-            "bold": 0,
-            "italic": 0,
-            "border_style": 3,
-            "outline": 0.6,
-            "shadow": 0,
+            "classic": {"primary": "&H00FFFFFF", "outline_colour": "&H00141414", "back_colour": "&H76000000"},
+            "warm": {"primary": "&H00D2F2FF", "outline_colour": "&H001A2B38", "back_colour": "&H76331A00"},
+            "cool": {"primary": "&H00FFF1DD", "outline_colour": "&H00382618", "back_colour": "&H76573400"},
         },
     }
-    preset = style_presets.get(style, style_presets["clean_minimal"])
+    preset = typography_presets.get(style, typography_presets["clean_minimal"])
+    palette_by_variant = variant_palettes.get(style, variant_palettes["clean_minimal"])
+    palette = palette_by_variant.get(variant, palette_by_variant["classic"])
 
     return (
         "Style: Default,Arial,"
         f"{layout.font_size},"
-        f"{preset['primary']},{preset['secondary']},{preset['outline_colour']},{preset['back_colour']},"
+        f"{palette['primary']},&H000000FF,{palette['outline_colour']},{palette['back_colour']},"
         f"{preset['bold']},{preset['italic']},0,0,100,100,0,0,{preset['border_style']},{float(preset['outline']):.1f},{preset['shadow']},"
         f"2,{layout.margin_l},{layout.margin_r},{layout.margin_v},1"
     )
@@ -575,11 +555,17 @@ def _caption_layout(
 
 
 def _escape_ass_text(text: str) -> str:
-    return (
-        text.replace("\\", r"\\")
+    # Preserve ASS hard/soft line-break tokens while escaping other backslashes.
+    hard_break_token = "__ASS_HARD_BREAK__"
+    soft_break_token = "__ASS_SOFT_BREAK__"
+    escaped = (
+        text.replace(r"\N", hard_break_token)
+        .replace(r"\n", soft_break_token)
+        .replace("\\", r"\\")
         .replace("{", r"\{")
         .replace("}", r"\}")
     )
+    return escaped.replace(hard_break_token, r"\N").replace(soft_break_token, r"\n")
 
 
 def _wrap_caption_text(text: str, max_chars_per_line: int, max_lines: int) -> str:

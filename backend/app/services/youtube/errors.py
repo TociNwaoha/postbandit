@@ -9,6 +9,12 @@ YT_PRIVATE_OR_MEMBERS_ONLY = "YT_PRIVATE_OR_MEMBERS_ONLY"
 YT_GEO_RESTRICTED = "YT_GEO_RESTRICTED"
 YT_RATE_LIMITED = "YT_RATE_LIMITED"
 YT_UNKNOWN_FAILURE = "YT_UNKNOWN_FAILURE"
+NON_RETRYABLE_BLOCKED_ERROR_CODES = {
+    YT_SIGNIN_REQUIRED,
+    YT_BOT_VERIFICATION,
+    YT_PO_TOKEN_REQUIRED,
+    YT_NO_FORMATS,
+}
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,10 @@ class YtErrorClassification:
     developer_debug_message: str
     retryable: bool
     fallback_action: str
+
+
+def is_non_retryable_blocked_error_code(code: str | None) -> bool:
+    return (code or "").strip() in NON_RETRYABLE_BLOCKED_ERROR_CODES
 
 
 def classify_yt_dlp_error(error: Exception | str) -> YtErrorClassification:
@@ -114,4 +124,3 @@ def classify_yt_dlp_error(error: Exception | str) -> YtErrorClassification:
         True,
         "retry_later",
     )
-

@@ -9,7 +9,7 @@ export function Card({ padding = "md", className = "", children, ...props }: Car
 
   return (
     <div
-      className={`bg-[#1E293B] border border-slate-800 rounded-xl ${paddings[padding]} ${className}`}
+      className={`bg-white border border-[var(--app-border)] rounded-xl shadow-[0_1px_2px_rgba(9,21,40,0.04)] ${paddings[padding]} ${className}`}
       {...props}
     >
       {children}

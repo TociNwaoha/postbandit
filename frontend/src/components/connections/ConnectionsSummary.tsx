@@ -28,15 +28,15 @@ export function ConnectionsSummary() {
     <Card className="mb-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-white">Connections</h3>
-          <p className="mt-1 text-xs text-slate-400">Connect social accounts for in-app publishing.</p>
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">Connections</h3>
+          <p className="mt-1 text-xs text-[var(--app-muted)]">Connect social accounts for in-app publishing.</p>
         </div>
-        <Link href="/connections" className="text-sm text-[#A78BFA] hover:text-[#C4B5FD]">
+        <Link href="/connections" className="text-sm text-[#1D3FD0] hover:text-[#1633B8]">
           Manage
         </Link>
       </div>
 
-      {error ? <p className="mt-3 text-xs text-red-400">{error}</p> : null}
+      {error ? <p className="mt-3 text-xs text-red-700">{error}</p> : null}
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {providers.map((provider) => {
@@ -51,23 +51,23 @@ export function ConnectionsSummary() {
               : 0;
           const connected = provider.connected_account_count > 0;
           return (
-            <div key={provider.platform} className="rounded-md border border-slate-700 bg-slate-900/30 px-3 py-2">
-              <p className="text-sm font-medium text-white">{provider.display_name}</p>
+            <div key={provider.platform} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+              <p className="text-sm font-medium text-[var(--app-text)]">{provider.display_name}</p>
               {provider.platform === "facebook" ? (
-                <div className="mt-1 space-y-1 text-xs text-slate-400">
+                <div className="mt-1 space-y-1 text-xs text-[var(--app-muted)]">
                   <p>{facebookAccountCount > 0 ? `${facebookAccountCount} account connected` : "Account not connected"}</p>
                   <p>{facebookPageCount > 0 ? `${facebookPageCount} page destination(s)` : "No page destinations"}</p>
                   {facebookAccountCount > 0 && facebookPageCount === 0 ? (
-                    <p className="text-[11px] text-slate-500">Manual profile sharing is available; Page publishing is not.</p>
+                    <p className="text-[11px] text-[var(--app-subtle)]">Manual profile sharing is available; Page publishing is not.</p>
                   ) : null}
                 </div>
               ) : (
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-[var(--app-muted)]">
                   {connected ? `${provider.connected_account_count} connected` : "Not connected"}
                 </p>
               )}
               {!connected && provider.setup_message ? (
-                <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{provider.setup_message}</p>
+                <p className="mt-1 line-clamp-2 text-[11px] text-[var(--app-subtle)]">{provider.setup_message}</p>
               ) : null}
             </div>
           );

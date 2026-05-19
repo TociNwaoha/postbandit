@@ -1,4 +1,5 @@
 from app.services.youtube.errors import (
+    NON_RETRYABLE_BLOCKED_ERROR_CODES,
     YT_BOT_VERIFICATION,
     YT_GEO_RESTRICTED,
     YT_NO_FORMATS,
@@ -9,6 +10,7 @@ from app.services.youtube.errors import (
     YT_UNKNOWN_FAILURE,
     YtErrorClassification,
     classify_yt_dlp_error,
+    is_non_retryable_blocked_error_code,
 )
 from app.services.youtube.metadata import (
     YouTubeVideoMetadata,
@@ -48,11 +50,13 @@ __all__ = [
     "YT_GEO_RESTRICTED",
     "YT_RATE_LIMITED",
     "YT_UNKNOWN_FAILURE",
+    "NON_RETRYABLE_BLOCKED_ERROR_CODES",
     "YtErrorClassification",
     "normalize_youtube_input",
     "watch_url_for_video_id",
     "embed_url_for_video_id",
     "classify_yt_dlp_error",
+    "is_non_retryable_blocked_error_code",
     "metadata_from_yt_info",
     "extract_single_video_metadata",
     "extract_playlist_entries",
