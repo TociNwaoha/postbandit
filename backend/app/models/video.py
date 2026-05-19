@@ -19,9 +19,9 @@ import enum
 
 class VideoSourceType(str, enum.Enum):
     upload = "upload"
-    youtube = "youtube"
     youtube_single = "youtube_single"
     youtube_playlist = "youtube_playlist"
+    youtube = "youtube"
 
 
 class VideoStatus(str, enum.Enum):
@@ -37,6 +37,11 @@ class VideoImportMode(str, enum.Enum):
     server_download = "server_download"
     embed_only = "embed_only"
     manual_upload = "manual_upload"
+
+
+class ClipProfile(str, enum.Enum):
+    viral = "viral"
+    sermon = "sermon"
 
 
 class VideoImportState(str, enum.Enum):
@@ -71,9 +76,18 @@ class Video(Base):
     source_playlist_id: Mapped[str | None] = mapped_column(String(64), index=True)
     source_playlist_title: Mapped[str | None] = mapped_column(String(500))
     playlist_index: Mapped[int | None] = mapped_column(Integer, index=True)
-    import_parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    import_parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("youtube_playlist_imports.id", ondelete="SET NULL"), index=True
+    )
     embed_url: Mapped[str | None] = mapped_column(Text)
     thumbnail_url: Mapped[str | None] = mapped_column(Text)
+    import_state: Mapped[VideoImportState] = mapped_column(
+        SAEnum(VideoImportState, name="video_import_state"),
+        default=VideoImportState.not_applicable,
+        nullable=False,
+        index=True,
+    )
+    import_state_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     import_mode: Mapped[VideoImportMode] = mapped_column(
         SAEnum(VideoImportMode, name="video_import_mode"),
         default=VideoImportMode.server_download,
@@ -83,13 +97,6 @@ class Video(Base):
     error_code: Mapped[str | None] = mapped_column(String(64))
     debug_error_message: Mapped[str | None] = mapped_column(Text)
     external_metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    import_state: Mapped[VideoImportState] = mapped_column(
-        SAEnum(VideoImportState, name="video_import_state"),
-        default=VideoImportState.not_applicable,
-        nullable=False,
-        index=True,
-    )
-    import_state_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     storage_key: Mapped[str | None] = mapped_column(Text)
     duration_sec: Mapped[int | None] = mapped_column(Integer)
     resolution: Mapped[str | None] = mapped_column(String(20))
@@ -112,4 +119,7 @@ class Video(Base):
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="video", cascade="all, delete-orphan")
     exclude_zones: Mapped[list["ExcludeZone"]] = relationship(
         "ExcludeZone", back_populates="video", cascade="all, delete-orphan"
+    )
+    playlist_import: Mapped["YoutubePlaylistImport | None"] = relationship(
+        "YoutubePlaylistImport", back_populates="videos"
     )

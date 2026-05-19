@@ -11,6 +11,7 @@ from app.database import Base
 
 class SocialPlatform(str, enum.Enum):
     instagram = "instagram"
+    threads = "threads"
     tiktok = "tiktok"
     facebook = "facebook"
     youtube = "youtube"

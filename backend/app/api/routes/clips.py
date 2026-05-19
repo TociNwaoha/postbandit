@@ -12,6 +12,7 @@ from app.models.clip import Clip
 from app.models.video import Video
 from app.schemas.clip import ClipResponse, ClipUpdateRequest
 from app.api.deps import get_current_user
+from app.services.ai_copy import AICopyUnavailableError, generate_clip_copy, provider_configured
 from app.services.r2 import r2_client
 
 router = APIRouter()
@@ -95,6 +96,90 @@ async def get_clip(
     clip = result.scalar_one_or_none()
     if not clip:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+    return _clip_to_response(clip)
+
+
+@router.post("/clips/{clip_id}/generate-copy", response_model=ClipResponse)
+async def generate_copy_for_clip(
+    clip_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        clip_uuid = UUID(clip_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid clip_id")
+
+    row = await db.execute(
+        select(Clip, Video)
+        .join(Video, Clip.video_id == Video.id)
+        .where(Clip.id == clip_uuid, Video.user_id == current_user.id)
+    )
+    clip_row = row.first()
+    if not clip_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    clip, video = clip_row
+    transcript_text = " ".join((clip.transcript_text or "").split())
+    if not transcript_text:
+        clip.title_options = None
+        clip.hashtag_options = None
+        clip.copy_generation_status = "unavailable"
+        clip.copy_generation_error = "Clip transcript text is unavailable"
+        await db.commit()
+        await db.refresh(clip)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clip transcript text is unavailable")
+
+    if not provider_configured():
+        clip.title_options = None
+        clip.hashtag_options = None
+        clip.copy_generation_status = "unavailable"
+        clip.copy_generation_error = "DEEPSEEK_API_KEY is not configured"
+        await db.commit()
+        await db.refresh(clip)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI copy unavailable")
+
+    try:
+        generated = generate_clip_copy(
+            transcript_text=transcript_text,
+            video_title=video.title,
+            clip_start=clip.start_time,
+            clip_end=clip.end_time,
+        )
+    except AICopyUnavailableError as exc:
+        clip.title_options = None
+        clip.hashtag_options = None
+        clip.copy_generation_status = "unavailable"
+        clip.copy_generation_error = str(exc)[:500]
+        await db.commit()
+        await db.refresh(clip)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI copy unavailable")
+    except Exception as exc:
+        logger.warning("[clips] generate copy failed clip_id=%s error=%s", clip.id, exc)
+        clip.title_options = None
+        clip.hashtag_options = None
+        clip.copy_generation_status = "unavailable"
+        clip.copy_generation_error = str(exc)[:500]
+        await db.commit()
+        await db.refresh(clip)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate clip copy")
+
+    clip.title_options = generated.title_options
+    clip.hashtag_options = generated.hashtag_options
+    clip.copy_generation_status = "ready"
+    clip.copy_generation_error = None
+    clip.title = generated.title_options[0] if generated.title_options else clip.title
+    clip.hashtags = generated.hashtag_options[0] if generated.hashtag_options else clip.hashtags
+    await db.commit()
+    await db.refresh(clip)
+
+    logger.info(
+        "[clips] generate copy complete user_id=%s clip_id=%s titles=%s hashtag_sets=%s",
+        current_user.id,
+        clip.id,
+        len(generated.title_options),
+        len(generated.hashtag_options),
+    )
     return _clip_to_response(clip)
 
 

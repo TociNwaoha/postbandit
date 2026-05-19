@@ -8,6 +8,8 @@ from app.models.exclude_zone import ExcludeZone
 from app.models.connected_account import ConnectedAccount
 from app.models.publish_job import PublishJob
 from app.models.publish_attempt import PublishAttempt
+from app.models.youtube_playlist_import import YoutubePlaylistImport
+from app.models.video_import_state_event import VideoImportStateEvent
 
 __all__ = [
     "User",
@@ -20,4 +22,6 @@ __all__ = [
     "ConnectedAccount",
     "PublishJob",
     "PublishAttempt",
+    "YoutubePlaylistImport",
+    "VideoImportStateEvent",
 ]

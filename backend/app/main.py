@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ClipBandit API",
+    title="PostBandit API",
     version="1.0.0",
     lifespan=lifespan,
 )

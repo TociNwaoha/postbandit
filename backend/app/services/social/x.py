@@ -4,8 +4,11 @@ import base64
 import hashlib
 import json
 import logging
+import mimetypes
 import secrets
+import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -21,15 +24,66 @@ X_AUTH_URL = "https://x.com/i/oauth2/authorize"
 X_TOKEN_URL = "https://api.x.com/2/oauth2/token"
 X_ME_URL = "https://api.x.com/2/users/me"
 X_TWEETS_URL = "https://api.x.com/2/tweets"
+X_MEDIA_INIT_URL = "https://api.x.com/2/media/upload/initialize"
+X_MEDIA_STATUS_URL = "https://api.x.com/2/media/upload"
+X_MEDIA_APPEND_URL_TEMPLATE = "https://api.x.com/2/media/upload/{media_id}/append"
+X_MEDIA_FINALIZE_URL_TEMPLATE = "https://api.x.com/2/media/upload/{media_id}/finalize"
 
 X_SCOPES = [
     "tweet.read",
     "users.read",
     "tweet.write",
     "offline.access",
+    "media.write",
 ]
+X_REQUIRED_MEDIA_SCOPES = ["media.write"]
 
 X_MAX_TEXT_LEN = 280
+X_UPLOAD_CHUNK_BYTES = 1024 * 1024
+X_MEDIA_POLL_MAX_SECONDS = 300
+X_MEDIA_POLL_DEFAULT_INTERVAL = 3
+
+
+def _infer_failure_stage(message: str) -> str:
+    normalized = message.lower()
+    if "token refresh" in normalized:
+        return "token_refresh"
+    if "compose" in normalized or "empty" in normalized:
+        return "compose_text"
+    if "initialize" in normalized:
+        return "initialize"
+    if "append" in normalized:
+        return "append"
+    if "finalize" in normalized:
+        return "finalize"
+    if "status check" in normalized or "processing" in normalized:
+        return "status"
+    if "publish failed" in normalized or "tweet id" in normalized:
+        return "create_tweet"
+    return "unknown"
+
+
+def _classify_publish_error(message: str) -> tuple[str, dict]:
+    normalized = message.lower()
+    stage = _infer_failure_stage(message)
+    metadata: dict = {"stage": stage}
+
+    if "reconnect required" in normalized or "refresh token is unavailable" in normalized:
+        metadata.update({"reason": "reconnect_required", "action": "reconnect_x"})
+        return "waiting_user_action", metadata
+
+    if stage == "initialize" and "forbidden" in normalized:
+        metadata.update(
+            {
+                "reason": "forbidden",
+                "action": "reconnect_x",
+                "missing_scopes": list(X_REQUIRED_MEDIA_SCOPES),
+                "hint": "Reconnect X with media.write scope and verify account media entitlement.",
+            }
+        )
+        return "waiting_user_action", metadata
+
+    return "failed", metadata
 
 
 def generate_pkce_verifier() -> str:
@@ -128,6 +182,43 @@ def _compose_x_text(payload: PublishPayload) -> str:
     return _clamp_text(text)
 
 
+def _extract_processing_failure(payload: dict) -> str:
+    processing_info = payload.get("processing_info") if isinstance(payload, dict) else None
+    if isinstance(processing_info, dict):
+        error = processing_info.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("name")
+            if isinstance(message, str) and message.strip():
+                return message.strip()[:240]
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    if isinstance(errors, list) and errors:
+        first = errors[0]
+        if isinstance(first, dict):
+            for key in ("detail", "message", "title", "type"):
+                value = first.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:240]
+    return "X media processing failed"
+
+
+def _media_category_for_type(media_type: str) -> str:
+    if media_type.startswith("video/"):
+        return "tweet_video"
+    if media_type == "image/gif":
+        return "tweet_gif"
+    if media_type.startswith("image/"):
+        return "tweet_image"
+    raise ProviderOperationError(f"Unsupported media type for X upload: {media_type}")
+
+
+def _media_type_for_path(media_path: Path) -> str:
+    guessed, _ = mimetypes.guess_type(str(media_path))
+    media_type = (guessed or "").strip().lower()
+    if not media_type:
+        media_type = "video/mp4"
+    return media_type
+
+
 class XAdapter(SocialProviderAdapter):
     platform = SocialPlatform.x
     display_name = "X"
@@ -137,7 +228,7 @@ class XAdapter(SocialProviderAdapter):
             supports_connect=True,
             supports_publish_now=True,
             supports_schedule=True,
-            supports_video_upload=False,
+            supports_video_upload=True,
             supports_caption=True,
             supports_title=True,
             supports_description=True,
@@ -179,7 +270,13 @@ class XAdapter(SocialProviderAdapter):
             "message": message,
             "callback_url": callback_url,
             "callback_error": callback_error,
-            "notes": "Text-only posting is supported in this pass; media/video upload is deferred.",
+            "required_scopes": list(X_SCOPES),
+            "required_media_scopes": list(X_REQUIRED_MEDIA_SCOPES),
+            "scope_diagnostics": {
+                "oauth_request_scopes": list(X_SCOPES),
+                "media_publish_requires": list(X_REQUIRED_MEDIA_SCOPES),
+            },
+            "notes": "Media posting is enabled; success depends on X account permissions and provider limits.",
         }
 
     def setup_status(self) -> tuple[str, str | None]:
@@ -341,10 +438,207 @@ class XAdapter(SocialProviderAdapter):
 
         return access_token, new_refresh_token, token_expires_at
 
+    def _initialize_media_upload(self, client: httpx.Client, access_token: str, media_path: Path) -> tuple[str, dict]:
+        media_type = _media_type_for_path(media_path)
+        payload = {
+            "total_bytes": media_path.stat().st_size,
+            "media_type": media_type,
+            "media_category": _media_category_for_type(media_type),
+        }
+
+        try:
+            response = client.post(
+                X_MEDIA_INIT_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            body = response.json()
+        except httpx.HTTPStatusError as exc:
+            api_error = _extract_x_error(exc.response)
+            if exc.response.status_code == 403:
+                raise ProviderOperationError(
+                    "X media initialize failed: Forbidden. Reconnect X with media.write scope or verify media entitlement."
+                ) from exc
+            raise ProviderOperationError(f"X media initialize failed: {api_error}") from exc
+        except httpx.RequestError as exc:
+            raise ProviderOperationError("X media initialize request failed. Please retry.") from exc
+
+        data = body.get("data") if isinstance(body, dict) else None
+        media_id = str((data or {}).get("id") or "").strip()
+        if not media_id:
+            raise ProviderOperationError("X media initialize did not return media id")
+
+        return media_id, {
+            "media_type": media_type,
+            "media_category": payload["media_category"],
+            "total_bytes": payload["total_bytes"],
+            "initialize": data or {},
+        }
+
+    def _append_media_chunks(
+        self,
+        client: httpx.Client,
+        access_token: str,
+        media_id: str,
+        media_path: Path,
+    ) -> dict:
+        append_url = X_MEDIA_APPEND_URL_TEMPLATE.format(media_id=media_id)
+        total_chunks = 0
+        try:
+            with media_path.open("rb") as media_file:
+                segment_index = 0
+                while True:
+                    chunk = media_file.read(X_UPLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    total_chunks += 1
+                    response = client.post(
+                        append_url,
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        data={"segment_index": str(segment_index)},
+                        files={"media": ("chunk.bin", chunk, "application/octet-stream")},
+                    )
+                    response.raise_for_status()
+                    segment_index += 1
+        except httpx.HTTPStatusError as exc:
+            api_error = _extract_x_error(exc.response)
+            raise ProviderOperationError(f"X media append failed: {api_error}") from exc
+        except httpx.RequestError as exc:
+            raise ProviderOperationError("X media append request failed. Please retry.") from exc
+
+        return {"total_chunks": total_chunks}
+
+    def _finalize_media_upload(self, client: httpx.Client, access_token: str, media_id: str) -> dict:
+        finalize_url = X_MEDIA_FINALIZE_URL_TEMPLATE.format(media_id=media_id)
+        try:
+            response = client.post(
+                finalize_url,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+            body = response.json()
+        except httpx.HTTPStatusError as exc:
+            api_error = _extract_x_error(exc.response)
+            raise ProviderOperationError(f"X media finalize failed: {api_error}") from exc
+        except httpx.RequestError as exc:
+            raise ProviderOperationError("X media finalize request failed. Please retry.") from exc
+
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, dict):
+            raise ProviderOperationError("X media finalize did not return media data")
+        return data
+
+    def _poll_media_processing(
+        self,
+        client: httpx.Client,
+        access_token: str,
+        media_id: str,
+        initial: dict,
+    ) -> dict:
+        data = initial
+        processing_info = data.get("processing_info")
+        started_at = time.monotonic()
+
+        while isinstance(processing_info, dict):
+            state = str(processing_info.get("state") or "").lower()
+            if state in {"succeeded", "success", "ready"}:
+                return data
+
+            if state in {"failed", "error", "errored"}:
+                raise ProviderOperationError(_extract_processing_failure(data))
+
+            if time.monotonic() - started_at > X_MEDIA_POLL_MAX_SECONDS:
+                raise ProviderOperationError("X media processing timed out")
+
+            check_after = processing_info.get("check_after_secs")
+            delay = X_MEDIA_POLL_DEFAULT_INTERVAL
+            if isinstance(check_after, (int, float)) and check_after > 0:
+                delay = min(max(int(check_after), 1), 30)
+            time.sleep(delay)
+
+            try:
+                response = client.get(
+                    X_MEDIA_STATUS_URL,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params={"command": "STATUS", "media_id": media_id},
+                )
+                response.raise_for_status()
+                body = response.json()
+            except httpx.HTTPStatusError as exc:
+                api_error = _extract_x_error(exc.response)
+                raise ProviderOperationError(f"X media status check failed: {api_error}") from exc
+            except httpx.RequestError as exc:
+                raise ProviderOperationError("X media status request failed. Please retry.") from exc
+
+            data = body.get("data") if isinstance(body, dict) else None
+            if not isinstance(data, dict):
+                raise ProviderOperationError("X media status response was invalid")
+            processing_info = data.get("processing_info")
+
+        return data
+
+    def _upload_media(self, client: httpx.Client, access_token: str, media_path: Path) -> tuple[str, dict]:
+        if not media_path.exists() or not media_path.is_file():
+            raise ProviderOperationError("X media file is unavailable for upload")
+
+        media_id, metadata = self._initialize_media_upload(client, access_token, media_path)
+        append_meta = self._append_media_chunks(client, access_token, media_id, media_path)
+        finalize_data = self._finalize_media_upload(client, access_token, media_id)
+        final_status = self._poll_media_processing(client, access_token, media_id, finalize_data)
+
+        metadata.update(
+            {
+                "media_id": media_id,
+                "append": append_meta,
+                "finalize": finalize_data,
+                "status": final_status,
+            }
+        )
+        return media_id, metadata
+
+    def _create_tweet(
+        self,
+        client: httpx.Client,
+        access_token: str,
+        text: str,
+        media_id: str | None = None,
+    ) -> tuple[str, dict]:
+        tweet_payload: dict = {"text": text}
+        if media_id:
+            tweet_payload["media"] = {"media_ids": [media_id]}
+
+        try:
+            tweet_resp = client.post(
+                X_TWEETS_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json=tweet_payload,
+            )
+            tweet_resp.raise_for_status()
+            tweet_data = tweet_resp.json()
+        except httpx.HTTPStatusError as exc:
+            api_error = _extract_x_error(exc.response)
+            raise ProviderOperationError(f"X publish failed: {api_error}") from exc
+        except httpx.RequestError as exc:
+            raise ProviderOperationError("X publish request failed. Please retry.") from exc
+
+        tweet = tweet_data.get("data") if isinstance(tweet_data, dict) else None
+        tweet_id = str((tweet or {}).get("id") or "").strip()
+        if not tweet_id:
+            raise ProviderOperationError("X publish did not return tweet id")
+        return tweet_id, tweet_data
+
     def publish(
         self,
         *,
         media_path: str,
+        media_url: str | None,
         payload: PublishPayload,
         access_token: str,
         refresh_token: str | None,
@@ -356,8 +650,13 @@ class XAdapter(SocialProviderAdapter):
 
         if not refresh_token:
             return PublishResult(
-                status="failed",
+                status="waiting_user_action",
                 error_message="X refresh token is unavailable. Reconnect your X account.",
+                provider_metadata_json={
+                    "stage": "token_refresh",
+                    "reason": "reconnect_required",
+                    "action": "reconnect_x",
+                },
             )
 
         token_to_use = access_token
@@ -369,7 +668,12 @@ class XAdapter(SocialProviderAdapter):
             try:
                 refreshed_access, refreshed_refresh, refreshed_expiry = self._refresh_access_token(refresh_token)
             except ProviderOperationError as exc:
-                return PublishResult(status="failed", error_message=str(exc))
+                status_name, metadata = _classify_publish_error(str(exc))
+                return PublishResult(
+                    status=status_name,
+                    error_message=str(exc),
+                    provider_metadata_json=metadata,
+                )
             token_to_use = refreshed_access
             updated_access_token = refreshed_access
             updated_refresh_token = refreshed_refresh
@@ -378,47 +682,37 @@ class XAdapter(SocialProviderAdapter):
         try:
             text = _compose_x_text(payload)
         except ProviderOperationError as exc:
-            return PublishResult(status="failed", error_message=str(exc))
-
-        tweet_payload = {"text": text}
+            return PublishResult(
+                status="failed",
+                error_message=str(exc),
+                provider_metadata_json={"stage": _infer_failure_stage(str(exc))},
+            )
 
         try:
-            with httpx.Client(timeout=30) as client:
-                tweet_resp = client.post(
-                    X_TWEETS_URL,
-                    headers={
-                        "Authorization": f"Bearer {token_to_use}",
-                        "Content-Type": "application/json",
-                    },
-                    json=tweet_payload,
-                )
-                tweet_resp.raise_for_status()
-                tweet_data = tweet_resp.json()
-        except httpx.HTTPStatusError as exc:
-            api_error = _extract_x_error(exc.response)
-            logger.warning(
-                "[social] x publish http error status=%s reason=%s",
-                exc.response.status_code,
-                api_error,
+            with httpx.Client(timeout=90) as client:
+                media_id = None
+                media_metadata: dict = {}
+                if media_path:
+                    media_id, media_metadata = self._upload_media(client, token_to_use, Path(media_path))
+                tweet_id, tweet_data = self._create_tweet(client, token_to_use, text, media_id=media_id)
+        except ProviderOperationError as exc:
+            logger.warning("[social] x publish failed reason=%s", exc)
+            status_name, metadata = _classify_publish_error(str(exc))
+            return PublishResult(
+                status=status_name,
+                error_message=str(exc),
+                provider_metadata_json=metadata,
             )
-            return PublishResult(status="failed", error_message=f"X publish failed: {api_error}")
-        except httpx.RequestError as exc:
-            logger.warning("[social] x publish network error: %s", exc.__class__.__name__)
-            return PublishResult(status="failed", error_message="X publish request failed. Please retry.")
-
-        tweet = tweet_data.get("data") or {}
-        tweet_id = str(tweet.get("id") or "").strip()
-        if not tweet_id:
-            return PublishResult(status="failed", error_message="X publish did not return tweet id")
 
         return PublishResult(
             status="published",
             external_post_id=tweet_id,
             external_post_url=f"https://x.com/i/web/status/{tweet_id}",
             provider_metadata_json={
-                "x_text_only": True,
-                "x_media_status": "deferred",
+                "x_media_attached": bool(media_id),
+                "x_media": media_metadata if media_path else {"mode": "text_only"},
                 "tweet_id": tweet_id,
+                "tweet_response": tweet_data,
             },
             updated_access_token=updated_access_token,
             updated_refresh_token=updated_refresh_token,

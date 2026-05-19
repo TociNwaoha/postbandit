@@ -11,12 +11,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = "primary", size = "md", loading = false, disabled, children, className = "", ...props }, ref) => {
-    const baseStyles = "inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0F172A] disabled:opacity-50 disabled:cursor-not-allowed";
+    const baseStyles = "inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#F4F8FF] disabled:opacity-50 disabled:cursor-not-allowed";
 
     const variants = {
-      primary: "bg-[#7C3AED] hover:bg-[#6D28D9] text-white focus:ring-[#7C3AED]",
-      secondary: "bg-[#1E293B] hover:bg-slate-700 text-white border border-slate-700 focus:ring-slate-500",
-      ghost: "bg-transparent hover:bg-slate-800 text-slate-300 hover:text-white focus:ring-slate-500",
+      primary: "bg-[var(--app-primary)] hover:bg-[var(--app-primary-hover)] text-white focus:ring-[var(--app-primary)]",
+      secondary: "bg-white hover:bg-[#F4F8FF] text-[var(--app-text)] border border-[var(--app-border)] focus:ring-[var(--app-border)]",
+      ghost: "bg-transparent hover:bg-[#F4F8FF] text-[var(--app-muted)] hover:text-[var(--app-text)] focus:ring-[var(--app-border)]",
       danger: "bg-red-600 hover:bg-red-700 text-white focus:ring-red-500",
     };
 

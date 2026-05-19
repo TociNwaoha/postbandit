@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { notFound, redirect } from "next/navigation";
 
@@ -14,6 +15,18 @@ async function fetchWithAuth(path: string, token: string) {
     },
     cache: "no-store",
   });
+}
+
+async function readErrorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (body?.detail && typeof body.detail === "string" && body.detail.trim()) {
+      return body.detail.trim();
+    }
+  } catch {
+    // Keep fallback when response is not JSON.
+  }
+  return fallback;
 }
 
 interface PageProps {
@@ -36,11 +49,31 @@ export default async function ClipEditorPage({ params }: PageProps) {
     fetchWithAuth(`/api/exports?clip_id=${encodeURIComponent(params.clipId)}`, token),
   ]);
 
+  if (videoRes.status === 401 || videoRes.status === 403 || clipRes.status === 401 || clipRes.status === 403) {
+    redirect("/login");
+  }
   if (videoRes.status === 404 || clipRes.status === 404) {
     notFound();
   }
-  if (!videoRes.ok) throw new Error("Failed to load video");
-  if (!clipRes.ok) throw new Error("Failed to load clip");
+  if (!videoRes.ok || !clipRes.ok) {
+    const errorMessage = !videoRes.ok
+      ? await readErrorDetail(videoRes, "Unable to load this video right now.")
+      : await readErrorDetail(clipRes, "Unable to load this clip right now.");
+
+    return (
+      <DashboardLayout title="Clip Review & Export">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
+          <p>{errorMessage}</p>
+          <Link
+            href={`/videos/${params.id}`}
+            className="mt-4 inline-flex items-center rounded-md bg-[#1D3FD0] px-3 py-2 text-sm font-medium text-white hover:bg-[#1633B8]"
+          >
+            Back to Video
+          </Link>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   const video = (await videoRes.json()) as Video;
   const clip = (await clipRes.json()) as Clip;

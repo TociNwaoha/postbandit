@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 import httpx
 
@@ -14,6 +14,7 @@ from app.services.social.base import (
     is_placeholder,
     utcnow,
 )
+from app.services.social.meta.auth import build_callback_url
 from app.services.social.types import OAuthAccountPayload, ProviderCapabilities, PublishPayload, PublishResult
 
 TIKTOK_AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
@@ -68,20 +69,9 @@ class TikTokAPIResponseError(ProviderOperationError):
         super().__init__("".join(pieces))
 
 
-def _build_callback_url(platform_value: str) -> tuple[str | None, str | None, list[str]]:
-    missing_fields: list[str] = []
-    backend_public_url = (settings.backend_public_url or "").strip()
-    if not backend_public_url:
-        missing_fields.append("BACKEND_PUBLIC_URL")
-        return None, "BACKEND_PUBLIC_URL is missing", missing_fields
-
-    parsed = urlparse(backend_public_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        missing_fields.append("BACKEND_PUBLIC_URL")
-        return None, "BACKEND_PUBLIC_URL must be an absolute http(s) URL", missing_fields
-
-    callback_url = f"{backend_public_url.rstrip('/')}/api/social/{platform_value}/callback"
-    return callback_url, None, missing_fields
+def _callback_url() -> str | None:
+    callback_url, _callback_error, _missing_fields = build_callback_url("tiktok")
+    return callback_url
 
 
 def _parse_json(response: httpx.Response, *, context: str) -> dict:
@@ -328,7 +318,7 @@ class TikTokAdapter(SocialProviderAdapter):
         )
 
     def setup_details(self) -> dict:
-        callback_url, callback_error, callback_missing = _build_callback_url(self.platform.value)
+        callback_url, callback_error, callback_missing = build_callback_url(self.platform.value)
 
         missing_fields: list[str] = []
         if is_placeholder(settings.tiktok_client_key):

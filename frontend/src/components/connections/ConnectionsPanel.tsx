@@ -10,8 +10,8 @@ import { api, ApiError } from "@/lib/api";
 import { ConnectedAccount, SocialProvider } from "@/types";
 
 const statusTextStyles: Record<string, string> = {
-  ready: "text-emerald-300",
-  provider_not_configured: "text-amber-300",
+  ready: "text-emerald-700",
+  provider_not_configured: "text-amber-700",
 };
 
 export function ConnectionsPanel() {
@@ -85,13 +85,7 @@ export function ConnectionsPanel() {
       setProviders(providersData);
       setAccounts(accountsData);
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.status === 401 || err.status === 403
-            ? "Session expired, please log in again."
-            : err.message
-          : "Failed to load connections";
-      setError(message);
+      setError(err instanceof ApiError ? err.message : "Failed to load connections");
     } finally {
       setLoading(false);
     }
@@ -132,16 +126,16 @@ export function ConnectionsPanel() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-end">
-        <Link href="/review/meta-instagram" className="text-sm text-[#A78BFA] hover:text-[#C4B5FD]">
+        <Link href="/review/meta-instagram" className="text-sm text-[#1D3FD0] hover:text-[#1633B8]">
           Open Meta review demo
         </Link>
       </div>
-      {callbackMessage ? <p className="text-sm text-emerald-300">{callbackMessage}</p> : null}
-      {actionError ? <p className="text-sm text-red-400">{actionError}</p> : null}
-      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {callbackMessage ? <p className="text-sm text-emerald-700">{callbackMessage}</p> : null}
+      {actionError ? <p className="text-sm text-red-700">{actionError}</p> : null}
+      {error ? <p className="text-sm text-red-700">{error}</p> : null}
 
       {loading ? (
-        <div className="inline-flex items-center gap-2 text-sm text-slate-300">
+        <div className="inline-flex items-center gap-2 text-sm text-[var(--app-muted)]">
           <LoadingSpinner size="sm" />
           Loading connections...
         </div>
@@ -153,7 +147,7 @@ export function ConnectionsPanel() {
           (account) => account.destination_type === "facebook_account"
         );
         const facebookPageRows = providerAccounts.filter((account) => account.destination_type === "facebook_page");
-        const setupClass = statusTextStyles[provider.setup_status] || "text-slate-300";
+        const setupClass = statusTextStyles[provider.setup_status] || "text-[var(--app-muted)]";
         const setupDetails = (provider.setup_details || {}) as Record<string, unknown>;
         const threadsPublishTextReady =
           provider.platform === "threads" && Boolean(setupDetails.publish_text_ready);
@@ -168,13 +162,13 @@ export function ConnectionsPanel() {
           <Card key={provider.platform}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-white">{provider.display_name}</h3>
+                <h3 className="text-base font-semibold text-[var(--app-text)]">{provider.display_name}</h3>
                 <p className={`mt-1 text-xs ${setupClass}`}>
                   {provider.setup_status === "ready" ? "Ready" : provider.setup_message || "Not configured"}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">{provider.connected_account_count} connected account(s)</p>
+                <p className="mt-1 text-xs text-[var(--app-subtle)]">{provider.connected_account_count} connected account(s)</p>
                 {provider.platform === "threads" ? (
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                     {threadsPublishMediaReady
                       ? "Threads text and video publishing are enabled."
                       : threadsPublishTextReady
@@ -183,7 +177,7 @@ export function ConnectionsPanel() {
                   </p>
                 ) : null}
                 {provider.platform === "tiktok" ? (
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                     {tiktokDirectReady
                       ? "TikTok direct post is enabled. If direct post is blocked, inbox upload fallback is available."
                       : tiktokUploadReady
@@ -196,7 +190,7 @@ export function ConnectionsPanel() {
                 type="button"
                 onClick={() => void connectPlatform(provider.platform)}
                 disabled={connectingPlatform === provider.platform || provider.setup_status !== "ready"}
-                className="rounded-md bg-[#7C3AED] px-3 py-2 text-sm font-medium text-white hover:bg-[#6D28D9] disabled:opacity-50"
+                className="rounded-md bg-[#1D3FD0] px-3 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-50"
               >
                 {connectingPlatform === provider.platform ? "Connecting..." : "Connect"}
               </button>
@@ -204,21 +198,21 @@ export function ConnectionsPanel() {
 
             {provider.platform === "facebook" ? (
               <div className="mt-4 space-y-2">
-                <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
                     Connected Facebook Account(s)
                   </p>
                   {facebookAccountRows.length ? (
                     <div className="mt-2 space-y-2">
                       {facebookAccountRows.map((account) => (
-                        <div key={account.id} className="rounded-md border border-slate-700 bg-slate-950/60 p-3">
+                        <div key={account.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <p className="text-sm text-white">{account.display_name || account.external_account_id}</p>
-                              <p className="mt-1 text-xs text-slate-400">
+                              <p className="text-sm text-[var(--app-text)]">{account.display_name || account.external_account_id}</p>
+                              <p className="mt-1 text-xs text-[var(--app-muted)]">
                                 {account.username_or_channel_name || account.external_account_id}
                               </p>
-                              <p className="mt-1 text-[11px] text-slate-500">
+                              <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                                 {destinationTypeLabel(account.destination_type)}
                               </p>
                             </div>
@@ -226,7 +220,7 @@ export function ConnectionsPanel() {
                               type="button"
                               onClick={() => void disconnectAccount(account.id)}
                               disabled={disconnectingAccountId === account.id}
-                              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                              className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-50"
                             >
                               {disconnectingAccountId === account.id ? "Disconnecting..." : "Disconnect"}
                             </button>
@@ -235,25 +229,25 @@ export function ConnectionsPanel() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-2 text-sm text-slate-400">No Facebook account connected yet.</p>
+                    <p className="mt-2 text-sm text-[var(--app-muted)]">No Facebook account connected yet.</p>
                   )}
                 </div>
 
-                <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
                     Facebook Page Destinations (Automated Publish)
                   </p>
                   {facebookPageRows.length ? (
                     <div className="mt-2 space-y-2">
                       {facebookPageRows.map((account) => (
-                        <div key={account.id} className="rounded-md border border-slate-700 bg-slate-950/60 p-3">
+                        <div key={account.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <p className="text-sm text-white">{account.display_name || account.external_account_id}</p>
-                              <p className="mt-1 text-xs text-slate-400">
+                              <p className="text-sm text-[var(--app-text)]">{account.display_name || account.external_account_id}</p>
+                              <p className="mt-1 text-xs text-[var(--app-muted)]">
                                 {account.username_or_channel_name || account.external_account_id}
                               </p>
-                              <p className="mt-1 text-[11px] text-slate-500">
+                              <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                                 {destinationTypeLabel(account.destination_type)}
                               </p>
                             </div>
@@ -261,7 +255,7 @@ export function ConnectionsPanel() {
                               type="button"
                               onClick={() => void disconnectAccount(account.id)}
                               disabled={disconnectingAccountId === account.id}
-                              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                              className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-50"
                             >
                               {disconnectingAccountId === account.id ? "Disconnecting..." : "Disconnect"}
                             </button>
@@ -270,11 +264,11 @@ export function ConnectionsPanel() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-2 text-sm text-slate-400">
+                    <p className="mt-2 text-sm text-[var(--app-muted)]">
                       No Pages discovered yet. Automated Facebook publishing requires at least one managed Page.
                     </p>
                   )}
-                  <p className="mt-2 text-[11px] text-slate-500">
+                  <p className="mt-2 text-[11px] text-[var(--app-subtle)]">
                     Personal profile sharing is available as a manual action from the clip publish panel.
                   </p>
                 </div>
@@ -283,18 +277,18 @@ export function ConnectionsPanel() {
               providerAccounts.length > 0 ? (
                 <div className="mt-4 space-y-2">
                   {providerAccounts.map((account) => (
-                    <div key={account.id} className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
+                    <div key={account.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm text-white">{account.display_name || account.external_account_id}</p>
-                          <p className="mt-1 text-xs text-slate-400">
+                          <p className="text-sm text-[var(--app-text)]">{account.display_name || account.external_account_id}</p>
+                          <p className="mt-1 text-xs text-[var(--app-muted)]">
                             {account.username_or_channel_name || account.external_account_id}
                           </p>
                           {provider.platform === "tiktok" && tiktokProfileSummary(account) ? (
-                            <p className="mt-1 text-[11px] text-slate-500">{tiktokProfileSummary(account)}</p>
+                            <p className="mt-1 text-[11px] text-[var(--app-subtle)]">{tiktokProfileSummary(account)}</p>
                           ) : null}
                           {destinationTypeLabel(account.destination_type) ? (
-                            <p className="mt-1 text-[11px] text-slate-500">
+                            <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
                               {destinationTypeLabel(account.destination_type)}
                             </p>
                           ) : null}
@@ -303,7 +297,7 @@ export function ConnectionsPanel() {
                           type="button"
                           onClick={() => void disconnectAccount(account.id)}
                           disabled={disconnectingAccountId === account.id}
-                          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                          className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-50"
                         >
                           {disconnectingAccountId === account.id ? "Disconnecting..." : "Disconnect"}
                         </button>
@@ -312,7 +306,7 @@ export function ConnectionsPanel() {
                   ))}
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-slate-400">No accounts connected yet.</p>
+                <p className="mt-4 text-sm text-[var(--app-muted)]">No accounts connected yet.</p>
               )
             )}
           </Card>

@@ -6,6 +6,9 @@ from dataclasses import dataclass
 
 from app.models.exclude_zone import ExcludeZone
 from app.models.transcript import TranscriptSegment
+from app.models.video import ClipProfile
+
+LONG_FORM_CLIP_PROFILE_ALIASES = {"long_form_speaking"}
 
 
 TERMINAL_PUNCTUATION_RE = re.compile(r"[.!?][\"')\]]*$")
@@ -69,6 +72,66 @@ class AudioEnergyProfile:
     p90: float
 
 
+@dataclass(frozen=True)
+class ClipSelectionProfile:
+    clip_profile: ClipProfile
+    min_duration_sec: float
+    max_duration_sec: float
+    min_words: int
+    top_n: int
+    max_overlap_ratio: float
+    pause_gap_sec: float
+    chunk_merge_gap_sec: float
+    hook_weight: float
+    energy_weight: float
+    hook_word_bonus_min: int
+    hook_word_bonus_max: int
+
+
+CLIP_SELECTION_PROFILES: dict[ClipProfile, ClipSelectionProfile] = {
+    ClipProfile.viral: ClipSelectionProfile(
+        clip_profile=ClipProfile.viral,
+        min_duration_sec=15.0,
+        max_duration_sec=40.0,
+        min_words=20,
+        top_n=10,
+        max_overlap_ratio=0.55,
+        pause_gap_sec=1.0,
+        chunk_merge_gap_sec=1.5,
+        hook_weight=0.65,
+        energy_weight=0.35,
+        hook_word_bonus_min=25,
+        hook_word_bonus_max=110,
+    ),
+    ClipProfile.sermon: ClipSelectionProfile(
+        clip_profile=ClipProfile.sermon,
+        min_duration_sec=60.0,
+        max_duration_sec=180.0,
+        min_words=90,
+        top_n=12,
+        max_overlap_ratio=0.70,
+        pause_gap_sec=2.0,
+        chunk_merge_gap_sec=3.0,
+        hook_weight=0.45,
+        energy_weight=0.55,
+        hook_word_bonus_min=50,
+        hook_word_bonus_max=340,
+    ),
+}
+
+
+def get_clip_selection_profile(profile_value: str | ClipProfile | None) -> ClipSelectionProfile:
+    if isinstance(profile_value, ClipProfile):
+        return CLIP_SELECTION_PROFILES.get(profile_value, CLIP_SELECTION_PROFILES[ClipProfile.viral])
+
+    if isinstance(profile_value, str):
+        normalized = profile_value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized == ClipProfile.sermon.value or normalized in LONG_FORM_CLIP_PROFILE_ALIASES:
+            return CLIP_SELECTION_PROFILES[ClipProfile.sermon]
+
+    return CLIP_SELECTION_PROFILES[ClipProfile.viral]
+
+
 def build_word_tokens(segments: list[TranscriptSegment]) -> list[WordToken]:
     tokens: list[WordToken] = []
     for segment in segments:
@@ -112,6 +175,7 @@ def generate_candidate_ranges(
     min_duration_sec: float,
     max_duration_sec: float,
     min_words: int,
+    chunk_merge_gap_sec: float = 1.5,
 ) -> list[tuple[float, float]]:
     ranges: list[tuple[float, float]] = []
 
@@ -119,7 +183,7 @@ def generate_candidate_ranges(
         start = chunks[i].start
         merged_tokens: list[WordToken] = []
         for j in range(i, len(chunks)):
-            if j > i and chunks[j].start - chunks[j - 1].end > 1.5:
+            if j > i and chunks[j].start - chunks[j - 1].end > chunk_merge_gap_sec:
                 break
 
             merged_tokens.extend(chunks[j].tokens)
@@ -200,7 +264,12 @@ def extract_window_text(tokens: list[WordToken], start: float, end: float) -> st
     return text.strip()
 
 
-def calculate_hook_score(text: str, start_time: float) -> float:
+def calculate_hook_score(
+    text: str,
+    start_time: float,
+    hook_word_bonus_min: int = 25,
+    hook_word_bonus_max: int = 110,
+) -> float:
     if not text:
         return 0.0
 
@@ -219,7 +288,9 @@ def calculate_hook_score(text: str, start_time: float) -> float:
             score += weight
 
     word_count = len(lowered.split())
-    if 25 <= word_count <= 110:
+    min_words = min(hook_word_bonus_min, hook_word_bonus_max)
+    max_words = max(hook_word_bonus_min, hook_word_bonus_max)
+    if min_words <= word_count <= max_words:
         score += 0.08
 
     return round(max(0.0, min(score, 1.0)), 4)
@@ -284,19 +355,57 @@ def select_top_candidates(
     candidates: list[CandidateWindow],
     top_n: int,
     max_overlap_ratio: float,
+    clip_profile: ClipProfile = ClipProfile.viral,
 ) -> list[CandidateWindow]:
     ranked = sorted(
         candidates,
         key=lambda item: (item.combined_score, item.hook_score, item.energy_score, item.duration),
         reverse=True,
     )
+
+    if clip_profile != ClipProfile.sermon:
+        selected: list[CandidateWindow] = []
+        for candidate in ranked:
+            if _has_too_much_overlap(candidate, selected, max_overlap_ratio):
+                continue
+            selected.append(candidate)
+            if len(selected) >= top_n:
+                break
+        return selected
+
+    def _duration_band(duration: float) -> str:
+        if duration <= 90.0:
+            return "short"
+        if duration <= 130.0:
+            return "medium"
+        return "long"
+
+    band_targets = {"short": 6, "medium": 4, "long": 2}
+    band_counts = {key: 0 for key in band_targets}
     selected: list[CandidateWindow] = []
+
+    # Pass 1: enforce a balanced duration mix for long-form profile.
     for candidate in ranked:
+        band = _duration_band(candidate.duration)
+        if band_counts[band] >= band_targets[band]:
+            continue
+        if _has_too_much_overlap(candidate, selected, max_overlap_ratio):
+            continue
+        selected.append(candidate)
+        band_counts[band] += 1
+        if len(selected) >= top_n:
+            return selected
+
+    # Pass 2: fill remaining slots by score regardless of band.
+    for candidate in ranked:
+        if candidate in selected:
+            continue
         if _has_too_much_overlap(candidate, selected, max_overlap_ratio):
             continue
         selected.append(candidate)
         if len(selected) >= top_n:
             break
+
     return selected
 
 

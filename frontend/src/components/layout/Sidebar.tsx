@@ -81,15 +81,15 @@ export function Sidebar() {
   const initials = userEmail.slice(0, 2).toUpperCase();
 
   return (
-    <aside className="flex flex-col w-60 min-h-screen bg-[#1E293B] border-r border-slate-800">
+    <aside className="flex flex-col w-60 min-h-screen bg-white border-r border-[var(--app-border)]">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-800">
-        <div className="w-7 h-7 rounded-md bg-[#7C3AED] flex items-center justify-center flex-shrink-0">
+      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[var(--app-border)]">
+        <div className="w-7 h-7 rounded-md bg-[var(--app-primary)] flex items-center justify-center flex-shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M5 3L19 12L5 21V3Z" fill="white" />
           </svg>
         </div>
-        <span className="text-base font-bold tracking-tight text-white">ClipBandit</span>
+        <span className="app-display text-base font-bold tracking-tight text-[var(--app-text)]">PostBandit</span>
       </div>
 
       {/* Nav */}
@@ -103,12 +103,12 @@ export function Sidebar() {
               className={`
                 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                 ${isActive
-                  ? "bg-[#7C3AED]/15 text-[#A78BFA]"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  ? "bg-[rgba(29,63,208,0.1)] text-[var(--app-primary)]"
+                  : "text-[var(--app-muted)] hover:text-[var(--app-text)] hover:bg-[#F4F8FF]"
                 }
               `}
             >
-              <span className={isActive ? "text-[#A78BFA]" : "text-slate-500"}>{item.icon}</span>
+              <span className={isActive ? "text-[var(--app-primary)]" : "text-[var(--app-subtle)]"}>{item.icon}</span>
               {item.label}
             </Link>
           );
@@ -116,17 +116,17 @@ export function Sidebar() {
       </nav>
 
       {/* User footer */}
-      <div className="px-3 py-4 border-t border-slate-800">
+      <div className="px-3 py-4 border-t border-[var(--app-border)]">
         <div className="flex items-center gap-3 px-2 mb-2">
-          <div className="w-8 h-8 rounded-full bg-[#7C3AED]/20 flex items-center justify-center flex-shrink-0">
-            <span className="text-xs font-semibold text-[#A78BFA]">{initials}</span>
+          <div className="w-8 h-8 rounded-full bg-[rgba(29,63,208,0.1)] flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-semibold text-[var(--app-primary)]">{initials}</span>
           </div>
-          <p className="text-xs text-slate-400 truncate flex-1">{userEmail}</p>
+          <p className="text-xs text-[var(--app-muted)] truncate flex-1">{userEmail}</p>
         </div>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-500
-                     hover:text-slate-200 hover:bg-slate-800 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--app-subtle)]
+                     hover:text-[var(--app-text)] hover:bg-[#F4F8FF] transition-colors"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

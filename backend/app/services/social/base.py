@@ -4,7 +4,13 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
 from app.models.connected_account import SocialPlatform
-from app.services.social.types import OAuthAccountPayload, ProviderCapabilities, PublishPayload, PublishResult
+from app.services.social.types import (
+    OAuthAccountPayload,
+    OAuthExchangeResult,
+    ProviderCapabilities,
+    PublishPayload,
+    PublishResult,
+)
 
 
 class ProviderNotConfiguredError(Exception):
@@ -47,18 +53,36 @@ class SocialProviderAdapter(ABC):
         }
 
     @abstractmethod
-    def build_connect_url(self, *, state: str, redirect_uri: str) -> str:
+    def build_connect_url(self, *, state: str, redirect_uri: str, oauth_context: dict | None = None) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    def exchange_code(self, *, code: str, redirect_uri: str) -> OAuthAccountPayload:
+    def exchange_code(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        oauth_context: dict | None = None,
+    ) -> OAuthAccountPayload:
         raise NotImplementedError
+
+    def exchange_code_result(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        oauth_context: dict | None = None,
+    ) -> OAuthExchangeResult:
+        return OAuthExchangeResult(
+            accounts=[self.exchange_code(code=code, redirect_uri=redirect_uri, oauth_context=oauth_context)]
+        )
 
     @abstractmethod
     def publish(
         self,
         *,
         media_path: str,
+        media_url: str | None,
         payload: PublishPayload,
         access_token: str,
         refresh_token: str | None,
@@ -99,16 +123,23 @@ class ScaffoldProviderAdapter(SocialProviderAdapter):
     def setup_status(self) -> tuple[str, str | None]:
         return "provider_not_configured", self._setup_message
 
-    def build_connect_url(self, *, state: str, redirect_uri: str) -> str:
+    def build_connect_url(self, *, state: str, redirect_uri: str, oauth_context: dict | None = None) -> str:
         raise ProviderNotConfiguredError(self._setup_message)
 
-    def exchange_code(self, *, code: str, redirect_uri: str) -> OAuthAccountPayload:
+    def exchange_code(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        oauth_context: dict | None = None,
+    ) -> OAuthAccountPayload:
         raise ProviderNotConfiguredError(self._setup_message)
 
     def publish(
         self,
         *,
         media_path: str,
+        media_url: str | None,
         payload: PublishPayload,
         access_token: str,
         refresh_token: str | None,

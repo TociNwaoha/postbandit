@@ -42,3 +42,5 @@
 
 ## Handoff Notes
 - Keep exports history immutable; retries always create new export attempts.
+
+## past errors 

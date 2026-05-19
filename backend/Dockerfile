@@ -15,7 +15,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN find /usr/local/lib/python3.11/site-packages/ctranslate2 -name "*.so*" -exec patchelf --clear-execstack {} +
 RUN find /usr/local/lib/python3.11/site-packages -path "*/ctranslate2.libs/*" -name "*.so*" -exec patchelf --clear-execstack {} +
-RUN pip install --no-cache-dir yt-dlp==2024.8.6
 
 COPY . .
 

@@ -38,6 +38,7 @@ class ConnectedAccountResponse(BaseModel):
     external_account_id: str
     display_name: str | None
     username_or_channel_name: str | None
+    destination_type: str
     token_expires_at: datetime | None
     scopes: list[str] | None
     metadata_json: dict

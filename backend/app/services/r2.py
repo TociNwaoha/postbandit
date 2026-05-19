@@ -13,8 +13,13 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 LOCAL_STORAGE_ROOT = Path("/tmp/clipbandit-storage")
-LOCAL_UPLOAD_URL = "http://147.93.6.2:8000/api/storage/local-upload"
-LOCAL_DOWNLOAD_BASE = "http://147.93.6.2:8000/api/storage/local"
+
+
+def _local_api_base_url() -> str:
+    configured = (settings.backend_public_url or "").strip().rstrip("/")
+    if configured:
+        return configured
+    return "http://localhost:8000"
 
 
 class R2Client:
@@ -114,7 +119,7 @@ class R2Client:
     def get_presigned_upload_url(self, key: str, expiry: int = 900) -> dict:
         if self.use_local:
             return {
-                "url": LOCAL_UPLOAD_URL,
+                "url": f"{_local_api_base_url()}/api/storage/local-upload",
                 "key": key,
                 "fields": {},
                 "use_local": True,
@@ -139,7 +144,7 @@ class R2Client:
     def get_presigned_download_url(self, key: str, expiry: int = 86400) -> str:
         if self.use_local:
             encoded_key = quote(key.lstrip("/"), safe="/")
-            return f"{LOCAL_DOWNLOAD_BASE}/{encoded_key}"
+            return f"{_local_api_base_url()}/api/storage/local/{encoded_key}"
 
         try:
             return self._client.generate_presigned_url(

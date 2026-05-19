@@ -104,6 +104,12 @@ class Settings(BaseSettings):
     workspace_cleanup_dry_run: bool = True
     workspace_cleanup_retention_hours: int = 24
     workspace_cleanup_orphan_grace_minutes: int = 45
+    failed_import_cleanup_enabled: bool = True
+    failed_import_cleanup_retention_hours: int = 24
+    failed_import_cleanup_dry_run: bool = False
+    stale_queued_upload_cleanup_enabled: bool = True
+    stale_queued_upload_cleanup_retention_hours: int = 2
+    stale_queued_upload_cleanup_dry_run: bool = False
 
     # Transcription
     whisper_model_size: str = "small"

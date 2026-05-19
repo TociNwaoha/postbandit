@@ -119,7 +119,7 @@ class YouTubeAdapter(SocialProviderAdapter):
             return "ready", None
         return "provider_not_configured", details["message"]
 
-    def build_connect_url(self, *, state: str, redirect_uri: str) -> str:
+    def build_connect_url(self, *, state: str, redirect_uri: str, oauth_context: dict | None = None) -> str:
         status, message = self.setup_status()
         if status != "ready":
             raise ProviderOperationError(message or "YouTube provider not configured")
@@ -136,7 +136,13 @@ class YouTubeAdapter(SocialProviderAdapter):
         }
         return f"{YOUTUBE_AUTH_URL}?{urlencode(params)}"
 
-    def exchange_code(self, *, code: str, redirect_uri: str) -> OAuthAccountPayload:
+    def exchange_code(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        oauth_context: dict | None = None,
+    ) -> OAuthAccountPayload:
         status, message = self.setup_status()
         if status != "ready":
             raise ProviderOperationError(message or "YouTube provider not configured")
@@ -272,6 +278,7 @@ class YouTubeAdapter(SocialProviderAdapter):
         self,
         *,
         media_path: str,
+        media_url: str | None,
         payload: PublishPayload,
         access_token: str,
         refresh_token: str | None,
@@ -291,7 +298,7 @@ class YouTubeAdapter(SocialProviderAdapter):
             updated_access_token = refreshed_token
             updated_token_expires_at = refreshed_expiry
 
-        title = (payload.title or payload.caption or "ClipBandit Export").strip()[:100]
+        title = (payload.title or payload.caption or "PostBandit Export").strip()[:100]
         description_parts = [part.strip() for part in [payload.description, payload.caption] if part and part.strip()]
         if payload.hashtags:
             description_parts.append(" ".join(payload.hashtags))
@@ -299,7 +306,10 @@ class YouTubeAdapter(SocialProviderAdapter):
 
         privacy_status = (payload.privacy or "private").strip().lower()
         if privacy_status not in {"public", "private", "unlisted"}:
-            privacy_status = "private"
+            return PublishResult(
+                status="failed",
+                error_message="Invalid YouTube privacy value. Allowed: private, unlisted, public.",
+            )
 
         metadata = {
             "snippet": {

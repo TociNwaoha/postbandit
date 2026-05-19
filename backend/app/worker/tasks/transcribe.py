@@ -13,9 +13,11 @@ from app.celery_app import celery_app
 from app.database import SyncSessionLocal
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
-from app.models.video import Video, VideoStatus
+from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, get_video_duration, get_video_resolution
 from app.services.r2 import r2_client
+from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
+from app.services.youtube import transition_import_state
 from app.services.transcription import get_model_with_metadata, transcribe_audio
 
 logger = logging.getLogger(__name__)
@@ -115,6 +117,7 @@ def transcribe_job(self, video_id: str):
     perf = PerfTracker(video_id)
     perf.mark("task_received")
     tmp_dir = Path(f"/tmp/clipbandit/{video_id}")
+    workspace = None
     queue_delay_s: float | None = None
 
     try:
@@ -127,6 +130,14 @@ def transcribe_job(self, video_id: str):
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
             if not video:
                 raise ValueError(f"Video not found: {video_id}")
+            workspace = start_workspace(
+                job_type="transcribe",
+                workspace_key=f"{video_id}-transcribe-{self.request.id or uuid.uuid4().hex[:8]}",
+                video_id=str(video.id),
+                user_id=str(video.user_id),
+                expected_paths=["original.mp4", "audio.wav", "transcript.json"],
+                refs={"video_id": str(video.id)},
+            )
 
             job = _latest_transcribe_job(db, video_uuid)
             if job:
@@ -151,6 +162,20 @@ def transcribe_job(self, video_id: str):
 
             if not video.storage_key:
                 raise FileNotFoundError("Video storage key is missing")
+            if video.source_type in {
+                VideoSourceType.youtube,
+                VideoSourceType.youtube_single,
+                VideoSourceType.youtube_playlist,
+            }:
+                transition_import_state(
+                    db,
+                    video,
+                    to_state=VideoImportState.processing,
+                    reason_code="transcribe_started",
+                    actor="worker_transcribe",
+                    allow_noop=True,
+                    strict=False,
+                )
             perf.start("file_read_source_locate", storage_key=video.storage_key)
             r2_client.download_file(video.storage_key, str(video_path))
             perf.end("file_read_source_locate")
@@ -169,6 +194,8 @@ def transcribe_job(self, video_id: str):
 
         audio_path = tmp_dir / "audio.wav"
         perf.start("ffmpeg_audio_extraction", input_path=str(video_path), output_path=str(audio_path))
+        if workspace:
+            heartbeat_workspace(workspace)
         extract_audio(str(video_path), str(audio_path))
         perf.end("ffmpeg_audio_extraction")
         logger.info(f"Audio extracted: {audio_path}")
@@ -182,6 +209,8 @@ def transcribe_job(self, video_id: str):
         )
 
         perf.start("transcription_inference", model_name=model_name)
+        if workspace:
+            heartbeat_workspace(workspace)
         result = transcribe_audio(str(audio_path), language="en", model=model)
         inference_duration_s = perf.end(
             "transcription_inference",
@@ -284,6 +313,8 @@ def transcribe_job(self, video_id: str):
                 model_load_s=round(model_load_duration_s, 3),
                 transcription_inference_s=round(inference_duration_s, 3),
             )
+            if workspace:
+                finalize_workspace(workspace, state="terminal_success", metadata={"result": "scoring"})
             return {"video_id": video_id, "status": "scoring"}
 
     except Exception as exc:
@@ -295,6 +326,21 @@ def transcribe_job(self, video_id: str):
             if video:
                 video.status = VideoStatus.error
                 video.error_message = str(exc)[:500]
+                if video.source_type in {
+                    VideoSourceType.youtube,
+                    VideoSourceType.youtube_single,
+                    VideoSourceType.youtube_playlist,
+                }:
+                    transition_import_state(
+                        db,
+                        video,
+                        to_state=VideoImportState.failed_retryable,
+                        reason_code="transcribe_error",
+                        actor="worker_transcribe",
+                        metadata={"error_type": type(exc).__name__},
+                        allow_noop=True,
+                        strict=False,
+                    )
 
             job = _latest_transcribe_job(db, video_uuid)
             if job:
@@ -308,6 +354,12 @@ def transcribe_job(self, video_id: str):
             error_type=type(exc).__name__,
             queue_delay_s=round(queue_delay_s, 3) if queue_delay_s is not None else None,
         )
+        if workspace:
+            finalize_workspace(
+                workspace,
+                state="terminal_failed",
+                metadata={"error_type": type(exc).__name__},
+            )
 
         if not isinstance(exc, (ValueError, FileNotFoundError)):
             raise self.retry(exc=exc, countdown=60)

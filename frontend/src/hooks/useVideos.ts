@@ -5,6 +5,15 @@ import { api, ApiError } from "@/lib/api";
 import { VideoListItem } from "@/types";
 
 const ACTIVE_STATUSES = new Set(["queued", "downloading", "transcribing", "scoring"]);
+const ACTIVE_IMPORT_STATES = new Set([
+  "queued",
+  "metadata_extracting",
+  "downloadable",
+  "downloading",
+  "processing",
+]);
+
+const YOUTUBE_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist"]);
 
 export function useVideos() {
   const [videos, setVideos] = useState<VideoListItem[]>([]);
@@ -34,7 +43,13 @@ export function useVideos() {
   }, [fetchVideos]);
 
   const hasActiveVideos = useMemo(
-    () => videos.some((video) => ACTIVE_STATUSES.has(video.status)),
+    () =>
+      videos.some((video) => {
+        if (YOUTUBE_SOURCE_TYPES.has(video.source_type) && video.import_state) {
+          return ACTIVE_IMPORT_STATES.has(video.import_state);
+        }
+        return ACTIVE_STATUSES.has(video.status);
+      }),
     [videos]
   );
 

@@ -9,11 +9,25 @@ import { SocialPublishPanel } from "@/components/videos/SocialPublishPanel";
 import { api, ApiError } from "@/lib/api";
 import {
   buildCaptionPreviewText,
+  formatCaptionColorVariantLabel,
+  formatCaptionStyleLabel,
+  getCaptionColorVariantMeta,
+  getCaptionColorVariantOptions,
   getCaptionPreviewLayout,
+  getCaptionStyleMeta,
+  getCaptionStyleOptions,
   getCaptionStyleTheme,
   wrapCaptionPreviewText,
 } from "@/lib/captionPreview";
-import { AspectRatio, CaptionFormat, CaptionStyle, Clip, Export, Video } from "@/types";
+import {
+  AspectRatio,
+  CaptionColorVariant,
+  CaptionFormat,
+  CaptionStyle,
+  Clip,
+  Export,
+  Video,
+} from "@/types";
 
 interface ClipEditorPanelProps {
   video: Video;
@@ -28,10 +42,10 @@ const CAPTION_SCALE_MIN = 0.25;
 const CAPTION_SCALE_MAX = 2;
 
 const exportStatusStyles: Record<string, string> = {
-  queued: "bg-slate-700/80 text-slate-200",
-  rendering: "bg-blue-500/20 text-blue-300 animate-pulse",
-  ready: "bg-emerald-500/20 text-emerald-300",
-  error: "bg-red-500/20 text-red-300",
+  queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
+  rendering: "bg-blue-500/20 text-blue-700 animate-pulse",
+  ready: "bg-emerald-500/20 text-emerald-700",
+  error: "bg-red-500/20 text-red-700",
 };
 
 function formatTimeBoundary(seconds: number): string {
@@ -91,6 +105,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace("#", "");
+  if (!/^[\da-fA-F]{6}$/.test(normalized)) {
+    return `rgba(0,0,0,${alpha})`;
+  }
+  const r = Number.parseInt(normalized.slice(0, 2), 16);
+  const g = Number.parseInt(normalized.slice(2, 4), 16);
+  const b = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEditorPanelProps) {
   const sourceAspectFromResolution = parseResolutionAspectRatio(video.resolution);
   const [clip, setClip] = useState<Clip>(initialClip);
@@ -102,6 +127,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("original");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold_boxed");
+  const [captionColorVariant, setCaptionColorVariant] = useState<CaptionColorVariant>("classic");
   const [captionFormat, setCaptionFormat] = useState<CaptionFormat>("burned_in");
   const [captionVerticalPosition, setCaptionVerticalPosition] = useState<number>(15);
   const [captionScale, setCaptionScale] = useState<number>(1);
@@ -269,7 +295,17 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
     () => getCaptionPreviewLayout(captionStyle, aspectRatio, effectiveSourceAspectRatio),
     [captionStyle, aspectRatio, effectiveSourceAspectRatio]
   );
-  const captionPreviewTheme = useMemo(() => getCaptionStyleTheme(captionStyle), [captionStyle]);
+  const captionPreviewTheme = useMemo(
+    () => getCaptionStyleTheme(captionStyle, captionColorVariant),
+    [captionStyle, captionColorVariant]
+  );
+  const captionStyleMeta = useMemo(() => getCaptionStyleMeta(captionStyle), [captionStyle]);
+  const captionStyleOptions = useMemo(() => getCaptionStyleOptions(), []);
+  const captionColorVariantOptions = useMemo(() => getCaptionColorVariantOptions(), []);
+  const captionColorVariantMeta = useMemo(
+    () => getCaptionColorVariantMeta(captionColorVariant),
+    [captionColorVariant]
+  );
   const captionPreviewText = useMemo(
     () => buildCaptionPreviewText(clip.transcript_text),
     [clip.transcript_text]
@@ -344,19 +380,50 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
       }
 
       await new Promise<void>((resolve) => {
-        let resolved = false;
-        const done = () => {
-          if (resolved) return;
-          resolved = true;
-          player.removeEventListener("seeked", done);
+        let settled = false;
+        let frameHandle: number | null = null;
+        const settleTolerance = 0.08;
+        const settleTimeoutMs = 2500;
+
+        const cleanup = () => {
+          if (frameHandle !== null) {
+            window.cancelAnimationFrame(frameHandle);
+          }
+          player.removeEventListener("seeked", onSeeked);
+          window.clearTimeout(timeoutHandle);
+        };
+
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
           resolve();
         };
-        player.addEventListener("seeked", done, { once: true });
+
+        const waitForConvergence = () => {
+          if (Math.abs(player.currentTime - clamped) <= settleTolerance) {
+            finish();
+            return;
+          }
+          frameHandle = window.requestAnimationFrame(waitForConvergence);
+        };
+
+        const onSeeked = () => {
+          waitForConvergence();
+        };
+
+        const timeoutHandle = window.setTimeout(() => {
+          // Safety timeout: avoid hanging replay on edge-case browser seek stalls.
+          finish();
+        }, settleTimeoutMs);
+
+        player.addEventListener("seeked", onSeeked);
         player.currentTime = clamped;
-        window.setTimeout(done, 250);
+        waitForConvergence();
       });
-      setPlayerCurrentTime(clamped);
-      syncFramedPreviewTime(clamped);
+      const settledTime = player.currentTime;
+      setPlayerCurrentTime(settledTime);
+      syncFramedPreviewTime(settledTime);
     },
     [normalizedMediaDuration, syncFramedPreviewTime]
   );
@@ -614,6 +681,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
         clip_id: clip.id,
         aspect_ratio: aspectRatio,
         caption_style: captionStyle,
+        caption_color_variant: captionColorVariant,
         caption_format: captionFormat,
         caption_vertical_position: captionVerticalPosition,
         caption_scale: captionScale,
@@ -648,16 +716,16 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Clip Editor</p>
-            <h2 className="mt-1 text-xl font-semibold text-white">{clip.title || "Untitled clip"}</h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="text-xs uppercase tracking-wide text-[var(--app-muted)]">Clip Editor</p>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--app-text)]">{clip.title || "Untitled clip"}</h2>
+            <p className="mt-1 text-sm text-[var(--app-muted)]">
               Video: {video.title || "Untitled video"} • Clip {formatTimeBoundary(clip.start_time)} -{" "}
               {formatTimeBoundary(clip.end_time)}
             </p>
           </div>
           <Link
             href={`/videos/${video.id}`}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            className="rounded-md border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
           >
             Back to Video
           </Link>
@@ -666,19 +734,19 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <Card>
-          <h3 className="text-sm font-semibold text-white">Preview</h3>
-          <p className="mt-1 text-xs text-slate-400">
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">Preview</h3>
+          <p className="mt-1 text-xs text-[var(--app-muted)]">
             Source preview with current clip boundaries and caption style preview for selected export settings.
           </p>
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div>
-              <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+              <div className="mb-2 flex items-center justify-between text-xs text-[var(--app-muted)]">
                 <span>Source Preview</span>
                 <span>{formatClockTime(playerCurrentTime)}</span>
               </div>
               <div
                 ref={framingOverlayRef}
-                className="relative overflow-hidden rounded-lg border border-slate-700 bg-black"
+                className="relative overflow-hidden rounded-lg border border-[var(--app-border)] bg-black"
                 style={{ aspectRatio: `${effectiveSourceAspectRatio}` }}
               >
                 {sourceUrl ? (
@@ -707,7 +775,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                     onPause={handleSourcePause}
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                  <div className="flex h-full items-center justify-center text-sm text-[var(--app-muted)]">
                     Source preview URL is unavailable for this video.
                   </div>
                 )}
@@ -722,20 +790,20 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
 
                 <div className="pointer-events-none absolute inset-0 z-20">
                   <div
-                    className="absolute border-2 border-[#A78BFA] bg-[#7C3AED]/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]"
+                    className="absolute border-2 border-[#1D3FD0] bg-[#1D3FD0]/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]"
                     style={frameOverlayStyle}
                   >
-                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C4B5FD]" />
+                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1633B8]" />
                   </div>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2 text-xs text-[var(--app-muted)]">
                 Drag directly on the source preview to position the reframing window.
               </p>
             </div>
 
             <div>
-              <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+              <div className="mb-2 flex items-center justify-between text-xs text-[var(--app-muted)]">
                 <span>Framed Output Preview</span>
                 <span>
                   {aspectRatio} • {frameGeometry.safeZoom.toFixed(2)}x
@@ -743,7 +811,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
               </div>
               <div
                 ref={framedPreviewRef}
-                className="relative overflow-hidden rounded-lg border border-slate-700 bg-black"
+                className="relative overflow-hidden rounded-lg border border-[var(--app-border)] bg-black"
                 style={{ aspectRatio: outputPreviewAspectRatioValue }}
               >
                 {sourceUrl ? (
@@ -771,7 +839,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                     onError={() => setPreviewError("Preview failed to load source video.")}
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                  <div className="flex h-full items-center justify-center text-sm text-[var(--app-muted)]">
                     Framed preview unavailable because source video is missing.
                   </div>
                 )}
@@ -788,22 +856,27 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                     >
                       <div
                         className={`pointer-events-auto relative mx-auto w-full cursor-move text-center text-white ${
-                          isCaptionDragging ? "ring-2 ring-[#A78BFA]/70" : "ring-1 ring-[#A78BFA]/45"
+                          isCaptionDragging ? "ring-2 ring-[#1D3FD0]/70" : "ring-1 ring-[#1D3FD0]/45"
                         }`}
                         style={{
                           fontSize: `${captionFontSizePx}px`,
                           lineHeight: captionPreviewLayout.lineHeight,
                           fontWeight: captionPreviewTheme.bold ? 700 : 500,
                           fontStyle: captionPreviewTheme.italic ? "italic" : "normal",
+                          fontFamily: captionPreviewTheme.fontFamily,
+                          color: captionPreviewTheme.textColor,
                           textShadow:
                             captionPreviewTheme.outlinePx > 0
-                              ? `0 0 ${captionPreviewTheme.outlinePx}px rgba(0,0,0,0.9), 0 2px ${
+                              ? `0 0 ${captionPreviewTheme.outlinePx}px ${captionPreviewTheme.outlineColor}, 0 2px ${
                                   captionPreviewTheme.outlinePx + 1
-                                }px rgba(0,0,0,0.75)`
-                              : "0 1px 2px rgba(0,0,0,0.75)",
+                                }px ${captionPreviewTheme.outlineColor}`
+                              : `0 1px 2px ${captionPreviewTheme.outlineColor}`,
                           padding: captionPreviewTheme.boxed ? "6px 10px" : "0",
                           borderRadius: captionPreviewTheme.boxed ? "8px" : "0",
-                          backgroundColor: `rgba(0,0,0,${captionPreviewTheme.backgroundOpacity})`,
+                          backgroundColor: hexToRgba(
+                            captionPreviewTheme.backgroundColor,
+                            captionPreviewTheme.backgroundOpacity
+                          ),
                         }}
                         onPointerDown={(event) => startCaptionInteraction("drag", event)}
                         onPointerMove={handleCaptionPointerMove}
@@ -814,7 +887,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                           <div key={`caption-preview-line-${index}`}>{line}</div>
                         ))}
                         <div
-                          className={`absolute -bottom-3 -right-3 h-5 w-5 cursor-nwse-resize rounded-full border-2 border-white bg-[#7C3AED] ${
+                          className={`absolute -bottom-3 -right-3 h-5 w-5 cursor-nwse-resize rounded-full border-2 border-white bg-[#1D3FD0] ${
                             isCaptionResizing ? "scale-110" : ""
                           }`}
                           onPointerDown={(event) => startCaptionInteraction("resize", event)}
@@ -827,32 +900,38 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   </div>
                 ) : (
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center p-4">
-                    <p className="rounded-md bg-black/70 px-3 py-2 text-center text-xs text-slate-200">
+                    <p className="rounded-md bg-black/70 px-3 py-2 text-center text-xs text-white">
                       SRT mode: captions are exported as a sidecar file and are not burned into this preview.
                     </p>
                   </div>
                 )}
 
-                <div className="pointer-events-none absolute right-2 top-2 z-20 rounded-md bg-black/65 px-2 py-1 text-[11px] text-slate-200">
+                <div className="pointer-events-none absolute right-2 top-2 z-20 rounded-md bg-black/65 px-2 py-1 text-[11px] text-white">
                   {captionFormat === "burned_in" ? "Burned-in caption preview" : "SRT style preview"}
                 </div>
               </div>
-              <div className="mt-2 space-y-1 text-xs text-slate-400">
+              <div className="mt-2 space-y-1 text-xs text-[var(--app-muted)]">
                 <p>
                   Current caption in preview:{" "}
-                  <span className="text-slate-200">{captionPreviewText}</span>
+                  <span className="text-[var(--app-text)]">{captionPreviewText}</span>
                 </p>
                 <p>
-                  Caption position: <span className="text-slate-200">{captionVerticalPosition.toFixed(1)}%</span> •
-                  Size: <span className="text-slate-200"> {captionScale.toFixed(2)}x</span>
+                  Caption position: <span className="text-white">{captionVerticalPosition.toFixed(1)}%</span> •
+                  Size: <span className="text-white"> {captionScale.toFixed(2)}x</span>
+                </p>
+                <p>
+                  Style:{" "}
+                  <span className="text-white">
+                    {captionStyleMeta.label} • {captionColorVariantMeta.label}
+                  </span>
                 </p>
               </div>
             </div>
           </div>
-          {previewError ? <p className="mt-2 text-sm text-red-400">{previewError}</p> : null}
+          {previewError ? <p className="mt-2 text-sm text-red-700">{previewError}</p> : null}
 
-          <div className="mt-4 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+          <div className="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--app-muted)]">
               <span>Source Timeline</span>
               <span>
                 Playhead {formatClockTime(playerCurrentTime)} / {formatClockTime(normalizedMediaDuration)}
@@ -869,9 +948,9 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   onPointerUp={handleTimelinePointerUp}
                   onPointerCancel={handleTimelinePointerUp}
                 >
-                  <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-800" />
+                  <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-[var(--app-surface-soft)]" />
                   <div
-                    className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full border border-[#A78BFA] bg-[#7C3AED]/45"
+                    className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full border border-[#1D3FD0] bg-[#1D3FD0]/45"
                     style={{
                       left: `${timelineMetrics.clipStartPercent}%`,
                       width: `${timelineMetrics.clipWidthPercent}%`,
@@ -879,11 +958,11 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   />
 
                   <div
-                    className="absolute top-0 h-5 w-0.5 bg-[#C4B5FD]"
+                    className="absolute top-0 h-5 w-0.5 bg-[#1633B8]"
                     style={{ left: `${timelineMetrics.clipStartPercent}%` }}
                   />
                   <div
-                    className="absolute top-0 h-5 w-0.5 bg-[#C4B5FD]"
+                    className="absolute top-0 h-5 w-0.5 bg-[#1633B8]"
                     style={{ left: `${timelineMetrics.clipEndPercent}%` }}
                   />
 
@@ -894,33 +973,33 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                     <div className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-sky-300" />
                   </div>
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--app-subtle)]">
                   <span>0:00</span>
                   <span>{formatClockTime(normalizedMediaDuration)}</span>
                 </div>
               </>
             ) : (
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-[var(--app-subtle)]">
                 Timeline becomes active after valid clip timings and video metadata are available.
               </p>
             )}
 
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-slate-400">Clip Start</p>
-                <p className="text-sm font-semibold text-white">
+              <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-[var(--app-muted)]">Clip Start</p>
+                <p className="text-sm font-semibold text-[var(--app-text)]">
                   {formatClockTime(normalizedClipRange?.start ?? parseNumberInput(clipStart) ?? 0)}
                 </p>
               </div>
-              <div className="rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-slate-400">Clip End</p>
-                <p className="text-sm font-semibold text-white">
+              <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-[var(--app-muted)]">Clip End</p>
+                <p className="text-sm font-semibold text-[var(--app-text)]">
                   {formatClockTime(normalizedClipRange?.end ?? parseNumberInput(clipEnd) ?? 0)}
                 </p>
               </div>
-              <div className="rounded-md border border-[#7C3AED]/50 bg-[#7C3AED]/10 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-[#C4B5FD]">Clip Duration</p>
-                <p className="text-base font-semibold text-white">{formatSeconds(normalizedClipRange?.duration ?? computedDuration)}</p>
+              <div className="rounded-md border border-[#1D3FD0]/50 bg-[#1D3FD0]/10 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-[#1633B8]">Clip Duration</p>
+                <p className="text-base font-semibold text-[var(--app-text)]">{formatSeconds(normalizedClipRange?.duration ?? computedDuration)}</p>
               </div>
             </div>
           </div>
@@ -929,18 +1008,18 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
             <button
               type="button"
               onClick={() => void handleReplay()}
-              className="rounded-md bg-[#7C3AED] px-3 py-2 text-sm font-medium text-white hover:bg-[#6D28D9]"
+              className="rounded-md bg-[#1D3FD0] px-3 py-2 text-sm font-medium text-white hover:bg-[#1633B8]"
             >
               Replay Clip
             </button>
             <button
               type="button"
               onClick={handleSeekStart}
-              className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+              className="rounded-md border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
             >
               Jump to Clip Start
             </button>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-[var(--app-muted)]">
               Clip range: {formatClockTime(normalizedClipRange?.start ?? parseNumberInput(clipStart) ?? 0)} -{" "}
               {formatClockTime(normalizedClipRange?.end ?? parseNumberInput(clipEnd) ?? 0)} (
               {formatSeconds(normalizedClipRange?.duration ?? computedDuration)})
@@ -949,16 +1028,16 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
         </Card>
 
         <Card>
-          <h3 className="text-sm font-semibold text-white">Trim</h3>
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">Trim</h3>
           {clip.thumbnail_url ? (
             <img
               src={clip.thumbnail_url}
               alt="Clip thumbnail"
-              className="mt-4 h-32 w-full rounded-md border border-slate-700 object-cover"
+              className="mt-4 h-32 w-full rounded-md border border-[var(--app-border)] object-cover"
             />
           ) : null}
           <div className="mt-4 space-y-3">
-            <label className="block text-xs text-slate-400">
+            <label className="block text-xs text-[var(--app-muted)]">
               Start (seconds)
               <input
                 type="number"
@@ -966,10 +1045,10 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                 min={0}
                 value={clipStart}
                 onChange={(event) => setClipStart(event.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
               />
             </label>
-            <label className="block text-xs text-slate-400">
+            <label className="block text-xs text-[var(--app-muted)]">
               End (seconds)
               <input
                 type="number"
@@ -977,15 +1056,15 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                 min={0}
                 value={clipEnd}
                 onChange={(event) => setClipEnd(event.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
               />
             </label>
-            <p className="text-xs text-slate-400">
-              Duration: <span className="text-slate-200">{formatSeconds(computedDuration)}</span>
+            <p className="text-xs text-[var(--app-muted)]">
+              Duration: <span className="text-[var(--app-text)]">{formatSeconds(computedDuration)}</span>
               {mediaDuration ? (
                 <>
                   {" "}
-                  • Video length: <span className="text-slate-200">{formatSeconds(mediaDuration)}</span>
+                  • Video length: <span className="text-[var(--app-text)]">{formatSeconds(mediaDuration)}</span>
                 </>
               ) : null}
             </p>
@@ -993,17 +1072,17 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
               type="button"
               onClick={() => void handleSaveTrim()}
               disabled={saveLoading}
-              className="w-full rounded-md bg-[#7C3AED] px-3 py-2 text-sm font-medium text-white hover:bg-[#6D28D9] disabled:opacity-60"
+              className="w-full rounded-md bg-[#1D3FD0] px-3 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
             >
               {saveLoading ? "Saving..." : "Save Trim"}
             </button>
-            {saveMessage ? <p className="text-xs text-emerald-300">{saveMessage}</p> : null}
-            {saveError ? <p className="text-xs text-red-400">{saveError}</p> : null}
+            {saveMessage ? <p className="text-xs text-emerald-700">{saveMessage}</p> : null}
+            {saveError ? <p className="text-xs text-red-700">{saveError}</p> : null}
           </div>
 
-          <div className="mt-5 border-t border-slate-700 pt-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">Framing</h4>
-            <p className="mt-1 text-xs text-slate-400">
+          <div className="mt-5 border-t border-[var(--app-border)] pt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Framing</h4>
+            <p className="mt-1 text-xs text-[var(--app-muted)]">
               Choose export aspect and drag the source frame in preview. Aspect changes reset frame to centered.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1014,15 +1093,15 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   onClick={() => handleAspectRatioChange(ratio)}
                   className={`rounded-md border px-3 py-2 text-xs font-medium ${
                     aspectRatio === ratio
-                      ? "border-[#7C3AED] bg-[#7C3AED]/20 text-white"
-                      : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                      ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-white"
+                      : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
                   }`}
                 >
                   {ratio}
                 </button>
               ))}
             </div>
-            <label className="mt-3 block text-xs text-slate-400">
+            <label className="mt-3 block text-xs text-[var(--app-muted)]">
               Zoom
               <div className="mt-1 flex items-center gap-3">
                 <input
@@ -1032,12 +1111,12 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   step={0.05}
                   value={frameZoom}
                   onChange={(event) => setFrameZoom(Number(event.target.value))}
-                  className="w-full accent-[#7C3AED]"
+                  className="w-full accent-[#1D3FD0]"
                 />
-                <span className="min-w-12 text-right text-sm text-slate-200">{frameGeometry.safeZoom.toFixed(2)}x</span>
+                <span className="min-w-12 text-right text-sm text-[var(--app-text)]">{frameGeometry.safeZoom.toFixed(2)}x</span>
               </div>
             </label>
-            <p className="mt-2 text-[11px] text-slate-500">
+            <p className="mt-2 text-[11px] text-[var(--app-subtle)]">
               Anchor: x {clampedFrameAnchorX.toFixed(3)} • y {clampedFrameAnchorY.toFixed(3)}
             </p>
           </div>
@@ -1045,36 +1124,104 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
       </div>
 
       <Card>
-        <h3 className="text-sm font-semibold text-white">Transcript Context</h3>
-        <p className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-slate-700 bg-slate-900/40 p-3 text-sm text-slate-300">
+        <h3 className="text-sm font-semibold text-[var(--app-text)]">Transcript Context</h3>
+        <p className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3 text-sm text-[var(--app-muted)]">
           {clip.transcript_text || "Transcript excerpt unavailable for this clip."}
         </p>
       </Card>
 
       <Card>
-        <h3 className="text-sm font-semibold text-white">Export Settings</h3>
-        <div className="mt-3 rounded-md border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs text-slate-300">
-          Selected aspect from Framing: <span className="font-semibold text-white">{aspectRatio}</span>
+        <h3 className="text-sm font-semibold text-[var(--app-text)]">Export Settings</h3>
+        <div className="mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-xs text-[var(--app-muted)]">
+          Selected aspect from Framing: <span className="font-semibold text-[var(--app-text)]">{aspectRatio}</span>
         </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-xs text-slate-400">
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <label className="text-xs text-[var(--app-muted)]">
             Caption Style
             <select
               value={captionStyle}
               onChange={(event) => setCaptionStyle(event.target.value as CaptionStyle)}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             >
-              <option value="bold_boxed">bold_boxed</option>
-              <option value="sermon_quote">sermon_quote</option>
-              <option value="clean_minimal">clean_minimal</option>
+              {captionStyleOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
             </select>
+            <div className="mt-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+              <p className="text-[11px] uppercase tracking-wide text-[var(--app-muted)]">Style preview</p>
+              <p className="mt-1 text-xs text-[var(--app-muted)]">{captionStyleMeta.description}</p>
+              <p className="mt-1 text-xs text-[var(--app-subtle)]">{captionColorVariantMeta.description}</p>
+              <div className="mt-2 rounded-md bg-black/55 px-2 py-2 text-center">
+                <span
+                  className="inline-block"
+                  style={{
+                    fontFamily: captionPreviewTheme.fontFamily,
+                    fontWeight: captionPreviewTheme.bold ? 700 : 500,
+                    fontStyle: captionPreviewTheme.italic ? "italic" : "normal",
+                    color: captionPreviewTheme.textColor,
+                    textShadow:
+                      captionPreviewTheme.outlinePx > 0
+                        ? `0 0 ${captionPreviewTheme.outlinePx}px ${captionPreviewTheme.outlineColor}, 0 2px ${
+                            captionPreviewTheme.outlinePx + 1
+                          }px ${captionPreviewTheme.outlineColor}`
+                        : `0 1px 2px ${captionPreviewTheme.outlineColor}`,
+                    padding: captionPreviewTheme.boxed ? "4px 8px" : "0",
+                    borderRadius: captionPreviewTheme.boxed ? "6px" : "0",
+                    backgroundColor: hexToRgba(
+                      captionPreviewTheme.backgroundColor,
+                      captionPreviewTheme.backgroundOpacity
+                    ),
+                  }}
+                >
+                  Preview: {captionPreviewLines[0] || "Your caption style sample"}
+                </span>
+              </div>
+            </div>
           </label>
-          <label className="text-xs text-slate-400">
+          <label className="text-xs text-[var(--app-muted)]">
+            Caption Color
+            <select
+              value={captionColorVariant}
+              onChange={(event) => setCaptionColorVariant(event.target.value as CaptionColorVariant)}
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+            >
+              {captionColorVariantOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <div className="mt-2 flex items-center gap-2">
+              {captionColorVariantOptions.map((item) => {
+                const selected = captionColorVariant === item.value;
+                return (
+                  <button
+                    key={`caption-variant-chip-${item.value}`}
+                    type="button"
+                    onClick={() => setCaptionColorVariant(item.value)}
+                    className={`rounded-md border px-2 py-1 text-[11px] ${
+                      selected
+                        ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-[#1633B8]"
+                        : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
+                    }`}
+                    title={item.description}
+                  >
+                    <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full border border-white/30 align-middle"
+                      style={{ backgroundColor: item.swatch.textColor }} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </label>
+          <label className="text-xs text-[var(--app-muted)]">
             Caption Format
             <select
               value={captionFormat}
               onChange={(event) => setCaptionFormat(event.target.value as CaptionFormat)}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-[#7C3AED] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             >
               <option value="burned_in">burned_in</option>
               <option value="srt">srt</option>
@@ -1087,28 +1234,28 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
             type="button"
             onClick={() => void handleCreateExport()}
             disabled={createExportLoading}
-            className="rounded-md bg-[#7C3AED] px-4 py-2 text-sm font-medium text-white hover:bg-[#6D28D9] disabled:opacity-60"
+            className="rounded-md bg-[#1D3FD0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
           >
             {createExportLoading ? "Creating Export..." : "Create Export"}
           </button>
-          {createExportMessage ? <p className="text-sm text-emerald-300">{createExportMessage}</p> : null}
+          {createExportMessage ? <p className="text-sm text-emerald-700">{createExportMessage}</p> : null}
         </div>
       </Card>
 
       <Card>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Export History</h3>
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">Export History</h3>
           {exportsLoading ? (
-            <span className="inline-flex items-center gap-2 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-2 text-xs text-[var(--app-muted)]">
               <LoadingSpinner />
               Refreshing...
             </span>
           ) : null}
         </div>
-        {exportError ? <p className="mt-3 text-sm text-red-400">{exportError}</p> : null}
+        {exportError ? <p className="mt-3 text-sm text-red-700">{exportError}</p> : null}
 
         {!exports.length && !exportsLoading ? (
-          <p className="mt-4 rounded-md border border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+          <p className="mt-4 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4 text-sm text-[var(--app-muted)]">
             No exports yet for this clip.
           </p>
         ) : null}
@@ -1116,12 +1263,13 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
         {exports.length ? (
           <div className="mt-4 space-y-3">
             {exports.map((item) => (
-              <div key={item.id} className="rounded-md border border-slate-700 bg-slate-900/40 p-4">
+              <div key={item.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-sm text-slate-200">
+                  <div className="text-sm text-[var(--app-text)]">
                     <p className="font-medium">Export {item.id.slice(0, 8)}</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {item.aspect_ratio} • {item.caption_style || "no_style"} • {item.caption_format}
+                    <p className="mt-1 text-xs text-[var(--app-muted)]">
+                      {item.aspect_ratio} • {formatCaptionStyleLabel(item.caption_style)} •{" "}
+                      {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format}
                     </p>
                   </div>
                   <span
@@ -1132,14 +1280,14 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                     {statusLabel(item.status)}
                   </span>
                 </div>
-                {item.error_message ? <p className="mt-3 text-xs text-red-400">{item.error_message}</p> : null}
+                {item.error_message ? <p className="mt-3 text-xs text-red-700">{item.error_message}</p> : null}
                 {item.status === "ready" && item.download_url ? (
                   <div className="mt-3 flex flex-wrap items-center gap-4">
                     <a
                       href={item.download_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex text-xs text-[#A78BFA] hover:text-[#C4B5FD]"
+                      className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                     >
                       Download export
                     </a>
@@ -1148,7 +1296,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                         href={item.srt_download_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex text-xs text-[#A78BFA] hover:text-[#C4B5FD]"
+                        className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                       >
                         Download captions (.srt)
                       </a>
@@ -1156,7 +1304,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   </div>
                 ) : null}
                 {item.status === "ready" && !item.download_url ? (
-                  <p className="mt-3 text-xs text-slate-400">Export is ready but no download URL is available yet.</p>
+                  <p className="mt-3 text-xs text-[var(--app-muted)]">Export is ready but no download URL is available yet.</p>
                 ) : null}
               </div>
             ))}
@@ -1165,7 +1313,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
       </Card>
 
       <Card>
-        <SocialPublishPanel exports={exports} />
+        <SocialPublishPanel clip={clip} exports={exports} onClipUpdate={setClip} />
       </Card>
     </div>
   );

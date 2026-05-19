@@ -20,11 +20,20 @@ class CaptionStyle(str, enum.Enum):
     bold_boxed = "bold_boxed"
     sermon_quote = "sermon_quote"
     clean_minimal = "clean_minimal"
+    kinetic_bold = "kinetic_bold"
+    cinema_outline = "cinema_outline"
+    clean_highlight = "clean_highlight"
 
 
 class CaptionFormat(str, enum.Enum):
     burned_in = "burned_in"
     srt = "srt"
+
+
+class CaptionColorVariant(str, enum.Enum):
+    classic = "classic"
+    warm = "warm"
+    cool = "cool"
 
 
 class ExportStatus(str, enum.Enum):
@@ -56,6 +65,9 @@ class Export(Base):
         nullable=False,
     )
     caption_style: Mapped[CaptionStyle | None] = mapped_column(SAEnum(CaptionStyle, name="caption_style"))
+    caption_color_variant: Mapped[CaptionColorVariant | None] = mapped_column(
+        SAEnum(CaptionColorVariant, name="caption_color_variant")
+    )
     caption_format: Mapped[CaptionFormat] = mapped_column(SAEnum(CaptionFormat, name="caption_format"), nullable=False)
     caption_vertical_position: Mapped[float | None] = mapped_column(Float)
     caption_scale: Mapped[float | None] = mapped_column(Float)

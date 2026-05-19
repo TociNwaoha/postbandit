@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.celery_app import celery_app
 from app.database import SyncSessionLocal
 from app.models.clip import Clip, ClipStatus
-from app.models.export import CaptionFormat, Export, ExportStatus
+from app.models.export import CaptionColorVariant, CaptionFormat, Export, ExportStatus
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video
@@ -147,6 +147,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                     cues,
                     str(ass_local_path),
                     _enum_value(export.caption_style),
+                    _enum_value(export.caption_color_variant or CaptionColorVariant.classic),
                     aspect_ratio_value,
                     target_width,
                     target_height,

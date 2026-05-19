@@ -3,17 +3,18 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models.clip import Clip
-from app.models.export import Export, ExportStatus
+from app.models.export import CaptionColorVariant, Export, ExportStatus
 from app.models.job import Job, JobStatus
 from app.models.user import User
 from app.models.video import Video
-from app.schemas.export import ExportCreate, ExportResponse
+from app.schemas.export import ExportCreate, ExportResponse, PublicExportShareResponse
 from app.services.r2 import r2_client
 
 router = APIRouter()
@@ -24,6 +25,14 @@ ACTIVE_EXPORT_STATUSES = (ExportStatus.queued, ExportStatus.rendering)
 
 def _enum_value(value):
     return value.value if hasattr(value, "value") else value
+
+
+def _resolve_caption_color_variant(
+    value: CaptionColorVariant | None,
+) -> CaptionColorVariant:
+    if value in (CaptionColorVariant.classic, CaptionColorVariant.warm, CaptionColorVariant.cool):
+        return value
+    return CaptionColorVariant.classic
 
 
 def _normalize_caption_vertical_position(value: float | None) -> float | None:
@@ -65,6 +74,24 @@ def _derived_download_url(storage_key: str | None) -> str | None:
 def _clip_thumbnail_url(clip: Clip | None) -> str | None:
     if not clip or not clip.thumbnail_key:
         return None
+
+
+def _share_description(clip: Clip | None, video: Video | None) -> str:
+    transcript = " ".join((clip.transcript_text or "").split()) if clip else ""
+    if transcript:
+        limit = 280
+        if len(transcript) <= limit:
+            return transcript
+        cut = transcript[:limit]
+        last_space = cut.rfind(" ")
+        if last_space > 140:
+            cut = cut[:last_space]
+        return f"{cut.strip()}..."
+    if clip and clip.title:
+        return clip.title.strip()
+    if video and video.title:
+        return video.title.strip()
+    return "Shared from PostBandit."
     try:
         return r2_client.get_presigned_download_url(clip.thumbnail_key)
     except Exception as exc:
@@ -91,6 +118,7 @@ def _to_response(
         user_id=export.user_id,
         aspect_ratio=export.aspect_ratio,
         caption_style=export.caption_style,
+        caption_color_variant=_resolve_caption_color_variant(export.caption_color_variant),
         caption_format=export.caption_format,
         caption_vertical_position=export.caption_vertical_position,
         caption_scale=export.caption_scale,
@@ -204,6 +232,44 @@ async def get_export(
     return _to_response(export, clip, video)
 
 
+@router.get("/public/exports/{export_id}/share", response_model=PublicExportShareResponse)
+async def get_public_export_share(
+    export_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Export, Clip, Video)
+        .join(Clip, Export.clip_id == Clip.id)
+        .join(Video, Clip.video_id == Video.id)
+        .where(Export.id == export_id)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share export not found")
+
+    export, clip, video = row
+    if export.status != ExportStatus.ready or not export.storage_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share export not found")
+
+    media_url = _derived_download_url(export.storage_key)
+    if not media_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share export not found")
+
+    title = (clip.title or video.title or "PostBandit Share").strip()
+    share_url = f"{settings.frontend_public_url.rstrip('/')}/share/exports/{export.id}"
+
+    return PublicExportShareResponse(
+        export_id=export.id,
+        clip_id=clip.id,
+        video_id=video.id,
+        title=title,
+        description=_share_description(clip, video),
+        thumbnail_url=_clip_thumbnail_url(clip),
+        media_url=media_url,
+        share_url=share_url,
+    )
+
+
 @router.post("/exports", response_model=ExportResponse, status_code=status.HTTP_201_CREATED)
 async def create_export(
     body: ExportCreate,
@@ -211,11 +277,12 @@ async def create_export(
     current_user: User = Depends(get_current_user),
 ):
     logger.info(
-        "[exports] create requested user_id=%s clip_id=%s aspect_ratio=%s caption_style=%s caption_format=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s",
+        "[exports] create requested user_id=%s clip_id=%s aspect_ratio=%s caption_style=%s caption_color_variant=%s caption_format=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s",
         current_user.id,
         body.clip_id,
         body.aspect_ratio,
         body.caption_style,
+        body.caption_color_variant,
         body.caption_format,
         body.caption_vertical_position,
         body.caption_scale,
@@ -228,6 +295,7 @@ async def create_export(
     frame_anchor_x = _normalize_frame_anchor(body.frame_anchor_x)
     frame_anchor_y = _normalize_frame_anchor(body.frame_anchor_y)
     frame_zoom = _normalize_frame_zoom(body.frame_zoom)
+    caption_color_variant = _resolve_caption_color_variant(body.caption_color_variant)
 
     clip_video_result = await db.execute(
         select(Clip, Video)
@@ -255,6 +323,15 @@ async def create_export(
         )
         .order_by(Export.created_at.desc())
     )
+    if caption_color_variant == CaptionColorVariant.classic:
+        dedupe_query = dedupe_query.where(
+            or_(
+                Export.caption_color_variant == CaptionColorVariant.classic,
+                Export.caption_color_variant.is_(None),
+            )
+        )
+    else:
+        dedupe_query = dedupe_query.where(Export.caption_color_variant == caption_color_variant)
     if caption_vertical_position is None:
         dedupe_query = dedupe_query.where(Export.caption_vertical_position.is_(None))
     else:
@@ -278,6 +355,7 @@ async def create_export(
         user_id=current_user.id,
         aspect_ratio=body.aspect_ratio,
         caption_style=body.caption_style,
+        caption_color_variant=caption_color_variant,
         caption_format=body.caption_format,
         caption_vertical_position=caption_vertical_position,
         caption_scale=caption_scale,
@@ -297,6 +375,7 @@ async def create_export(
             "clip_id": str(body.clip_id),
             "aspect_ratio": _enum_value(body.aspect_ratio),
             "caption_style": _enum_value(body.caption_style) if body.caption_style else None,
+            "caption_color_variant": _enum_value(caption_color_variant),
             "caption_format": _enum_value(body.caption_format),
             "caption_vertical_position": caption_vertical_position,
             "caption_scale": caption_scale,
@@ -341,6 +420,7 @@ async def retry_export(
         user_id=current_user.id,
         aspect_ratio=original_export.aspect_ratio,
         caption_style=original_export.caption_style,
+        caption_color_variant=_resolve_caption_color_variant(original_export.caption_color_variant),
         caption_format=original_export.caption_format,
         caption_vertical_position=original_export.caption_vertical_position,
         caption_scale=original_export.caption_scale,
@@ -360,6 +440,9 @@ async def retry_export(
             "clip_id": str(clip.id),
             "aspect_ratio": _enum_value(retry_export_row.aspect_ratio),
             "caption_style": _enum_value(retry_export_row.caption_style) if retry_export_row.caption_style else None,
+            "caption_color_variant": _enum_value(
+                _resolve_caption_color_variant(retry_export_row.caption_color_variant)
+            ),
             "caption_format": _enum_value(retry_export_row.caption_format),
             "caption_vertical_position": retry_export_row.caption_vertical_position,
             "caption_scale": retry_export_row.caption_scale,

@@ -31,6 +31,12 @@ class OAuthAccountPayload:
 
 
 @dataclass(frozen=True)
+class OAuthExchangeResult:
+    accounts: list[OAuthAccountPayload]
+    provider_metadata_json: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class PublishPayload:
     title: str | None
     description: str | None
@@ -38,6 +44,9 @@ class PublishPayload:
     hashtags: list[str] | None
     privacy: str | None
     scheduled_for: datetime | None
+    media_url: str | None = None
+    destination_external_id: str | None = None
+    destination_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

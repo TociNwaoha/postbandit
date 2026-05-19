@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,6 +7,15 @@
 :root {
   --background: #0F172A;
   --foreground: #F8FAFC;
+  --app-primary: #1D3FD0;
+  --app-primary-hover: #1633B8;
+  --app-bg: #F4F8FF;
+  --app-surface: #FFFFFF;
+  --app-surface-soft: #FAFBFF;
+  --app-border: #D6E2F5;
+  --app-text: #091528;
+  --app-muted: #4A6080;
+  --app-subtle: #7A94B0;
 }
 
 * {
@@ -16,17 +27,70 @@ body {
   color: var(--foreground);
 }
 
+.app-shell {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+}
+
+.app-display {
+  font-family: "Bricolage Grotesque", Inter, system-ui, sans-serif;
+}
+
+.app-body {
+  font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+}
+
+.app-card {
+  background-color: var(--app-surface);
+  border-color: var(--app-border);
+  color: var(--app-text);
+}
+
+.app-surface-soft {
+  background-color: var(--app-surface-soft);
+}
+
+.app-border {
+  border-color: var(--app-border);
+}
+
+.app-text {
+  color: var(--app-text);
+}
+
+.app-muted {
+  color: var(--app-muted);
+}
+
+.app-subtle {
+  color: var(--app-subtle);
+}
+
+.app-primary {
+  background-color: var(--app-primary);
+  color: #ffffff;
+}
+
+.app-primary:hover {
+  background-color: var(--app-primary-hover);
+}
+
+.app-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(29, 63, 208, 0.2);
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #1E293B;
+  background: #E8F0FF;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #B8CAE9;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #9CB4D9;
 }

@@ -10,6 +10,7 @@ export interface User {
 }
 
 export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist";
+export type ClipProfile = "viral" | "sermon";
 export type VideoStatus =
   | "queued"
   | "downloading"
@@ -18,12 +19,48 @@ export type VideoStatus =
   | "ready"
   | "error";
 
+export type VideoImportState =
+  | "not_applicable"
+  | "queued"
+  | "metadata_extracting"
+  | "downloadable"
+  | "downloading"
+  | "blocked"
+  | "replacement_upload_required"
+  | "helper_required"
+  | "embed_only"
+  | "processing"
+  | "ready"
+  | "failed_retryable"
+  | "failed_terminal";
+
+export interface VideoGenerateClipsResponse {
+  video_id: string;
+  status: "queued" | "already_scoring";
+  clip_profile: ClipProfile;
+  message: string;
+}
+
 export interface Video {
   id: string;
   user_id: string;
   title: string | null;
   source_type: VideoSourceType;
   source_url: string | null;
+  clip_profile?: ClipProfile;
+  source_video_id?: string | null;
+  source_playlist_id?: string | null;
+  source_playlist_title?: string | null;
+  playlist_index?: number | null;
+  import_parent_id?: string | null;
+  embed_url?: string | null;
+  import_state?: VideoImportState;
+  import_state_ui?: string | null;
+  import_mode?: "server_download" | "embed_only" | "manual_upload";
+  is_download_blocked?: boolean;
+  error_code?: string | null;
+  debug_error_message?: string | null;
+  external_metadata_json?: Record<string, unknown>;
   storage_key: string | null;
   source_download_url?: string | null;
   duration_sec: number | null;
@@ -45,6 +82,62 @@ export interface VideoListItem {
   clip_count: number;
   created_at: string;
   thumbnail_url: string | null;
+  source_type: VideoSourceType;
+  source_url: string | null;
+  clip_profile?: ClipProfile;
+  source_video_id: string | null;
+  source_playlist_id: string | null;
+  source_playlist_title: string | null;
+  playlist_index: number | null;
+  import_parent_id: string | null;
+  embed_url: string | null;
+  import_state: VideoImportState;
+  import_state_ui: string | null;
+  import_mode: "server_download" | "embed_only" | "manual_upload";
+  is_download_blocked: boolean;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export interface YouTubeImportResponse {
+  video_id?: string | null;
+  playlist_import_id?: string | null;
+  import_kind: "single" | "playlist";
+  status: string;
+  message: string;
+  recovery_required?: boolean;
+  recovery_reason?: string | null;
+  recovery_action?: string | null;
+}
+
+export interface PlaylistImportItem {
+  id: string;
+  title: string | null;
+  status: VideoStatus;
+  import_state: VideoImportState;
+  import_state_ui: string | null;
+  playlist_index: number | null;
+  source_video_id: string | null;
+  embed_url: string | null;
+  thumbnail_url: string | null;
+  import_mode: "server_download" | "embed_only" | "manual_upload";
+  is_download_blocked: boolean;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export interface PlaylistImport {
+  id: string;
+  source_url: string;
+  playlist_id: string;
+  title: string | null;
+  status: string;
+  total_items: number;
+  completed_items: number;
+  failed_items: number;
+  created_at: string;
+  updated_at: string;
+  items: PlaylistImportItem[];
 }
 
 export interface TranscriptSegmentPayload {
@@ -96,7 +189,14 @@ export interface Clip {
 }
 
 export type AspectRatio = "original" | "9:16" | "16:9" | "1:1";
-export type CaptionStyle = "bold_boxed" | "sermon_quote" | "clean_minimal";
+export type CaptionStyle =
+  | "bold_boxed"
+  | "sermon_quote"
+  | "clean_minimal"
+  | "kinetic_bold"
+  | "cinema_outline"
+  | "clean_highlight";
+export type CaptionColorVariant = "classic" | "warm" | "cool";
 export type CaptionFormat = "burned_in" | "srt";
 export type ExportStatus = "queued" | "rendering" | "ready" | "error";
 
@@ -107,6 +207,7 @@ export interface Export {
   user_id: string;
   aspect_ratio: AspectRatio;
   caption_style: CaptionStyle | null;
+  caption_color_variant: CaptionColorVariant;
   caption_format: CaptionFormat;
   caption_vertical_position?: number | null;
   caption_scale?: number | null;
@@ -164,7 +265,7 @@ export interface TranscriptSegment {
   created_at: string;
 }
 
-export type SocialPlatform = "instagram" | "tiktok" | "facebook" | "youtube" | "x" | "linkedin";
+export type SocialPlatform = "instagram" | "threads" | "tiktok" | "facebook" | "youtube" | "x" | "linkedin";
 
 export interface SocialProviderCapabilities {
   supports_connect: boolean;
@@ -197,11 +298,23 @@ export interface ConnectedAccount {
   external_account_id: string;
   display_name: string | null;
   username_or_channel_name: string | null;
+  destination_type: string;
   token_expires_at: string | null;
   scopes: string[] | null;
   metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface PublicExportShare {
+  export_id: string;
+  clip_id: string;
+  video_id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string | null;
+  media_url: string;
+  share_url: string;
 }
 
 export type PublishJobStatus =
