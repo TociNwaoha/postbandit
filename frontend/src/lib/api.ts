@@ -1,6 +1,7 @@
 import { getSession } from "next-auth/react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const PROXY_PREFIX = "/api/backend";
 
 class ApiError extends Error {
   constructor(
@@ -23,15 +24,27 @@ async function apiFetch<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const authHeaders = await getAuthHeaders();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const absoluteUrl = `${API_URL}${normalizedPath}`;
+  const proxyUrl = `${PROXY_PREFIX}${normalizedPath.replace(/^\/api/, "")}`;
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const requestInit: RequestInit = {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...authHeaders,
       ...options.headers,
     },
-  });
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(absoluteUrl, requestInit);
+  } catch {
+    // Fallback for browser/network/adblock issues on direct API domain:
+    // use same-origin Next.js rewrite proxy path.
+    res = await fetch(proxyUrl, requestInit);
+  }
 
   if (res.status === 401) {
     if (typeof window !== "undefined") {
