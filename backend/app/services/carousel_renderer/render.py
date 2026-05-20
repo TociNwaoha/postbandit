@@ -28,6 +28,7 @@ SLIDE_HEIGHT = 1350  # Instagram max portrait
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 FONT_DIR = ASSETS_DIR / "fonts"
+LOGO_PATH = ASSETS_DIR / "postbandit-logo.png"
 HEADSHOT_PATH = ASSETS_DIR / "headshot.jpg"
 
 # Brand colors - deep navy theme (customize these to match your brand)
@@ -132,6 +133,16 @@ def create_circular_image(image, size):
     output = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     output.paste(image, (0, 0), mask)
     return output.resize((size, size), Image.LANCZOS)
+
+
+def load_cta_avatar_circle(size):
+    """Prefer PostBandit logo; fall back to legacy headshot."""
+    for candidate in (LOGO_PATH, HEADSHOT_PATH):
+        if not candidate.exists():
+            continue
+        source = Image.open(candidate).convert("RGBA")
+        return create_circular_image(source, size)
+    return None
 
 
 def draw_grid_texture(img, color="#2A2A2A", spacing=40, alpha=30):
@@ -690,9 +701,10 @@ def render_cta_slide(config, slide, fonts, carousel_dir):
 
     center_x = SLIDE_WIDTH // 2
 
-    headshot = Image.open(HEADSHOT_PATH).convert("RGBA")
     hs_size = 240
-    headshot_circle = create_circular_image(headshot, hs_size)
+    avatar_circle = load_cta_avatar_circle(hs_size)
+    if avatar_circle is None:
+        avatar_circle = Image.new("RGBA", (hs_size, hs_size), hex_to_rgb(COLORS["accent"]) + (255,))
 
     ring_size = hs_size + 20
     ring = Image.new("RGBA", (ring_size, ring_size), (0, 0, 0, 0))
@@ -711,7 +723,7 @@ def render_cta_slide(config, slide, fonts, carousel_dir):
     footer_y = SLIDE_HEIGHT - 70
     hs_y = usable_top + (footer_y - usable_top - content_h) // 2
     img.paste(ring, (center_x - ring_size // 2, hs_y - 8), ring)
-    img.paste(headshot_circle, (center_x - hs_size // 2, hs_y), headshot_circle)
+    img.paste(avatar_circle, (center_x - hs_size // 2, hs_y), avatar_circle)
 
     name = config["profile"]["display_name"]
     name_font = fonts["headline_md"]

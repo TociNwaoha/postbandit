@@ -23,6 +23,7 @@ SLIDE_HEIGHT = 1350
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 FONT_DIR = ASSETS_DIR / "fonts"
+LOGO_PATH = ASSETS_DIR / "postbandit-logo.png"
 HEADSHOT_PATH = ASSETS_DIR / "headshot.jpg"
 
 COLORS = {
@@ -157,6 +158,30 @@ def create_base_slide(glow_pos="corners", intensity=90):
     img = Image.new("RGB", (SLIDE_WIDTH, SLIDE_HEIGHT), hex_to_rgb(COLORS["bg"]))
     draw_teal_glow(img, positions=glow_pos, intensity=intensity)
     return img
+
+
+def load_cta_avatar(size):
+    """Prefer PostBandit logo; fall back to legacy headshot."""
+    for candidate in (LOGO_PATH, HEADSHOT_PATH):
+        if not candidate.exists():
+            continue
+        avatar = Image.open(candidate).convert("RGB")
+        square = min(avatar.size)
+        avatar = avatar.crop(
+            (
+                (avatar.width - square) // 2,
+                (avatar.height - square) // 2,
+                (avatar.width + square) // 2,
+                (avatar.height + square) // 2,
+            )
+        )
+        avatar = avatar.resize((size, size), Image.LANCZOS)
+        mask = Image.new("L", (size, size), 0)
+        md = ImageDraw.Draw(mask)
+        md.ellipse([0, 0, size, size], fill=255)
+        avatar.putalpha(mask)
+        return avatar
+    return None
 
 
 def draw_text_line(draw, text, x, y, font, fill, max_width=None):
@@ -521,24 +546,16 @@ def render_cta_slide(config, slide, fonts, carousel_dir):
                             fill=hex_to_rgb(COLORS["card_bg"]),
                             outline=hex_to_rgb(COLORS["card_border"]), width=2)
 
-    # Avatar circle (headshot or placeholder)
+    # Avatar circle (PostBandit logo by default)
     avatar_size = 60
     avatar_x = pill_x + 14
     avatar_y = pill_y + (pill_h - avatar_size) // 2
 
-    if HEADSHOT_PATH.exists():
-        hs = Image.open(HEADSHOT_PATH).convert("RGB")
-        hs_sq = min(hs.size)
-        hs = hs.crop(((hs.width - hs_sq) // 2, (hs.height - hs_sq) // 2,
-                      (hs.width + hs_sq) // 2, (hs.height + hs_sq) // 2))
-        hs = hs.resize((avatar_size, avatar_size), Image.LANCZOS)
-        mask = Image.new("L", (avatar_size, avatar_size), 0)
-        md = ImageDraw.Draw(mask)
-        md.ellipse([0, 0, avatar_size, avatar_size], fill=255)
-        hs.putalpha(mask)
-        img.paste(hs, (avatar_x, avatar_y), hs)
+    avatar = load_cta_avatar(avatar_size)
+    if avatar is not None:
+        img.paste(avatar, (avatar_x, avatar_y), avatar)
 
-        # Rainbow ring
+        # Accent ring
         ring_draw = ImageDraw.Draw(img)
         ring_draw.ellipse([avatar_x - 3, avatar_y - 3,
                            avatar_x + avatar_size + 3, avatar_y + avatar_size + 3],
