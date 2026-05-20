@@ -37,7 +37,7 @@ done
 
 echo "[deploy-guard] checking service status..."
 for service in "${required_services[@]}"; do
-  status="$(docker compose ps --format json "$service" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d[0].get("State") if d else "") or "")')"
+  status="$(docker compose ps --format json "$service" | python3 -c 'import json,sys; d=json.load(sys.stdin); row=d[0] if isinstance(d,list) and d else (d if isinstance(d,dict) else {}); print((row.get("State") or row.get("Status") or "").strip().lower())')"
   if [[ "$status" != "running" ]]; then
     echo "[deploy-guard] ERROR: service '$service' state is '$status' (expected 'running')"
     docker compose ps
@@ -45,7 +45,7 @@ for service in "${required_services[@]}"; do
   fi
 done
 
-frontend_container="$(docker compose ps --format json frontend | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d[0].get("Name") if d else "").strip())')"
+frontend_container="$(docker compose ps --format json frontend | python3 -c 'import json,sys; d=json.load(sys.stdin); row=d[0] if isinstance(d,list) and d else (d if isinstance(d,dict) else {}); print((row.get("Name") or "").strip())')"
 if [[ -z "$frontend_container" ]]; then
   echo "[deploy-guard] ERROR: could not resolve frontend container name"
   exit 1
