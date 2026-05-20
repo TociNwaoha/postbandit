@@ -42,7 +42,21 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: "Request failed" }));
-    throw new ApiError(res.status, body.detail || "Request failed");
+    const detail = body.detail || "Request failed";
+
+    // Backend auth dependency can return 403 for missing/invalid bearer token.
+    // Treat this the same as 401 so stale client sessions recover predictably.
+    if (
+      res.status === 403 &&
+      typeof window !== "undefined" &&
+      typeof detail === "string" &&
+      (detail.toLowerCase().includes("not authenticated") ||
+        detail.toLowerCase().includes("invalid or expired token"))
+    ) {
+      window.location.href = "/login";
+    }
+
+    throw new ApiError(res.status, detail);
   }
 
   if (res.status === 204) {
