@@ -1,6 +1,6 @@
 """add brand profiles and content queue
 
-Revision ID: 0013_add_brand_profiles_and_content_queue
+Revision ID: 0013_brand_profiles_queue
 Revises: 0012_add_carousel_exports
 Create Date: 2026-05-20 09:00:00.000000
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = "0013_add_brand_profiles_and_content_queue"
+revision = "0013_brand_profiles_queue"
 down_revision = "0012_add_carousel_exports"
 branch_labels = None
 depends_on = None
