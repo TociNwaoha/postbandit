@@ -14,6 +14,7 @@ import {
   CarouselRenderResponse,
   CarouselSlide,
   CarouselTemplate,
+  ContentQueueItem,
 } from "@/types";
 
 const GLOW_OPTIONS = ["corners", "left", "right", "spread", "top-right"];
@@ -80,6 +81,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loadingQueueItem, setLoadingQueueItem] = useState(false);
+  const [isPreloadedPreview, setIsPreloadedPreview] = useState(false);
 
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -97,6 +99,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
         setSelectedTemplateId((prev) => prev || preferred);
         const renderer = data.find((item) => item.id === preferred)?.renderer;
         setConfig(defaultConfig(renderer));
+        setExpanded({ 0: true });
       } catch (err) {
         if (!mounted) return;
         const message = err instanceof ApiError ? err.message : "Failed to load templates";
@@ -121,15 +124,37 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
       setLoadingQueueItem(true);
       setError(null);
       try {
-        const item = await api.get<{ config: CarouselConfig; status: string }>(`/api/content-queue/${initialQueueItemId}`);
+        const item = await api.get<ContentQueueItem>(`/api/content-queue/${initialQueueItemId}`);
         if (!mounted) return;
         setConfig(item.config);
+        setExpanded({ 0: true });
         const renderer = typeof item.config.renderer === "string" ? item.config.renderer : "";
         const match = templates.find((template) => template.renderer === renderer || template.id === renderer);
         if (match) {
           setSelectedTemplateId(match.id);
         }
-        setInfo("Loaded queue item config for editing.");
+        const preloadedSlides = (item.slide_urls || [])
+          .filter((url): url is string => typeof url === "string" && url.trim().length > 0)
+          .map((url, index) => ({
+            index: index + 1,
+            key: `queue-${item.id}-${index}`,
+            url,
+          }));
+        if (preloadedSlides.length > 0) {
+          setRenderResult({
+            workspace_id: `queue-${item.id}`,
+            slides: preloadedSlides,
+            zip: { key: "", url: "" },
+          });
+          setSavedExport(null);
+          setIsPreloadedPreview(true);
+          setInfo("Loaded queue item with cached preview. Click Render preview to regenerate current edits.");
+        } else {
+          setRenderResult(null);
+          setSavedExport(null);
+          setIsPreloadedPreview(false);
+          setInfo("Loaded queue item config for editing.");
+        }
       } catch (err) {
         if (!mounted) return;
         setError(err instanceof ApiError ? err.message : "Failed to load queue item.");
@@ -206,8 +231,10 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
       const payload = { template_id: selectedTemplateId, topic };
       const response = await api.post<CarouselGenerateResponse>("/api/carousels/generate", payload);
       setConfig(response.config);
+      setExpanded({ 0: true });
       setRenderResult(null);
       setSavedExport(null);
+      setIsPreloadedPreview(false);
       setInfo(`Generated with ${response.provider_used}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to generate slides");
@@ -233,6 +260,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
       const response = await api.post<CarouselRenderResponse>("/api/carousels/render", payload);
       setRenderResult(response);
       setSavedExport(null);
+      setIsPreloadedPreview(false);
       setInfo("Render complete");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to render carousel");
@@ -242,7 +270,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
   };
 
   const onSaveToExports = async () => {
-    if (!renderResult || !selectedTemplateId) {
+    if (!renderResult || !selectedTemplateId || !renderResult.zip?.url) {
       setError("Render a carousel before saving");
       return;
     }
@@ -290,23 +318,25 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
       {info ? <p className="text-sm text-emerald-700">{info}</p> : null}
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card>
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card padding="sm">
+          <div className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-2">
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-[var(--app-muted)]">Template</label>
                 <select
-                  className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-2.5 text-sm text-[var(--app-text)]"
+                  className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)]"
                   value={selectedTemplateId}
                   onChange={(event) => {
                     const id = event.target.value;
                     setSelectedTemplateId(id);
                     const renderer = templates.find((item) => item.id === id)?.renderer;
                     setConfig(defaultConfig(renderer));
+                    setExpanded({ 0: true });
                     setReferenceImages({});
                     setRenderResult(null);
                     setSavedExport(null);
+                    setIsPreloadedPreview(false);
                   }}
                 >
                   {templates.map((item) => (
@@ -318,28 +348,29 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
               </div>
               <Input
                 label="Carousel Title"
+                className="px-3 py-2"
                 value={config.title || ""}
                 onChange={(event) => setConfig((prev) => ({ ...prev, title: event.target.value }))}
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label className="text-sm font-medium text-[var(--app-muted)]">Topic / Source Text</label>
               <textarea
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                rows={4}
+                rows={3}
                 placeholder="Enter a topic or paste source text..."
-                className="w-full rounded-lg border border-[var(--app-border)] bg-white px-3 py-2.5 text-sm text-[var(--app-text)] placeholder-[var(--app-subtle)]"
+                className="w-full rounded-lg border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] placeholder-[var(--app-subtle)]"
               />
               <Button onClick={onGenerate} loading={generating}>
                 Generate slides
               </Button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {config.slides.map((slide, index) => {
-                const isOpen = expanded[index] ?? true;
+                const isOpen = expanded[index] ?? index === 0;
                 const bullets = slide.bullets || [];
                 return (
                   <div
@@ -348,9 +379,9 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
                     onDragStart={() => setDragIndex(index)}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => onDropSlide(index)}
-                    className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3"
+                    className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2.5"
                   >
-                    <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
                       <button
                         type="button"
                         onClick={() => toggleExpanded(index)}
@@ -371,14 +402,14 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
                     </div>
 
                     {isOpen ? (
-                      <div className="space-y-2">
-                        <div className="grid gap-2 md:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <div className="grid gap-1.5 md:grid-cols-2">
                           <div className="flex flex-col gap-1">
                             <label className="text-xs font-medium uppercase tracking-wide text-[var(--app-muted)]">
                               Type
                             </label>
                             <select
-                              className="rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                              className="rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs"
                               value={slide.type || "body"}
                               onChange={(event) =>
                                 updateSlide(index, { type: event.target.value as CarouselSlide["type"] })
@@ -394,7 +425,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
                               Glow
                             </label>
                             <select
-                              className="rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                              className="rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs"
                               value={String(slide.glow || "corners")}
                               onChange={(event) => updateSlide(index, { glow: event.target.value })}
                             >
@@ -409,25 +440,28 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
 
                         <Input
                           label="Title"
+                          className="px-2.5 py-1.5 text-xs"
                           value={String(slide.title || "")}
                           onChange={(event) => updateSlide(index, { title: event.target.value })}
                         />
                         <div className="flex flex-col gap-1">
                           <label className="text-sm font-medium text-[var(--app-muted)]">Text</label>
                           <textarea
-                            rows={3}
+                            rows={2}
                             value={String(slide.text || "")}
                             onChange={(event) => updateSlide(index, { text: event.target.value })}
-                            className="w-full rounded-lg border border-[var(--app-border)] bg-white px-3 py-2 text-sm"
+                            className="w-full rounded-lg border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-xs"
                           />
                         </div>
                         <Input
                           label="Subtitle"
+                          className="px-2.5 py-1.5 text-xs"
                           value={String(slide.subtitle || "")}
                           onChange={(event) => updateSlide(index, { subtitle: event.target.value })}
                         />
                         <Input
                           label="CTA Action"
+                          className="px-2.5 py-1.5 text-xs"
                           value={String(slide.cta_action || "")}
                           onChange={(event) => updateSlide(index, { cta_action: event.target.value })}
                         />
@@ -443,7 +477,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
                                   next[bulletIndex] = event.target.value;
                                   updateBullets(index, next);
                                 }}
-                                className="w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-sm"
+                                className="w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs"
                               />
                               <button
                                 type="button"
@@ -468,6 +502,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
 
                         <Input
                           label="Image path / filename"
+                          className="px-2.5 py-1.5 text-xs"
                           value={String(slide.image || "")}
                           onChange={(event) => updateSlide(index, { image: event.target.value })}
                           placeholder="asset:headshot.jpg or uploaded-file.png"
@@ -521,10 +556,20 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId }: SlideEdit
                   Download all
                 </a>
               ) : null}
-              <Button variant="secondary" onClick={onSaveToExports} loading={saving} disabled={!renderResult}>
+              <Button
+                variant="secondary"
+                onClick={onSaveToExports}
+                loading={saving}
+                disabled={!renderResult?.zip?.url}
+              >
                 Save to Exports
               </Button>
             </div>
+            {isPreloadedPreview ? (
+              <p className="text-xs text-[var(--app-subtle)]">
+                Preview loaded from queue cache. Click Render preview to regenerate before saving to exports.
+              </p>
+            ) : null}
 
             {savedExport ? (
               <p className="text-xs text-emerald-700">
