@@ -40,6 +40,70 @@ CAROUSEL_TEMPLATES = [
         "preview_url": "/template-previews/navy-clean.png",
         "default_slides": 6,
     },
+    {
+        "id": "editorial-sun",
+        "name": "Editorial Sun",
+        "renderer": "render_modern.py",
+        "description": "Warm cream, oversized serif-style headlines, and magazine-inspired structure",
+        "preview_url": "/template-previews/editorial-sun.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "paper-notes",
+        "name": "Paper Notes",
+        "renderer": "render_modern.py",
+        "description": "Torn-paper layers, marker accents, and a tactile creator-workbook feel",
+        "preview_url": "/template-previews/paper-notes.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "signal-brutalist",
+        "name": "Signal Brutalist",
+        "renderer": "render_modern.py",
+        "description": "Electric yellow, hard borders, and bold type built to stop the scroll",
+        "preview_url": "/template-previews/signal-brutalist.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "data-mint",
+        "name": "Data Mint",
+        "renderer": "render_modern.py",
+        "description": "Fresh mint cards, visual numbering, and polished layouts for tips and data",
+        "preview_url": "/template-previews/data-mint.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "aurora-glass",
+        "name": "Aurora Glass",
+        "renderer": "render_modern.py",
+        "description": "Soft gradients and translucent cards for premium micro-learning content",
+        "preview_url": "/template-previews/aurora-glass.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "retro-future",
+        "name": "Retro Future",
+        "renderer": "render_modern.py",
+        "description": "Saturated space-age graphics and playful type for trend-led creator posts",
+        "preview_url": "/template-previews/retro-future.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "luxe-mono",
+        "name": "Luxe Mono",
+        "renderer": "render_modern.py",
+        "description": "High-contrast monochrome with restrained gold details for authority content",
+        "preview_url": "/template-previews/luxe-mono.png",
+        "default_slides": 6,
+    },
+    {
+        "id": "case-study",
+        "name": "Case Study",
+        "renderer": "render_modern.py",
+        "description": "Outcome-led cards and proof markers for problem, solution, and result stories",
+        "preview_url": "/template-previews/case-study.png",
+        "default_slides": 6,
+    },
 ]
 _TEMPLATE_BY_ID = {template["id"]: template for template in CAROUSEL_TEMPLATES}
 
@@ -124,6 +188,7 @@ def _normalize_config(config: dict, template: dict) -> dict:
 
     output = parsed.model_dump()
     output["renderer"] = template["renderer"]
+    output["template_id"] = template["id"]
     output["slides"] = normalized_slides
     return output
 
