@@ -98,8 +98,8 @@ Current local base commit: `55dfab0`
 
 ## Current Objective
 
-Status: `APPROVED_FOR_DEPLOY`
-Current owner: Implementing/deploying agent
+Status: `DEPLOYED`
+Current owner: None
 
 Active task: Add an adjustable display-size slider to the full video detail player.
 
@@ -192,16 +192,22 @@ Validation:
 
 ## Next Starting Point
 
-Deploy the scoped frontend commit, verify `/videos/63ffc9a5-b821-4dd3-8ac4-11d2d14d5278`,
-and record the release SHA and deploy-guard result.
+The video detail size control is deployed. The next agent should preserve this
+behavior while working in `VideoDetailPanel.tsx`.
 
 ## Deployment Record
 
-Status: Approved for deploy, pending.
+Status: Deployed.
 
-- Reviewed commit SHA: Pending commit
-- Deployed commit SHA: Not set
-- Services rebuilt: Not set
-- `tools/deploy_guard.sh`: Not run
-- Feature smoke test: Not run
+- Reviewed commit SHA: `36ea6cfdd305b8844b3a20403a29610a9f6d6f1c`
+- Deployed commit SHA: `36ea6cfdd305b8844b3a20403a29610a9f6d6f1c`
+- Deployment time: 2026-06-10 06:22 UTC
+- Services rebuilt/restarted: `frontend`, `backend`
+- `tools/deploy_guard.sh`: PASS
+- Public route smoke: protected video route returned expected `307` to `/login`
+- Feature source smoke: deployed component contains the player-size state,
+  slider, 25% default, and responsive width clamp
+- Backup branch: `backup/pre-video-size-20260610T062108Z`
+- Component backup:
+  `/opt/clipbandit_backups/VideoDetailPanel-20260610T062108Z.tsx`
 - Rollback commit: `55dfab0d4d210346671355ea096c81a653315cdc`
