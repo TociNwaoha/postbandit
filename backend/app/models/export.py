@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum as SAEnum, Float, ForeignKey, Integer, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -74,6 +74,14 @@ class Export(Base):
     frame_anchor_x: Mapped[float | None] = mapped_column(Float)
     frame_anchor_y: Mapped[float | None] = mapped_column(Float)
     frame_zoom: Mapped[float | None] = mapped_column(Float)
+    overlay_image_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clip_overlay_assets.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    overlay_image_config: Mapped[dict | None] = mapped_column(JSONB)
+    overlay_text_config: Mapped[dict | None] = mapped_column(JSONB)
     storage_key: Mapped[str | None] = mapped_column(Text)
     srt_key: Mapped[str | None] = mapped_column(Text)
     download_url: Mapped[str | None] = mapped_column(Text)
@@ -92,4 +100,8 @@ class Export(Base):
     user: Mapped["User"] = relationship("User", back_populates="exports")
     publish_jobs: Mapped[list["PublishJob"]] = relationship(
         "PublishJob", back_populates="export", cascade="all, delete-orphan"
+    )
+    editor_renders: Mapped[list["EditorRender"]] = relationship("EditorRender", back_populates="export")
+    overlay_image_asset: Mapped["ClipOverlayAsset | None"] = relationship(
+        "ClipOverlayAsset", back_populates="exports"
     )

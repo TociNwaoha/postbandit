@@ -16,6 +16,7 @@ from app.models.job import Job, JobStatus
 from app.models.publish_job import PublishJob, PublishStatus
 from app.models.video import Video, VideoSourceType, VideoStatus
 from app.models.clip import Clip
+from app.models.editor_project import EditorProject, EditorProjectStatus
 from app.services.r2 import r2_client
 from app.services.workspace import (
     WORKSPACE_ROOTS,
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 UPLOAD_CONFIRMED_KEY = "upload_confirmed"
 UPLOAD_STARTED_AT_KEY = "upload_started_at"
 UPLOAD_CONFIRMED_AT_KEY = "upload_confirmed_at"
+RAW_SOURCE_EXPIRED_AT_KEY = "raw_source_expired_at"
 
 
 def _parse_iso(iso_value: str | None) -> datetime | None:
@@ -516,3 +518,123 @@ def sweep_failed_imports_impl(*, dry_run: bool) -> dict:
 @celery_app.task(name="app.worker.tasks.cleanup.sweep_failed_imports", queue="ingest")
 def sweep_failed_imports(dry_run: bool = False):
     return sweep_failed_imports_impl(dry_run=dry_run)
+
+
+def _has_pinned_or_active_editor_project(db, *, video_id: uuid.UUID) -> bool:
+    row = (
+        db.execute(
+            select(EditorProject.id)
+            .where(
+                EditorProject.video_id == video_id,
+                (
+                    EditorProject.is_pinned.is_(True)
+                    | EditorProject.status.in_([EditorProjectStatus.draft, EditorProjectStatus.rendering])
+                ),
+            )
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    return row is not None
+
+
+def sweep_raw_source_retention_impl(*, dry_run: bool) -> dict:
+    if not settings.raw_source_retention_enabled:
+        payload = {
+            "dry_run": dry_run,
+            "enabled": False,
+            "scanned": 0,
+            "eligible": 0,
+            "deleted": 0,
+            "skipped_active_job": 0,
+            "skipped_pinned_or_active_project": 0,
+            "storage_delete_failures": 0,
+        }
+        logger.info("[raw_source_retention] summary=%s", payload)
+        return payload
+
+    now = datetime.now(timezone.utc)
+    retention_days = max(1, int(settings.raw_source_retention_days))
+    cutoff = now - timedelta(days=retention_days)
+
+    scanned = 0
+    eligible = 0
+    deleted = 0
+    skipped_active_job = 0
+    skipped_pinned_or_active_project = 0
+    storage_delete_failures = 0
+
+    with SyncSessionLocal() as db:
+        rows = (
+            db.execute(
+                select(Video)
+                .where(
+                    Video.storage_key.is_not(None),
+                    Video.updated_at <= cutoff,
+                    Video.status.in_([VideoStatus.ready, VideoStatus.error]),
+                )
+                .order_by(Video.updated_at.asc())
+            )
+            .scalars()
+            .all()
+        )
+        scanned = len(rows)
+
+        for video in rows:
+            if _has_active_jobs(db, video_id=video.id):
+                skipped_active_job += 1
+                continue
+            if _has_pinned_or_active_editor_project(db, video_id=video.id):
+                skipped_pinned_or_active_project += 1
+                continue
+            if not video.storage_key:
+                continue
+
+            eligible += 1
+            if dry_run:
+                continue
+
+            deleted_ok = False
+            try:
+                deleted_ok = r2_client.delete_file(video.storage_key)
+            except Exception as exc:
+                storage_delete_failures += 1
+                logger.warning(
+                    "[raw_source_retention] storage delete failed video_id=%s key=%s error=%s",
+                    video.id,
+                    video.storage_key,
+                    exc,
+                )
+
+            if not deleted_ok:
+                storage_delete_failures += 1
+                continue
+
+            metadata = dict(video.external_metadata_json or {})
+            metadata[RAW_SOURCE_EXPIRED_AT_KEY] = now.isoformat()
+            video.external_metadata_json = metadata
+            video.storage_key = None
+            video.file_size_bytes = 0
+            db.commit()
+            deleted += 1
+
+    payload = {
+        "dry_run": dry_run,
+        "enabled": True,
+        "retention_days": retention_days,
+        "cutoff": cutoff.isoformat(),
+        "scanned": scanned,
+        "eligible": eligible,
+        "deleted": deleted,
+        "skipped_active_job": skipped_active_job,
+        "skipped_pinned_or_active_project": skipped_pinned_or_active_project,
+        "storage_delete_failures": storage_delete_failures,
+    }
+    logger.info("[raw_source_retention] summary=%s", payload)
+    return payload
+
+
+@celery_app.task(name="app.worker.tasks.cleanup.sweep_raw_source_retention", queue="ingest")
+def sweep_raw_source_retention(dry_run: bool = False):
+    return sweep_raw_source_retention_impl(dry_run=dry_run)

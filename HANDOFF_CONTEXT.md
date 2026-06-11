@@ -98,17 +98,30 @@ Current local base commit: `55dfab0`
 
 ## Current Objective
 
-Status: `DEPLOYED`
-Current owner: None
+Status: `IN_PROGRESS`
+Current owner: Codex
 
-Active task: Add an adjustable display-size slider to the full video detail player.
+Active task: Implement durable social scheduling/history, caption cadence and
+no-caption exports, dashboard calendar management, and platform-aware DeepSeek
+copy generation.
+
+Starting commit: `a788f35a6b5f441075262475960958563f0556e0`
+Feature branch: `feat/publishing-calendar-caption-copy-20260610`
 
 Current ownership:
 
-- `frontend/src/components/videos/VideoDetailPanel.tsx`
+- `backend/alembic/versions/0014_add_editor_projects_assets_renders_usage.py`
+- `backend/alembic/versions/0015_add_clip_overlay_assets.py`
+- new migrations after `0015`
+- editor/overlay backend and frontend files required by migrations `0014/0015`
+- social publish models, schemas, routes, workers, and tests
+- export caption models, schemas, rendering, routes, workers, and tests
+- dashboard schedule calendar and social publish frontend components
+- shared frontend social types and platform metadata
+- `docker-compose.yml`
 - `HANDOFF_CONTEXT.md`
 
-The calendar task remains planned but is not owned or modified by this task.
+Do not overlap these files until this task reaches `READY_FOR_REVIEW`.
 
 Before starting new work:
 
@@ -143,23 +156,16 @@ production runtime status have not been fully verified in this handoff.
 
 ## Current Task Changes
 
-Task: Add a display-size slider to `/videos/{id}` and make the full source
-player start at half of its previous displayed width.
+Task started. No new implementation files changed yet.
 
-Files changed:
+Preflight:
 
-- `frontend/src/components/videos/VideoDetailPanel.tsx`
-- `HANDOFF_CONTEXT.md`
-
-Validation:
-
-- Player starts at `25%`, half of the prior `50%` desktop width.
-- Slider supports `25%` through `100%` in 5% increments.
-- Player stays centered and preserves the source aspect ratio.
-- A 280px minimum keeps the player usable on narrow screens.
-- The same sizing behavior applies to direct video and embed playback.
-- `npm run build` passed in `frontend/`, including lint and TypeScript checks.
-- `git diff --check` passed for the scoped frontend file.
+- Existing working tree contains uncommitted editor, clip overlay, social
+  filtering/calendar, connection UI, and retention work.
+- Migrations `0014` and `0015` are present locally but uncommitted.
+- Host Docker and host pytest are unavailable; backend compile runs locally,
+  while migration/tests will run in the VPS backend container before deploy.
+- Existing unrelated video-detail size work remains preserved.
 
 ## Risks And Unknowns
 

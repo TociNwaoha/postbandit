@@ -80,6 +80,29 @@ body {
   box-shadow: 0 0 0 2px rgba(29, 63, 208, 0.2);
 }
 
+/* Clip editor route theme (scoped) */
+.editor-workspace {
+  --editor-bg: #0d1119;
+  --editor-panel: #141a25;
+  --editor-panel-2: #1b2231;
+  --editor-canvas: #0f1420;
+  --editor-border: #2a3448;
+  --editor-text: #e6edf8;
+  --editor-muted: #a4b3cd;
+  --editor-subtle: #7f90ad;
+
+  background-color: var(--editor-bg);
+  color: var(--editor-text);
+  font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+}
+
+.editor-workspace input,
+.editor-workspace select,
+.editor-workspace textarea,
+.editor-workspace button {
+  font-family: inherit;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

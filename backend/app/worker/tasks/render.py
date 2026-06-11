@@ -10,11 +10,13 @@ from sqlalchemy import select
 from app.celery_app import celery_app
 from app.database import SyncSessionLocal
 from app.models.clip import Clip, ClipStatus
+from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.export import CaptionColorVariant, CaptionFormat, Export, ExportStatus
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video
 from app.services.r2 import r2_client
+from app.services.clip_overlay_rendering import render_highlighted_text_layer
 from app.services.rendering import (
     build_subtitle_cues,
     has_video_stream,
@@ -157,8 +159,36 @@ def render_export(self, export_id: str, job_id: str | None = None):
             logger.info("[render] caption generation end export_id=%s cues=%s", export.id, len(cues))
 
             output_path = tmp_dir / "output.mp4"
+            overlay_image_path: Path | None = None
+            if export.overlay_image_asset_id and export.overlay_image_config:
+                overlay_asset = db.execute(
+                    select(ClipOverlayAsset).where(
+                        ClipOverlayAsset.id == export.overlay_image_asset_id,
+                        ClipOverlayAsset.clip_id == clip.id,
+                        ClipOverlayAsset.user_id == export.user_id,
+                    )
+                ).scalars().first()
+                if not overlay_asset:
+                    raise RenderPipelineError("Overlay image asset is unavailable")
+                extension = {
+                    "image/png": ".png",
+                    "image/jpeg": ".jpg",
+                    "image/webp": ".webp",
+                }.get(overlay_asset.mime_type, ".png")
+                overlay_image_path = tmp_dir / f"overlay-image{extension}"
+                r2_client.download_file(overlay_asset.storage_key, str(overlay_image_path))
+
+            overlay_text_layer_path: Path | None = None
+            if export.overlay_text_config:
+                overlay_text_layer_path = tmp_dir / "overlay-text.png"
+                render_highlighted_text_layer(
+                    export.overlay_text_config,
+                    target_width=target_width,
+                    target_height=target_height,
+                    output_path=str(overlay_text_layer_path),
+                )
             logger.info(
-                "[render] ffmpeg render start export_id=%s aspect_ratio=%s caption_format=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s",
+                "[render] ffmpeg render start export_id=%s aspect_ratio=%s caption_format=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s image_overlay=%s text_overlay=%s",
                 export.id,
                 _enum_value(export.aspect_ratio),
                 _enum_value(export.caption_format),
@@ -167,6 +197,8 @@ def render_export(self, export_id: str, job_id: str | None = None):
                 export.frame_anchor_x,
                 export.frame_anchor_y,
                 export.frame_zoom,
+                bool(overlay_image_path),
+                bool(overlay_text_layer_path),
             )
             render_video_clip(
                 source_path=str(source_path),
@@ -180,6 +212,11 @@ def render_export(self, export_id: str, job_id: str | None = None):
                 frame_anchor_x=export.frame_anchor_x,
                 frame_anchor_y=export.frame_anchor_y,
                 frame_zoom=export.frame_zoom,
+                overlay_image_path=str(overlay_image_path) if overlay_image_path else None,
+                overlay_image_config=export.overlay_image_config,
+                overlay_text_layer_path=(
+                    str(overlay_text_layer_path) if overlay_text_layer_path else None
+                ),
             )
             logger.info("[render] ffmpeg render end export_id=%s output=%s", export.id, output_path)
 

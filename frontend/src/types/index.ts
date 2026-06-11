@@ -63,6 +63,8 @@ export interface Video {
   external_metadata_json?: Record<string, unknown>;
   storage_key: string | null;
   source_download_url?: string | null;
+  editor_preview_download_url?: string | null;
+  editor_preview_status?: "pending" | "ready" | "failed" | null;
   duration_sec: number | null;
   resolution: string | null;
   file_size_bytes: number | null;
@@ -200,6 +202,40 @@ export type CaptionColorVariant = "classic" | "warm" | "cool";
 export type CaptionFormat = "burned_in" | "srt";
 export type ExportStatus = "queued" | "rendering" | "ready" | "error";
 
+export interface ClipOverlayAsset {
+  id: string;
+  clip_id: string;
+  user_id: string;
+  original_filename: string | null;
+  mime_type: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  download_url: string;
+  created_at: string;
+}
+
+export interface ExportOverlayImageConfig {
+  x: number;
+  y: number;
+  width: number;
+  opacity: number;
+}
+
+export interface ExportOverlayTextHighlight {
+  word_index: number;
+  color: string;
+}
+
+export interface ExportOverlayTextConfig {
+  text: string;
+  x: number;
+  y: number;
+  font_size: number;
+  text_color: string;
+  highlights: ExportOverlayTextHighlight[];
+}
+
 export interface Export {
   id: string;
   clip_id: string;
@@ -214,6 +250,9 @@ export interface Export {
   frame_anchor_x?: number | null;
   frame_anchor_y?: number | null;
   frame_zoom?: number | null;
+  overlay_image_asset_id?: string | null;
+  overlay_image_config?: ExportOverlayImageConfig | null;
+  overlay_text_config?: ExportOverlayTextConfig | null;
   storage_key: string | null;
   srt_key: string | null;
   download_url: string | null;
@@ -464,3 +503,5 @@ export interface ContentQueueItem {
   created_at: string;
   updated_at: string;
 }
+
+export * from "./editor";

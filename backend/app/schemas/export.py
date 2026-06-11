@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.models.export import (
     AspectRatio,
     CaptionColorVariant,
@@ -8,6 +8,44 @@ from app.models.export import (
     CaptionFormat,
     ExportStatus,
 )
+
+HEX_COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
+
+
+class ExportOverlayImageConfig(BaseModel):
+    x: float = Field(default=0.82, ge=0, le=1)
+    y: float = Field(default=0.15, ge=0, le=1)
+    width: float = Field(default=0.22, ge=0.03, le=1)
+    opacity: float = Field(default=1, ge=0, le=1)
+
+
+class ExportOverlayTextHighlight(BaseModel):
+    word_index: int = Field(ge=0, le=199)
+    color: str = Field(pattern=HEX_COLOR_PATTERN)
+
+
+class ExportOverlayTextConfig(BaseModel):
+    text: str = Field(min_length=1, max_length=280)
+    x: float = Field(default=0.5, ge=0, le=1)
+    y: float = Field(default=0.2, ge=0, le=1)
+    font_size: int = Field(default=52, ge=16, le=160)
+    text_color: str = Field(default="#FFFFFF", pattern=HEX_COLOR_PATTERN)
+    highlights: list[ExportOverlayTextHighlight] = Field(default_factory=list, max_length=100)
+
+    @field_validator("text")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @model_validator(mode="after")
+    def remove_invalid_or_duplicate_highlights(self):
+        word_count = len(self.text.split())
+        deduped: dict[int, ExportOverlayTextHighlight] = {}
+        for highlight in self.highlights:
+            if highlight.word_index < word_count:
+                deduped[highlight.word_index] = highlight
+        self.highlights = [deduped[index] for index in sorted(deduped)]
+        return self
 
 
 class ExportCreate(BaseModel):
@@ -21,6 +59,15 @@ class ExportCreate(BaseModel):
     frame_anchor_x: float | None = None
     frame_anchor_y: float | None = None
     frame_zoom: float | None = None
+    overlay_image_asset_id: uuid.UUID | None = None
+    overlay_image_config: ExportOverlayImageConfig | None = None
+    overlay_text_config: ExportOverlayTextConfig | None = None
+
+    @model_validator(mode="after")
+    def validate_overlay_image_pair(self):
+        if bool(self.overlay_image_asset_id) != bool(self.overlay_image_config):
+            raise ValueError("overlay image asset and configuration must be provided together")
+        return self
 
 
 class ExportResponse(BaseModel):
@@ -37,6 +84,9 @@ class ExportResponse(BaseModel):
     frame_anchor_x: float | None = None
     frame_anchor_y: float | None = None
     frame_zoom: float | None = None
+    overlay_image_asset_id: uuid.UUID | None = None
+    overlay_image_config: ExportOverlayImageConfig | None = None
+    overlay_text_config: ExportOverlayTextConfig | None = None
     storage_key: str | None
     srt_key: str | None
     download_url: str | None

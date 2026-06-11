@@ -33,3 +33,18 @@ class ClipResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ClipOverlayAssetResponse(BaseModel):
+    id: uuid.UUID
+    clip_id: uuid.UUID
+    user_id: uuid.UUID
+    original_filename: str | None
+    mime_type: str
+    size_bytes: int
+    width: int
+    height: int
+    download_url: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

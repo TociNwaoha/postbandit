@@ -13,6 +13,7 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models.clip import Clip
+from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.export import Export
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
@@ -51,6 +52,13 @@ from app.schemas.youtube_import import (
     VideoManualUploadUrlResponse,
 )
 from app.services.r2 import r2_client
+from app.services.editor_preview import (
+    mark_editor_preview_failed,
+    mark_editor_preview_pending,
+    parse_editor_preview_metadata,
+    resolve_editor_preview_download_key,
+    should_enqueue_editor_preview,
+)
 from app.services.youtube.local_helper_state import (
     LocalHelperSessionError,
     consume_local_helper_rate_limit,
@@ -154,6 +162,43 @@ def _assert_upload_constraints(body: VideoUploadUrlRequest) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File size must be between 1 byte and {MAX_UPLOAD_BYTES} bytes",
         )
+
+
+async def _enqueue_editor_preview_proxy_job(db: AsyncSession, video: Video) -> bool:
+    if not video.storage_key:
+        return False
+
+    if not should_enqueue_editor_preview(
+        storage_key=video.storage_key,
+        metadata=video.external_metadata_json,
+    ):
+        return False
+
+    video.external_metadata_json = mark_editor_preview_pending(
+        video.external_metadata_json,
+        source_key=video.storage_key,
+    )
+    await db.commit()
+
+    try:
+        from app.worker.tasks.editor_preview import generate_editor_preview_proxy_task
+
+        generate_editor_preview_proxy_task.apply_async(
+            args=[str(video.id)],
+            countdown=1,
+            queue="ingest",
+        )
+        logger.info("[editor_preview_proxy_enqueued] video_id=%s source_key=%s", video.id, video.storage_key)
+        return True
+    except Exception as exc:
+        video.external_metadata_json = mark_editor_preview_failed(
+            video.external_metadata_json,
+            source_key=video.storage_key,
+            error=f"Failed to enqueue preview proxy: {exc}",
+        )
+        await db.commit()
+        logger.warning("[editor_preview_proxy_failed] video_id=%s error=%s", video.id, exc)
+        return False
 
 
 async def _enqueue_ingest_job(db: AsyncSession, video: Video, normalized_url: str) -> None:
@@ -293,6 +338,7 @@ async def _finalize_manual_upload_transition(
     await db.commit()
     await db.refresh(video)
     await _enqueue_transcribe_job(db, video)
+    await _enqueue_editor_preview_proxy_job(db, video)
 
 
 def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListItem:
@@ -324,7 +370,13 @@ def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListIte
     )
 
 
-def _video_to_response(video: Video, source_download_url: str | None) -> VideoResponse:
+def _video_to_response(
+    video: Video,
+    source_download_url: str | None,
+    *,
+    editor_preview_download_url: str | None = None,
+    editor_preview_status: str | None = None,
+) -> VideoResponse:
     import_state = _import_state_for_response(video)
     clip_profile = _clip_profile_for_video(video)
     return VideoResponse(
@@ -351,6 +403,8 @@ def _video_to_response(video: Video, source_download_url: str | None) -> VideoRe
         external_metadata_json=video.external_metadata_json or {},
         storage_key=video.storage_key,
         source_download_url=source_download_url,
+        editor_preview_download_url=editor_preview_download_url,
+        editor_preview_status=editor_preview_status,
         duration_sec=video.duration_sec,
         resolution=video.resolution,
         file_size_bytes=video.file_size_bytes,
@@ -1185,6 +1239,8 @@ async def get_video(
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
 
+    await _enqueue_editor_preview_proxy_job(db, video)
+
     source_download_url: str | None = None
     if video.storage_key:
         try:
@@ -1192,7 +1248,34 @@ async def get_video(
         except Exception as exc:
             logger.warning("[videos] failed to generate source download URL for video_id=%s: %s", video.id, exc)
 
-    return _video_to_response(video, source_download_url)
+    editor_preview_download_url: str | None = None
+    preview_status: str | None = None
+    preview_meta = parse_editor_preview_metadata(video.external_metadata_json)
+    preview_status = preview_meta.get("status")
+    preview_key = resolve_editor_preview_download_key(
+        storage_key=video.storage_key,
+        metadata=video.external_metadata_json,
+    )
+    if preview_key:
+        try:
+            editor_preview_download_url = r2_client.get_presigned_download_url(preview_key)
+            if preview_status != "ready":
+                preview_status = "ready"
+        except Exception as exc:
+            logger.warning("[videos] failed to generate editor preview URL for video_id=%s: %s", video.id, exc)
+    else:
+        logger.info(
+            "[editor_preview_fallback_to_source] video_id=%s preview_status=%s",
+            video.id,
+            preview_status or "missing",
+        )
+
+    return _video_to_response(
+        video,
+        source_download_url,
+        editor_preview_download_url=editor_preview_download_url,
+        editor_preview_status=preview_status,
+    )
 
 
 @router.get("/videos/{video_id}/status", response_model=VideoStatusResponse)
@@ -1316,6 +1399,11 @@ async def delete_video(
                 storage_keys.add(export.storage_key)
             if export.srt_key:
                 storage_keys.add(export.srt_key)
+        overlay_asset_result = await db.execute(
+            select(ClipOverlayAsset).where(ClipOverlayAsset.clip_id.in_(clip_ids))
+        )
+        for asset in overlay_asset_result.scalars().all():
+            storage_keys.add(asset.storage_key)
 
     for key in storage_keys:
         try:

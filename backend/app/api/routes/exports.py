@@ -10,6 +10,7 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models.clip import Clip
+from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.export import CaptionColorVariant, Export, ExportStatus
 from app.models.job import Job, JobStatus
 from app.models.user import User
@@ -125,6 +126,9 @@ def _to_response(
         frame_anchor_x=export.frame_anchor_x,
         frame_anchor_y=export.frame_anchor_y,
         frame_zoom=export.frame_zoom,
+        overlay_image_asset_id=export.overlay_image_asset_id,
+        overlay_image_config=export.overlay_image_config,
+        overlay_text_config=export.overlay_text_config,
         storage_key=export.storage_key,
         srt_key=export.srt_key,
         download_url=download_url,
@@ -327,7 +331,7 @@ async def create_export(
     current_user: User = Depends(get_current_user),
 ):
     logger.info(
-        "[exports] create requested user_id=%s clip_id=%s aspect_ratio=%s caption_style=%s caption_color_variant=%s caption_format=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s",
+        "[exports] create requested user_id=%s clip_id=%s aspect_ratio=%s caption_style=%s caption_color_variant=%s caption_format=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s overlay_image_asset_id=%s overlay_text=%s",
         current_user.id,
         body.clip_id,
         body.aspect_ratio,
@@ -339,6 +343,8 @@ async def create_export(
         body.frame_anchor_x,
         body.frame_anchor_y,
         body.frame_zoom,
+        body.overlay_image_asset_id,
+        bool(body.overlay_text_config),
     )
     caption_vertical_position = _normalize_caption_vertical_position(body.caption_vertical_position)
     caption_scale = _normalize_caption_scale(body.caption_scale)
@@ -346,6 +352,12 @@ async def create_export(
     frame_anchor_y = _normalize_frame_anchor(body.frame_anchor_y)
     frame_zoom = _normalize_frame_zoom(body.frame_zoom)
     caption_color_variant = _resolve_caption_color_variant(body.caption_color_variant)
+    overlay_image_config = (
+        body.overlay_image_config.model_dump(mode="json") if body.overlay_image_config else None
+    )
+    overlay_text_config = (
+        body.overlay_text_config.model_dump(mode="json") if body.overlay_text_config else None
+    )
 
     clip_video_result = await db.execute(
         select(Clip, Video)
@@ -356,6 +368,21 @@ async def create_export(
     if not clip_video_row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
     clip, video = clip_video_row
+
+    if body.overlay_image_asset_id:
+        asset_result = await db.execute(
+            select(ClipOverlayAsset).where(
+                ClipOverlayAsset.id == body.overlay_image_asset_id,
+                ClipOverlayAsset.clip_id == clip.id,
+                ClipOverlayAsset.user_id == current_user.id,
+            )
+        )
+        overlay_asset = asset_result.scalar_one_or_none()
+        if not overlay_asset or not r2_client.file_exists(overlay_asset.storage_key):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Overlay image is unavailable",
+            )
 
     dedupe_query = (
         select(Export)
@@ -369,6 +396,7 @@ async def create_export(
             Export.frame_anchor_x == frame_anchor_x,
             Export.frame_anchor_y == frame_anchor_y,
             Export.frame_zoom == frame_zoom,
+            Export.overlay_image_asset_id == body.overlay_image_asset_id,
             Export.status.in_(ACTIVE_EXPORT_STATUSES),
         )
         .order_by(Export.created_at.desc())
@@ -386,6 +414,14 @@ async def create_export(
         dedupe_query = dedupe_query.where(Export.caption_vertical_position.is_(None))
     else:
         dedupe_query = dedupe_query.where(Export.caption_vertical_position == caption_vertical_position)
+    if overlay_image_config is None:
+        dedupe_query = dedupe_query.where(Export.overlay_image_config.is_(None))
+    else:
+        dedupe_query = dedupe_query.where(Export.overlay_image_config == overlay_image_config)
+    if overlay_text_config is None:
+        dedupe_query = dedupe_query.where(Export.overlay_text_config.is_(None))
+    else:
+        dedupe_query = dedupe_query.where(Export.overlay_text_config == overlay_text_config)
 
     dedupe_result = await db.execute(dedupe_query)
     existing = dedupe_result.scalars().first()
@@ -412,6 +448,9 @@ async def create_export(
         frame_anchor_x=frame_anchor_x,
         frame_anchor_y=frame_anchor_y,
         frame_zoom=frame_zoom,
+        overlay_image_asset_id=body.overlay_image_asset_id,
+        overlay_image_config=overlay_image_config,
+        overlay_text_config=overlay_text_config,
     )
     db.add(export)
     await db.flush()
@@ -432,6 +471,9 @@ async def create_export(
             "frame_anchor_x": frame_anchor_x,
             "frame_anchor_y": frame_anchor_y,
             "frame_zoom": frame_zoom,
+            "overlay_image_asset_id": str(body.overlay_image_asset_id) if body.overlay_image_asset_id else None,
+            "overlay_image_config": overlay_image_config,
+            "overlay_text_config": overlay_text_config,
         },
     )
 
@@ -477,6 +519,9 @@ async def retry_export(
         frame_anchor_x=original_export.frame_anchor_x,
         frame_anchor_y=original_export.frame_anchor_y,
         frame_zoom=original_export.frame_zoom,
+        overlay_image_asset_id=original_export.overlay_image_asset_id,
+        overlay_image_config=original_export.overlay_image_config,
+        overlay_text_config=original_export.overlay_text_config,
     )
     db.add(retry_export_row)
     await db.flush()
@@ -499,6 +544,13 @@ async def retry_export(
             "frame_anchor_x": retry_export_row.frame_anchor_x,
             "frame_anchor_y": retry_export_row.frame_anchor_y,
             "frame_zoom": retry_export_row.frame_zoom,
+            "overlay_image_asset_id": (
+                str(retry_export_row.overlay_image_asset_id)
+                if retry_export_row.overlay_image_asset_id
+                else None
+            ),
+            "overlay_image_config": retry_export_row.overlay_image_config,
+            "overlay_text_config": retry_export_row.overlay_text_config,
             "retry_of_export_id": str(original_export.id),
         },
     )
