@@ -47,3 +47,18 @@ class User(Base):
     content_queue_items: Mapped[list["ContentQueueItem"]] = relationship(
         "ContentQueueItem", back_populates="user", cascade="all, delete-orphan"
     )
+    editor_projects: Mapped[list["EditorProject"]] = relationship(
+        "EditorProject", back_populates="user", cascade="all, delete-orphan"
+    )
+    editor_assets: Mapped[list["EditorAsset"]] = relationship(
+        "EditorAsset", back_populates="user", cascade="all, delete-orphan"
+    )
+    clip_overlay_assets: Mapped[list["ClipOverlayAsset"]] = relationship(
+        "ClipOverlayAsset", back_populates="user", cascade="all, delete-orphan"
+    )
+    editor_renders: Mapped[list["EditorRender"]] = relationship(
+        "EditorRender", back_populates="user", cascade="all, delete-orphan"
+    )
+    storage_usage: Mapped["UserStorageUsage | None"] = relationship(
+        "UserStorageUsage", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )

@@ -123,3 +123,6 @@ class Video(Base):
     playlist_import: Mapped["YoutubePlaylistImport | None"] = relationship(
         "YoutubePlaylistImport", back_populates="videos"
     )
+    editor_projects: Mapped[list["EditorProject"]] = relationship(
+        "EditorProject", back_populates="video", cascade="all, delete-orphan"
+    )

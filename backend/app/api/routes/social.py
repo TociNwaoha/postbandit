@@ -3,6 +3,7 @@ import uuid
 from collections import defaultdict
 from typing import Any
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
@@ -15,7 +16,14 @@ from app.config import settings
 from app.database import get_db
 from app.models.clip import Clip, ClipStatus
 from app.models.connected_account import ConnectedAccount, SocialPlatform
-from app.models.export import AspectRatio, CaptionFormat, CaptionStyle, Export, ExportStatus
+from app.models.export import (
+    AspectRatio,
+    CaptionCadence,
+    CaptionFormat,
+    CaptionStyle,
+    Export,
+    ExportStatus,
+)
 from app.models.job import Job, JobStatus
 from app.models.publish_attempt import PublishAttempt
 from app.models.publish_job import PublishJob, PublishMode, PublishStatus
@@ -27,8 +35,11 @@ from app.schemas.social import (
     ConnectStartResponse,
     ConnectedAccountResponse,
     FullVideoExportResponse,
+    PublishCalendarItemResponse,
+    PublishCalendarResponse,
     ProviderCapabilitiesResponse,
     PublishCreateRequest,
+    PublishJobPatchRequest,
     PublishJobResponse,
     SocialProviderResponse,
 )
@@ -42,6 +53,7 @@ from app.services.social.oauth_state import (
 from app.services.social import all_adapters, get_adapter
 from app.services.social.base import ProviderNotConfiguredError, ProviderOperationError
 from app.services.social.x import build_pkce_challenge, generate_pkce_verifier
+from app.services.r2 import r2_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -131,6 +143,7 @@ def _merge_content(universal, override):
             "hashtags": universal.hashtags,
             "privacy": universal.privacy,
             "scheduled_for": _as_utc(universal.scheduled_for),
+            "timezone": universal.timezone,
         }
 
     return {
@@ -140,7 +153,24 @@ def _merge_content(universal, override):
         "hashtags": source.hashtags if source.hashtags is not None else universal.hashtags,
         "privacy": source.privacy if source.privacy is not None else universal.privacy,
         "scheduled_for": _as_utc(source.scheduled_for if source.scheduled_for is not None else universal.scheduled_for),
+        "timezone": source.timezone if source.timezone is not None else universal.timezone,
     }
+
+
+def _normalize_timezone(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        ZoneInfo(normalized)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown timezone: {normalized}",
+        ) from exc
+    return normalized
 
 
 def _normalize_hashtags(values: list[str] | None) -> list[str] | None:
@@ -231,6 +261,39 @@ def _normalize_privacy(
     return normalized
 
 
+def _build_publish_job_list_query(
+    *,
+    user_id: uuid.UUID,
+    export_id: uuid.UUID | None = None,
+    scheduled_only: bool = False,
+    scheduled_from: datetime | None = None,
+    scheduled_to: datetime | None = None,
+    future_only: bool = False,
+    now_utc: datetime | None = None,
+):
+    query = select(PublishJob).where(PublishJob.user_id == user_id)
+
+    if export_id:
+        query = query.where(PublishJob.export_id == export_id)
+
+    if scheduled_only:
+        query = query.where(
+            PublishJob.publish_mode == PublishMode.scheduled,
+            PublishJob.scheduled_for.is_not(None),
+        )
+
+    if scheduled_from:
+        query = query.where(PublishJob.scheduled_for >= _as_utc(scheduled_from))
+
+    if scheduled_to:
+        query = query.where(PublishJob.scheduled_for < _as_utc(scheduled_to))
+
+    if future_only:
+        query = query.where(PublishJob.scheduled_for >= (now_utc or datetime.now(timezone.utc)))
+
+    return query.order_by(PublishJob.created_at.desc())
+
+
 def _destination_type_from_metadata(platform: SocialPlatform, metadata_json: Any) -> str:
     if isinstance(metadata_json, dict):
         value = metadata_json.get("destination_type")
@@ -248,19 +311,18 @@ def _destination_type_for_account(account: ConnectedAccount) -> str:
     return destination_type
 
 
-async def _enqueue_publish(db: AsyncSession, publish_job: PublishJob, eta: datetime | None = None):
+async def _enqueue_publish(db: AsyncSession, publish_job: PublishJob):
     from app.worker.tasks.publish import execute_publish_job
 
-    kwargs = {"queue": "publish"}
-    if eta:
-        kwargs["eta"] = eta
-    else:
-        kwargs["countdown"] = 1
-
-    task = execute_publish_job.apply_async(args=[str(publish_job.id)], **kwargs)
+    task = execute_publish_job.apply_async(
+        args=[str(publish_job.id)],
+        queue="publish",
+        countdown=1,
+    )
     publish_job.provider_metadata_json = {
         **(publish_job.provider_metadata_json or {}),
         "celery_task_id": task.id,
+        "dispatched_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.commit()
 
@@ -276,6 +338,7 @@ async def _enqueue_render_for_export(db: AsyncSession, export: Export, video_id:
             "aspect_ratio": export.aspect_ratio.value,
             "caption_style": export.caption_style.value if export.caption_style else None,
             "caption_format": export.caption_format.value,
+            "caption_cadence": export.caption_cadence.value,
             "caption_vertical_position": export.caption_vertical_position,
             "caption_scale": export.caption_scale,
             "frame_anchor_x": export.frame_anchor_x,
@@ -618,6 +681,27 @@ async def disconnect_account(
     if not account:
         raise HTTPException(status_code=404, detail="Connected account not found")
 
+    active_result = await db.execute(
+        select(PublishJob).where(
+            PublishJob.connected_account_id == account.id,
+            PublishJob.status.in_([PublishStatus.scheduled, PublishStatus.queued, PublishStatus.publishing]),
+        )
+    )
+    active_jobs = active_result.scalars().all()
+    if any(job.status == PublishStatus.publishing for job in active_jobs):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot disconnect this account while a post is publishing",
+        )
+
+    for publish_job in active_jobs:
+        publish_job.status = PublishStatus.waiting_user_action
+        publish_job.error_message = "Reconnect this social account before publishing."
+        publish_job.provider_metadata_json = {
+            **(publish_job.provider_metadata_json or {}),
+            "disconnect_interrupted": True,
+        }
+
     await db.delete(account)
     await db.commit()
 
@@ -632,15 +716,16 @@ async def create_publish_jobs(
         raise HTTPException(status_code=400, detail="At least one publish target is required")
 
     export_result = await db.execute(
-        select(Export, Clip)
+        select(Export, Clip, Video)
         .join(Clip, Export.clip_id == Clip.id)
+        .join(Video, Clip.video_id == Video.id)
         .where(Export.id == body.export_id, Export.user_id == current_user.id)
     )
     export_row = export_result.first()
     if not export_row:
         raise HTTPException(status_code=404, detail="Export not found")
 
-    export, clip = export_row
+    export, clip, video = export_row
     if export.status != ExportStatus.ready or not export.storage_key:
         raise HTTPException(status_code=400, detail="Publish requires a ready export asset")
 
@@ -702,8 +787,8 @@ async def create_publish_jobs(
             )
 
         scheduled_for = content["scheduled_for"]
+        display_timezone = _normalize_timezone(content["timezone"])
         adapter = get_adapter(target.platform)
-        capabilities = adapter.capabilities()
         now_utc = datetime.now(timezone.utc)
 
         if scheduled_for:
@@ -712,16 +797,11 @@ async def create_publish_jobs(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Scheduled time for {target.platform.value} must be in the future",
                 )
-            if not capabilities.supports_schedule:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Scheduling is not supported for {target.platform.value}",
-                )
 
         mode = PublishMode.scheduled if scheduled_for else PublishMode.now
 
         setup_status, setup_message, setup_details = _provider_setup(adapter)
-        initial_status = PublishStatus.queued
+        initial_status = PublishStatus.scheduled if scheduled_for else PublishStatus.queued
         initial_error = None
 
         if not encryption_ready and setup_status == "ready":
@@ -745,6 +825,13 @@ async def create_publish_jobs(
             hashtags=hashtags,
             privacy=privacy,
             scheduled_for=scheduled_for,
+            timezone=display_timezone,
+            destination_display_name=(
+                account.display_name
+                or account.username_or_channel_name
+                or account.external_account_id
+            ),
+            content_title_snapshot=content["title"] or clip.title or video.title or "Scheduled post",
             error_message=initial_error,
             provider_metadata_json={
                 "initial_setup_status": setup_status,
@@ -760,8 +847,7 @@ async def create_publish_jobs(
     for publish_job in created_jobs:
         if publish_job.status != PublishStatus.queued:
             continue
-        eta = publish_job.scheduled_for if publish_job.publish_mode == PublishMode.scheduled else None
-        await _enqueue_publish(db, publish_job, eta=eta)
+        await _enqueue_publish(db, publish_job)
 
     for publish_job in created_jobs:
         await db.refresh(publish_job)
@@ -772,14 +858,91 @@ async def create_publish_jobs(
 @router.get("/social/publish", response_model=list[PublishJobResponse])
 async def list_publish_jobs(
     export_id: uuid.UUID | None = Query(default=None),
+    scheduled_only: bool = Query(default=False),
+    scheduled_from: datetime | None = Query(default=None),
+    scheduled_to: datetime | None = Query(default=None),
+    future_only: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(PublishJob).where(PublishJob.user_id == current_user.id).order_by(PublishJob.created_at.desc())
-    if export_id:
-        query = query.where(PublishJob.export_id == export_id)
+    query = _build_publish_job_list_query(
+        user_id=current_user.id,
+        export_id=export_id,
+        scheduled_only=scheduled_only,
+        scheduled_from=scheduled_from,
+        scheduled_to=scheduled_to,
+        future_only=future_only,
+    )
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/social/publish/calendar", response_model=PublishCalendarResponse)
+async def list_publish_calendar(
+    scheduled_from: datetime = Query(...),
+    scheduled_to: datetime = Query(...),
+    platform: SocialPlatform | None = Query(default=None),
+    publish_status: PublishStatus | None = Query(default=None, alias="status"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=250),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    range_start = _as_utc(scheduled_from)
+    range_end = _as_utc(scheduled_to)
+    if not range_start or not range_end or range_end <= range_start:
+        raise HTTPException(status_code=400, detail="scheduled_to must be after scheduled_from")
+
+    conditions = [
+        PublishJob.user_id == current_user.id,
+        PublishJob.scheduled_for.is_not(None),
+        PublishJob.scheduled_for >= range_start,
+        PublishJob.scheduled_for < range_end,
+    ]
+    if platform:
+        conditions.append(PublishJob.platform == platform)
+    if publish_status:
+        conditions.append(PublishJob.status == publish_status)
+
+    total = int(
+        await db.scalar(select(func.count(PublishJob.id)).where(*conditions)) or 0
+    )
+    result = await db.execute(
+        select(PublishJob, Clip)
+        .outerjoin(Clip, PublishJob.clip_id == Clip.id)
+        .where(*conditions)
+        .order_by(PublishJob.scheduled_for.asc(), PublishJob.created_at.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    items: list[PublishCalendarItemResponse] = []
+    for publish_job, clip in result.all():
+        thumbnail_url = None
+        if clip and clip.thumbnail_key:
+            try:
+                thumbnail_url = r2_client.get_presigned_download_url(clip.thumbnail_key)
+            except Exception as exc:
+                logger.warning(
+                    "[social] calendar thumbnail unavailable job_id=%s error=%s",
+                    publish_job.id,
+                    exc,
+                )
+        items.append(
+            PublishCalendarItemResponse.model_validate(
+                {
+                    **PublishJobResponse.model_validate(publish_job).model_dump(),
+                    "thumbnail_url": thumbnail_url,
+                }
+            )
+        )
+
+    return PublishCalendarResponse(
+        items=items,
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
 
 
 @router.get("/social/publish/{publish_job_id}", response_model=PublishJobResponse)
@@ -800,6 +963,83 @@ async def get_publish_job(
     return publish_job
 
 
+@router.patch("/social/publish/{publish_job_id}", response_model=PublishJobResponse)
+async def update_publish_job(
+    publish_job_id: uuid.UUID,
+    body: PublishJobPatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(PublishJob).where(
+            PublishJob.id == publish_job_id,
+            PublishJob.user_id == current_user.id,
+        )
+    )
+    publish_job = result.scalar_one_or_none()
+    if not publish_job:
+        raise HTTPException(status_code=404, detail="Publish job not found")
+    if publish_job.status != PublishStatus.scheduled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only scheduled jobs can be edited, cancelled, or posted now",
+        )
+
+    if body.action == "cancel":
+        publish_job.status = PublishStatus.cancelled
+        publish_job.error_message = None
+        await db.commit()
+        await db.refresh(publish_job)
+        return publish_job
+
+    if body.action == "post_now":
+        publish_job.status = PublishStatus.queued
+        publish_job.scheduled_for = None
+        publish_job.publish_mode = PublishMode.now
+        publish_job.error_message = None
+        await db.commit()
+        await _enqueue_publish(db, publish_job)
+        await db.refresh(publish_job)
+        return publish_job
+
+    changes = body.model_dump(exclude_unset=True, exclude={"action"})
+    if "scheduled_for" in changes:
+        scheduled_for = _as_utc(changes["scheduled_for"])
+        if not scheduled_for or scheduled_for <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Scheduled time must be in the future")
+        publish_job.scheduled_for = scheduled_for
+        publish_job.publish_mode = PublishMode.scheduled
+    if "timezone" in changes:
+        publish_job.timezone = _normalize_timezone(changes["timezone"])
+    if "caption" in changes:
+        publish_job.caption = changes["caption"]
+    if "title" in changes:
+        publish_job.title = changes["title"]
+        if changes["title"]:
+            publish_job.content_title_snapshot = changes["title"]
+    if "description" in changes:
+        publish_job.description = changes["description"]
+    if "hashtags" in changes:
+        publish_job.hashtags = _normalize_hashtags(changes["hashtags"])
+    if "privacy" in changes:
+        destination_metadata = None
+        if publish_job.connected_account_id:
+            destination_metadata = await db.scalar(
+                select(ConnectedAccount.metadata_json).where(
+                    ConnectedAccount.id == publish_job.connected_account_id
+                )
+            )
+        publish_job.privacy = _normalize_privacy(
+            publish_job.platform,
+            changes["privacy"],
+            destination_metadata=destination_metadata,
+        )
+
+    await db.commit()
+    await db.refresh(publish_job)
+    return publish_job
+
+
 @router.post("/social/publish/{publish_job_id}/retry", response_model=PublishJobResponse)
 async def retry_publish_job(
     publish_job_id: uuid.UUID,
@@ -816,7 +1056,11 @@ async def retry_publish_job(
     if not publish_job:
         raise HTTPException(status_code=404, detail="Publish job not found")
 
-    if publish_job.status not in {PublishStatus.failed, PublishStatus.provider_not_configured}:
+    if publish_job.status not in {
+        PublishStatus.failed,
+        PublishStatus.provider_not_configured,
+        PublishStatus.waiting_user_action,
+    }:
         raise HTTPException(status_code=400, detail="Only failed or blocked publish jobs can be retried")
 
     adapter = get_adapter(publish_job.platform)
@@ -837,14 +1081,26 @@ async def retry_publish_job(
         await db.refresh(publish_job)
         return publish_job
 
-    publish_job.status = PublishStatus.queued
+    if not publish_job.connected_account_id:
+        publish_job.status = PublishStatus.waiting_user_action
+        publish_job.error_message = "Reconnect the destination account before retrying."
+        await db.commit()
+        await db.refresh(publish_job)
+        return publish_job
+
+    should_reschedule = (
+        publish_job.publish_mode == PublishMode.scheduled
+        and publish_job.scheduled_for is not None
+        and _as_utc(publish_job.scheduled_for) > datetime.now(timezone.utc)
+    )
+    publish_job.status = PublishStatus.scheduled if should_reschedule else PublishStatus.queued
     publish_job.error_message = None
     publish_job.external_post_id = None
     publish_job.external_post_url = None
     await db.commit()
 
-    eta = publish_job.scheduled_for if publish_job.publish_mode == PublishMode.scheduled else None
-    await _enqueue_publish(db, publish_job, eta=eta)
+    if publish_job.status == PublishStatus.queued:
+        await _enqueue_publish(db, publish_job)
     await db.refresh(publish_job)
     return publish_job
 
@@ -912,6 +1168,7 @@ async def prepare_full_video_export(
             Export.aspect_ratio == AspectRatio.original,
             Export.caption_style == CaptionStyle.clean_minimal,
             Export.caption_format == CaptionFormat.burned_in,
+            Export.caption_cadence == CaptionCadence.split_line,
             Export.status.in_([ExportStatus.queued, ExportStatus.rendering, ExportStatus.ready]),
         )
         .order_by(Export.created_at.desc())
@@ -931,6 +1188,7 @@ async def prepare_full_video_export(
         aspect_ratio=AspectRatio.original,
         caption_style=CaptionStyle.clean_minimal,
         caption_format=CaptionFormat.burned_in,
+        caption_cadence=CaptionCadence.split_line,
         caption_vertical_position=15.0,
         caption_scale=1.0,
         frame_anchor_x=0.5,

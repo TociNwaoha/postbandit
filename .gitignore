@@ -24,6 +24,7 @@ env/
 
 # OS
 .DS_Store
+._*
 Thumbs.db
 
 # Temp

@@ -33,6 +33,8 @@ class VideoResponse(BaseModel):
     external_metadata_json: dict
     storage_key: str | None
     source_download_url: str | None = None
+    editor_preview_download_url: str | None = None
+    editor_preview_status: str | None = None
     duration_sec: int | None
     resolution: str | None
     file_size_bytes: int | None

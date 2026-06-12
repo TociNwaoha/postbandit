@@ -1,24 +1,49 @@
 import logging
+import io
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
 
 from app.database import get_db
+from app.models.clip_overlay_asset import ClipOverlayAsset
+from app.models.export import Export
 from app.models.user import User
 from app.models.clip import Clip
 from app.models.video import Video
-from app.schemas.clip import ClipResponse, ClipUpdateRequest
+from app.schemas.clip import (
+    ClipOverlayAssetResponse,
+    ClipResponse,
+    ClipUpdateRequest,
+    PlatformCopyFields,
+    PlatformCopyGenerateRequest,
+    PlatformCopyGenerateResponse,
+)
 from app.api.deps import get_current_user
-from app.services.ai_copy import AICopyUnavailableError, generate_clip_copy, provider_configured
+from app.services.ai_copy import (
+    AICopyError,
+    AICopyUnavailableError,
+    generate_clip_copy,
+    generate_platform_copy,
+    provider_configured,
+)
+from app.services.editor_quota import enforce_storage_hard_stop
 from app.services.r2 import r2_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 MIN_CLIP_DURATION_SEC = 1.0
+MAX_CLIP_OVERLAY_ASSET_BYTES = 25 * 1024 * 1024
+ALLOWED_OVERLAY_IMAGE_FORMATS = {
+    "PNG": ("image/png", ".png"),
+    "JPEG": ("image/jpeg", ".jpg"),
+    "WEBP": ("image/webp", ".webp"),
+}
 
 
 def _clip_to_response(clip: Clip) -> ClipResponse:
@@ -50,6 +75,21 @@ def _clip_to_response(clip: Clip) -> ClipResponse:
         status=clip.status,
         created_at=clip.created_at,
         updated_at=clip.updated_at,
+    )
+
+
+def _overlay_asset_to_response(asset: ClipOverlayAsset) -> ClipOverlayAssetResponse:
+    return ClipOverlayAssetResponse(
+        id=asset.id,
+        clip_id=asset.clip_id,
+        user_id=asset.user_id,
+        original_filename=asset.original_filename,
+        mime_type=asset.mime_type,
+        size_bytes=int(asset.size_bytes or 0),
+        width=asset.width,
+        height=asset.height,
+        download_url=r2_client.get_presigned_download_url(asset.storage_key),
+        created_at=asset.created_at,
     )
 
 
@@ -97,6 +137,144 @@ async def get_clip(
     if not clip:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
     return _clip_to_response(clip)
+
+
+@router.post("/clips/{clip_id}/overlay-assets", response_model=ClipOverlayAssetResponse)
+async def upload_clip_overlay_asset(
+    clip_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        clip_uuid = UUID(clip_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid clip_id")
+
+    clip_result = await db.execute(
+        select(Clip)
+        .join(Video, Clip.video_id == Video.id)
+        .where(Clip.id == clip_uuid, Video.user_id == current_user.id)
+    )
+    clip = clip_result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    raw = await file.read()
+    size_bytes = len(raw)
+    if size_bytes <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded image is empty")
+    if size_bytes > MAX_CLIP_OVERLAY_ASSET_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image exceeds the 25 MB limit",
+        )
+
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            image_format = (image.format or "").upper()
+            width, height = image.size
+            image.verify()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload must be a valid PNG, JPG, or WebP image",
+        ) from exc
+
+    format_meta = ALLOWED_OVERLAY_IMAGE_FORMATS.get(image_format)
+    if not format_meta or width <= 0 or height <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload must be a valid PNG, JPG, or WebP image",
+        )
+
+    await enforce_storage_hard_stop(
+        db,
+        current_user.id,
+        incoming_bytes=size_bytes,
+        operation_label="clip overlay upload",
+    )
+
+    mime_type, extension = format_meta
+    asset_id = uuid.uuid4()
+    key = f"clip-overlays/{current_user.id}/{clip.id}/{asset_id}{extension}"
+    r2_client.upload_fileobj(io.BytesIO(raw), key, content_type=mime_type)
+
+    asset = ClipOverlayAsset(
+        id=asset_id,
+        clip_id=clip.id,
+        user_id=current_user.id,
+        storage_key=key,
+        original_filename=Path(file.filename or f"overlay{extension}").name,
+        mime_type=mime_type,
+        size_bytes=size_bytes,
+        width=width,
+        height=height,
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+    logger.info(
+        "[clips] overlay asset uploaded user_id=%s clip_id=%s asset_id=%s size_bytes=%s",
+        current_user.id,
+        clip.id,
+        asset.id,
+        size_bytes,
+    )
+    return _overlay_asset_to_response(asset)
+
+
+@router.delete("/clips/{clip_id}/overlay-assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_clip_overlay_asset(
+    clip_id: str,
+    asset_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        clip_uuid = UUID(clip_id)
+        asset_uuid = UUID(asset_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid clip or asset id")
+
+    result = await db.execute(
+        select(ClipOverlayAsset)
+        .join(Clip, ClipOverlayAsset.clip_id == Clip.id)
+        .join(Video, Clip.video_id == Video.id)
+        .where(
+            ClipOverlayAsset.id == asset_uuid,
+            ClipOverlayAsset.clip_id == clip_uuid,
+            ClipOverlayAsset.user_id == current_user.id,
+            Video.user_id == current_user.id,
+        )
+    )
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Overlay asset not found")
+
+    referenced = await db.scalar(
+        select(Export.id).where(Export.overlay_image_asset_id == asset.id).limit(1)
+    )
+    if referenced:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This image is used by an export and cannot be deleted",
+        )
+
+    try:
+        r2_client.delete_file(asset.storage_key)
+    except Exception as exc:
+        logger.warning(
+            "[clips] overlay storage delete failed user_id=%s asset_id=%s key=%s error=%s",
+            current_user.id,
+            asset.id,
+            asset.storage_key,
+            exc,
+        )
+    await db.delete(asset)
+    await db.commit()
+    logger.info("[clips] overlay asset deleted user_id=%s asset_id=%s", current_user.id, asset.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/clips/{clip_id}/generate-copy", response_model=ClipResponse)
@@ -181,6 +359,71 @@ async def generate_copy_for_clip(
         len(generated.hashtag_options),
     )
     return _clip_to_response(clip)
+
+
+@router.post(
+    "/clips/{clip_id}/generate-platform-copy",
+    response_model=PlatformCopyGenerateResponse,
+)
+async def generate_platform_copy_for_clip(
+    clip_id: str,
+    body: PlatformCopyGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        clip_uuid = UUID(clip_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid clip_id")
+
+    row = await db.execute(
+        select(Clip, Video)
+        .join(Video, Clip.video_id == Video.id)
+        .where(Clip.id == clip_uuid, Video.user_id == current_user.id)
+    )
+    clip_row = row.first()
+    if not clip_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+    clip, video = clip_row
+
+    transcript_text = " ".join((clip.transcript_text or "").split())
+    if not transcript_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clip transcript text is unavailable",
+        )
+    if not provider_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DeepSeek platform copy is unavailable",
+        )
+
+    try:
+        generated = generate_platform_copy(
+            transcript_text,
+            [platform.value for platform in body.platforms],
+            video_title=video.title,
+            topic_hint=body.topic_hint,
+        )
+    except AICopyUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except AICopyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return PlatformCopyGenerateResponse(
+        provider_used="deepseek",
+        results={
+            platform: PlatformCopyFields.model_validate(value)
+            for platform, value in generated.results.items()
+        },
+        errors=generated.errors,
+    )
 
 
 @router.patch("/clips/{clip_id}", response_model=ClipResponse)

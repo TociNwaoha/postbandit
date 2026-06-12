@@ -26,6 +26,23 @@ class AICopyResult:
     hashtag_options: list[list[str]]
 
 
+@dataclass(frozen=True)
+class PlatformCopyResult:
+    results: dict[str, dict[str, object]]
+    errors: dict[str, str]
+
+
+PLATFORM_COPY_LIMITS: dict[str, dict[str, int | bool]] = {
+    "instagram": {"caption": 2200, "hashtags": 30},
+    "threads": {"caption": 500, "hashtags": 5},
+    "facebook": {"caption": 5000, "hashtags": 10},
+    "youtube": {"title": 100, "description": 5000, "hashtags": 15},
+    "x": {"caption": 280, "hashtags": 3},
+    "tiktok": {"caption": 2200, "hashtags": 8},
+    "linkedin": {"caption": 3000, "hashtags": 5},
+}
+
+
 def _is_placeholder(value: str | None) -> bool:
     if value is None:
         return True
@@ -143,6 +160,136 @@ def _extract_content_json(text: str) -> dict:
                 continue
 
     raise AICopyError("AI response was not valid JSON")
+
+
+def _truncate_field(value: object, limit: int) -> str | None:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return None
+    return normalized[:limit].rstrip()
+
+
+def _normalize_platform_copy(platform: str, value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise AICopyError("Platform result must be a JSON object")
+    limits = PLATFORM_COPY_LIMITS[platform]
+    result: dict[str, object] = {
+        "title": None,
+        "caption": None,
+        "description": None,
+        "hashtags": [],
+    }
+    for field in ("title", "caption", "description"):
+        limit = int(limits.get(field, 0) or 0)
+        if limit:
+            result[field] = _truncate_field(value.get(field), limit)
+
+    raw_hashtags = value.get("hashtags")
+    hashtag_limit = int(limits.get("hashtags", 0) or 0)
+    hashtags = _coerce_hashtag_set(raw_hashtags)
+    if isinstance(raw_hashtags, list) and hashtag_limit > 5:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in raw_hashtags:
+            tag = _normalize_hashtag(str(item))
+            if tag and tag not in seen:
+                seen.add(tag)
+                normalized.append(tag)
+            if len(normalized) >= hashtag_limit:
+                break
+        hashtags = normalized
+    result["hashtags"] = hashtags[:hashtag_limit]
+
+    if not any(result[field] for field in ("title", "caption", "description")):
+        raise AICopyError("Platform result contains no usable copy")
+    return result
+
+
+def _post_deepseek_json(system_prompt: str, user_prompt: str) -> dict:
+    if not provider_configured():
+        raise AICopyUnavailableError("DEEPSEEK_API_KEY is not configured")
+
+    payload = {
+        "model": settings.deepseek_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "response_format": {"type": "json_object"},
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.deepseek_api_key}",
+        "Content-Type": "application/json",
+    }
+    endpoint = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
+    try:
+        with httpx.Client(timeout=settings.deepseek_timeout_sec) as client:
+            response = client.post(endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.warning("[ai_copy] DeepSeek HTTP failure status=%s", exc.response.status_code)
+        raise AICopyUnavailableError(f"DeepSeek API error: HTTP {exc.response.status_code}") from exc
+    except Exception as exc:
+        logger.warning("[ai_copy] DeepSeek request failure error=%s", exc)
+        raise AICopyUnavailableError(f"DeepSeek request failed: {exc}") from exc
+
+    try:
+        data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception as exc:
+        raise AICopyError("DeepSeek response payload was invalid") from exc
+    return _extract_content_json(content)
+
+
+def generate_platform_copy(
+    transcript_text: str,
+    platforms: list[str],
+    *,
+    video_title: str | None = None,
+    topic_hint: str | None = None,
+) -> PlatformCopyResult:
+    transcript = " ".join((transcript_text or "").split())
+    if not transcript:
+        raise AICopyError("Clip transcript text is empty")
+
+    selected = list(dict.fromkeys(platform for platform in platforms if platform in PLATFORM_COPY_LIMITS))
+    if not selected:
+        raise AICopyError("No supported platforms were selected")
+
+    constraints = {
+        platform: PLATFORM_COPY_LIMITS[platform]
+        for platform in selected
+    }
+    system_prompt = (
+        "You write platform-native social copy for one video clip. Return ONLY a JSON object "
+        'with a top-level "results" object keyed by every requested platform. Each platform '
+        'may contain "title", "caption", "description", and "hashtags" (an array). '
+        "Do not invent facts not present in the transcript. Use concise natural language and "
+        f"respect these character/count limits: {json.dumps(constraints)}"
+    )
+    user_prompt = (
+        f"Requested platforms: {', '.join(selected)}\n"
+        f"Video title: {video_title or 'Untitled'}\n"
+        f"Topic direction: {topic_hint or 'Use the strongest idea in the clip'}\n"
+        f"Transcript:\n{transcript[:16000]}"
+    )
+    parsed = _post_deepseek_json(system_prompt, user_prompt)
+    raw_results = parsed.get("results", parsed)
+    if not isinstance(raw_results, dict):
+        raise AICopyError("DeepSeek response missing platform results")
+
+    results: dict[str, dict[str, object]] = {}
+    errors: dict[str, str] = {}
+    for platform in selected:
+        try:
+            results[platform] = _normalize_platform_copy(platform, raw_results.get(platform))
+        except AICopyError as exc:
+            errors[platform] = str(exc)
+
+    if not results:
+        raise AICopyError("No platform copy result could be parsed")
+    return PlatformCopyResult(results=results, errors=errors)
 
 
 def generate_clip_copy(

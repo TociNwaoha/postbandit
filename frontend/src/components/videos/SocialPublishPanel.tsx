@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { api, ApiError } from "@/lib/api";
 import {
   Clip,
   ConnectedAccount,
   Export,
+  PlatformCopyGenerateResponse,
   PublishJobStatus,
   SocialPlatform,
   SocialProvider,
@@ -19,6 +21,7 @@ interface SocialPublishPanelProps {
   exports: Export[];
   clip: Clip;
   onClipUpdate?: (clip: Clip) => void;
+  initialScheduledFor?: string;
 }
 
 interface PublishFormFields {
@@ -60,12 +63,23 @@ const TIKTOK_PRIVACY_LABELS: Record<string, string> = {
 };
 
 const statusStyles: Record<PublishJobStatus, string> = {
+  scheduled: "bg-indigo-500/15 text-indigo-700",
   queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
   publishing: "bg-blue-500/20 text-blue-700 animate-pulse",
   published: "bg-emerald-500/20 text-emerald-700",
   failed: "bg-red-500/20 text-red-700",
   waiting_user_action: "bg-amber-500/20 text-amber-700",
   provider_not_configured: "bg-yellow-500/20 text-yellow-700",
+  cancelled: "bg-slate-500/15 text-slate-600",
+};
+const PLATFORM_COPY_LIMITS: Partial<Record<SocialPlatform, Partial<Record<"title" | "caption" | "description", number>>>> = {
+  instagram: { caption: 2200 },
+  threads: { caption: 500 },
+  facebook: { caption: 5000 },
+  youtube: { title: 100, description: 5000 },
+  x: { caption: 280 },
+  tiktok: { caption: 2200 },
+  linkedin: { caption: 3000 },
 };
 
 function emptyFields(): PublishFormFields {
@@ -168,13 +182,15 @@ function toIsoDatetime(value: string): string | null {
 }
 
 function toPayloadFields(fields: PublishFormFields) {
+  const scheduledFor = toIsoDatetime(fields.scheduled_for);
   return {
     caption: normalizeText(fields.caption),
     title: normalizeText(fields.title),
     description: normalizeText(fields.description),
     hashtags: parseHashtags(fields.hashtags),
     privacy: normalizeText(fields.privacy),
-    scheduled_for: toIsoDatetime(fields.scheduled_for),
+    scheduled_for: scheduledFor,
+    timezone: scheduledFor ? getBrowserTimeZone() : null,
   };
 }
 type PublishPayloadFields = ReturnType<typeof toPayloadFields>;
@@ -297,10 +313,16 @@ function formatScheduleLabel(value: string): string {
 
 function getBrowserTimeZone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch {
-    return "Local time";
+    return "UTC";
   }
+}
+
+function characterCounterClass(length: number, limit: number): string {
+  if (length >= limit) return "text-red-700";
+  if (length >= limit * 0.9) return "text-amber-700";
+  return "text-[var(--app-subtle)]";
 }
 
 interface SchedulePickerProps {
@@ -541,7 +563,12 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
   );
 }
 
-export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }: SocialPublishPanelProps) {
+export function SocialPublishPanel({
+  exports,
+  clip: initialClip,
+  onClipUpdate,
+  initialScheduledFor,
+}: SocialPublishPanelProps) {
   const readyExports = useMemo(
     () => exports.filter((item) => item.status === "ready" && item.storage_key),
     [exports]
@@ -561,13 +588,30 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [generatingCopy, setGeneratingCopy] = useState(false);
+  const [generatingPlatformCopy, setGeneratingPlatformCopy] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
+  const [showUniversalEditor, setShowUniversalEditor] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const schedulePrefillAppliedRef = useRef(false);
 
   useEffect(() => {
     setClip(initialClip);
   }, [initialClip]);
+
+  useEffect(() => {
+    if (schedulePrefillAppliedRef.current || !initialScheduledFor) return;
+    const parsed = parseLocalDatetimeInput(initialScheduledFor);
+    if (!parsed || parsed.getTime() <= Date.now()) return;
+
+    schedulePrefillAppliedRef.current = true;
+    setUniversalFields((previous) => ({
+      ...previous,
+      scheduled_for: initialScheduledFor,
+    }));
+    setShowUniversalEditor(true);
+    setMessage(`Schedule date prefilled for ${formatScheduleLabel(initialScheduledFor)}.`);
+  }, [initialScheduledFor]);
 
   useEffect(() => {
     if (!readyExports.length) {
@@ -779,6 +823,55 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
     }
   };
 
+  const handleGeneratePlatformCopy = async () => {
+    const selectedPlatforms = PLATFORM_ORDER.filter((platform) => targetDrafts[platform]?.enabled);
+    if (!selectedPlatforms.length) {
+      setError("Select at least one connected platform before generating platform copy.");
+      return;
+    }
+
+    setGeneratingPlatformCopy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const generated = await api.post<PlatformCopyGenerateResponse>(
+        `/api/clips/${clip.id}/generate-platform-copy`,
+        { platforms: selectedPlatforms }
+      );
+      setTargetDrafts((previous) => {
+        const next = { ...previous };
+        for (const platform of selectedPlatforms) {
+          const copy = generated.results[platform];
+          if (!copy) continue;
+          const prior = previous[platform];
+          next[platform] = {
+            ...prior,
+            use_override: true,
+            override: {
+              ...prior.override,
+              title: copy.title ?? prior.override.title,
+              caption: copy.caption ?? prior.override.caption,
+              description: copy.description ?? prior.override.description,
+              hashtags: copy.hashtags.length ? copy.hashtags.join(" ") : prior.override.hashtags,
+            },
+          };
+        }
+        return next;
+      });
+      const generatedCount = Object.keys(generated.results).length;
+      const errorCount = Object.keys(generated.errors).length;
+      setMessage(
+        `Generated DeepSeek copy for ${generatedCount} platform(s)${
+          errorCount ? `; ${errorCount} platform(s) need manual copy` : ""
+        }.`
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Platform copy generation is unavailable right now.");
+    } finally {
+      setGeneratingPlatformCopy(false);
+    }
+  };
+
   const handleCreatePublishJobs = async () => {
     if (!selectedExportId) {
       setError("Select a ready export before publishing.");
@@ -835,6 +928,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
             hashtags: overridePayload?.hashtags ?? null,
             privacy: matchingOption.value,
             scheduled_for: overridePayload?.scheduled_for ?? null,
+            timezone: overridePayload?.timezone ?? null,
           };
         }
       } else if (overridePayload?.privacy) {
@@ -845,6 +939,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           hashtags: overridePayload?.hashtags ?? null,
           privacy: null,
           scheduled_for: overridePayload?.scheduled_for ?? null,
+          timezone: overridePayload?.timezone ?? null,
         };
       }
 
@@ -893,7 +988,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
   };
 
   const anyScheduleCapableProvider = useMemo(
-    () => providers.some((provider) => provider.capabilities?.supports_schedule),
+    () => providers.some((provider) => provider.setup_status === "ready" && provider.capabilities?.supports_publish_now),
     [providers]
   );
 
@@ -919,15 +1014,18 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div id="publish-social" className="scroll-mt-6 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-[var(--app-text)]">Publish to Social</h3>
-          <p className="mt-1 text-xs text-[var(--app-muted)]">
+          <h3 className="text-base font-semibold text-[var(--app-text)]">Publish to Social</h3>
+          <p className="mt-0.5 text-[11px] text-[var(--app-muted)]">
             Publish from a ready export. One publish job is created per selected platform/account.
           </p>
         </div>
-        <Link href="/connections" className="text-xs text-[#1D3FD0] hover:text-[#1633B8]">
+        <Link
+          href="/connections"
+          className="rounded-md border border-[var(--app-border)] px-2.5 py-1.5 text-xs text-[#1D3FD0] hover:bg-[var(--app-surface-soft)] hover:text-[#1633B8]"
+        >
           Manage Connections
         </Link>
       </div>
@@ -942,13 +1040,13 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
         </p>
       ) : null}
 
-      <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+      <div className="grid gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <label className="text-xs text-[var(--app-muted)]">
           Ready Export Asset
           <select
             value={selectedExportId}
             onChange={(event) => setSelectedExportId(event.target.value)}
-            className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+            className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
           >
             {readyExports.length ? null : <option value="">No ready exports available</option>}
             {readyExports.map((item) => (
@@ -963,30 +1061,48 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
             Create and wait for a ready export before publishing.
           </p>
         ) : null}
+        <button
+          type="button"
+          onClick={() => setShowUniversalEditor((current) => !current)}
+          className="rounded-md border border-[var(--app-border)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--app-text)] hover:bg-[var(--app-surface)]"
+        >
+          {showUniversalEditor ? "Hide Content Fields" : "Edit Content & Schedule"}
+        </button>
       </div>
 
-      <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Universal Content</h4>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handleGenerateCopy()}
-            disabled={generatingCopy}
-            className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs font-medium text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
-          >
-            {generatingCopy ? "Generating..." : "Generate Copy"}
-          </button>
-          <p className="text-xs text-[var(--app-subtle)]">
-            Fills title, caption, and description from this clip&apos;s AI copy.
-          </p>
+      {showUniversalEditor ? (
+      <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Universal Content</h4>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => void handleGenerateCopy()}
+              disabled={generatingCopy}
+              className="rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1 text-xs font-medium text-[var(--app-text)] hover:bg-[var(--app-surface)] disabled:opacity-60"
+            >
+              {generatingCopy ? "Generating..." : "Generate Universal Copy"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleGeneratePlatformCopy()}
+              disabled={generatingPlatformCopy}
+              className="rounded-md bg-[var(--app-primary)] px-2.5 py-1 text-xs font-medium text-white hover:bg-[var(--app-primary-hover)] disabled:opacity-60"
+            >
+              {generatingPlatformCopy ? "Generating..." : "Generate Platform Copy"}
+            </button>
+          </div>
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+          Universal fields apply unless a platform override is enabled.
+        </p>
+        <div className="mt-2 grid gap-2 md:grid-cols-2">
           <label className="text-xs text-[var(--app-muted)]">
             Title
             <input
               value={universalFields.title}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, title: event.target.value }))}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
           <div className="text-xs text-[var(--app-muted)]">
@@ -1028,7 +1144,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
               value={universalFields.caption}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, caption: event.target.value }))}
               rows={2}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
           <label className="text-xs text-[var(--app-muted)] md:col-span-2">
@@ -1036,8 +1152,8 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
             <textarea
               value={universalFields.description}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, description: event.target.value }))}
-              rows={3}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              rows={2}
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
           <label className="text-xs text-[var(--app-muted)]">
@@ -1046,7 +1162,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
               value={universalFields.hashtags}
               onChange={(event) => setUniversalFields((prev) => ({ ...prev, hashtags: event.target.value }))}
               placeholder="#postbandit #podcast"
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             />
           </label>
           <div className="text-xs text-[var(--app-muted)]">
@@ -1064,8 +1180,9 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           </div>
         </div>
       </div>
+      ) : null}
 
-      <div className="space-y-3">
+      <div className="grid gap-2 lg:grid-cols-2">
         {PLATFORM_ORDER.map((platform) => {
           const provider = providersByPlatform[platform];
           const platformAccounts = accountsByPlatform[platform] || [];
@@ -1076,13 +1193,14 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
             ? platformAccounts.filter((account) => isFacebookPageDestination(account))
             : platformAccounts;
           const draft = targetDrafts[platform];
+          const brand = getPlatformBrandMeta(platform);
           const selectedAccount = selectableAccounts.find(
             (account) => account.id === draft?.connected_account_id
           );
           const latestJob = latestJobsByPlatform.get(platform);
-          const providerName = provider?.display_name || platform;
+          const providerName = provider?.display_name || brand.displayName;
           const providerReady = provider?.setup_status === "ready";
-          const providerSupportsSchedule = Boolean(provider?.capabilities?.supports_schedule);
+          const providerSupportsSchedule = Boolean(providerReady && provider?.capabilities?.supports_publish_now);
           const hasConnectedAccounts = selectableAccounts.length > 0;
           const privacyOptions = privacyOptionsForTarget(platform, selectedAccount);
           const reconnectRequired = isReconnectRequiredXJob(latestJob);
@@ -1092,31 +1210,49 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           const threadsPublishMediaReady = Boolean(providerSetupDetails.publish_media_ready);
           const tiktokDirectReady = Boolean(providerSetupDetails.publish_direct_ready);
           const tiktokUploadReady = Boolean(providerSetupDetails.publish_upload_ready);
-          const showOverrideEditor = Boolean(draft?.use_override || platform === "tiktok");
+          const showOverrideEditor = Boolean(draft?.use_override || (platform === "tiktok" && draft?.enabled));
 
           return (
-            <div key={platform} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="inline-flex items-center gap-2 text-sm text-[var(--app-text)]">
+            <div key={platform} className="rounded-lg border border-[var(--app-border)] bg-white p-2.5 shadow-[0_1px_2px_rgba(9,21,40,0.04)]">
+              <div className="flex items-center justify-between gap-2">
+                <label className="inline-flex min-w-0 items-center gap-2 text-sm text-[var(--app-text)]">
+                  <span
+                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${brand.baseClassName}`}
+                    aria-hidden="true"
+                  >
+                    {brand.icon}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{providerName}</span>
+                    <span className="block text-[10px] font-normal text-[var(--app-subtle)]">
+                      {hasConnectedAccounts
+                        ? `${selectableAccounts.length} connected`
+                        : providerReady
+                        ? "Not connected"
+                        : "Setup required"}
+                    </span>
+                  </span>
+                </label>
+                <div className="flex shrink-0 items-center gap-2">
                   <input
                     type="checkbox"
                     checked={draft?.enabled || false}
                     disabled={!providerReady || !hasConnectedAccounts}
                     onChange={(event) => handlePlatformToggle(platform, event.target.checked)}
+                    aria-label={`Publish to ${providerName}`}
                     className="h-4 w-4 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
                   />
-                  <span className="font-medium">{providerName}</span>
-                </label>
                 {latestJob ? (
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[latestJob.status]}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyles[latestJob.status]}`}>
                     {prettyStatus(latestJob.status)}
                   </span>
                 ) : (
-                  <span className="rounded-full bg-[var(--app-surface-soft)] px-2.5 py-1 text-xs text-[var(--app-muted)]">No jobs yet</span>
+                  <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-0.5 text-[10px] text-[var(--app-muted)]">No jobs</span>
                 )}
+                </div>
               </div>
 
-              <p className="mt-2 text-xs text-[var(--app-muted)]">
+              <p className="mt-1.5 text-[11px] leading-4 text-[var(--app-muted)]">
                 {!providerReady
                   ? provider?.setup_message || "Provider is not configured"
                   : platform === "facebook"
@@ -1130,7 +1266,7 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                       : "No connected accounts. Connect one first."}
               </p>
               {platform === "threads" ? (
-                <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                <p className="mt-0.5 text-[10px] leading-4 text-[var(--app-subtle)]">
                   {threadsSupportsMedia
                     ? threadsPublishMediaReady
                       ? "Threads text and video publishing are enabled."
@@ -1141,12 +1277,12 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                 </p>
               ) : null}
               {platform === "facebook" ? (
-                <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                <p className="mt-0.5 text-[10px] leading-4 text-[var(--app-subtle)]">
                   Facebook Pages support automated publishing. Personal profile sharing is manual.
                 </p>
               ) : null}
               {platform === "tiktok" ? (
-                <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                <p className="mt-0.5 text-[10px] leading-4 text-[var(--app-subtle)]">
                   {tiktokDirectReady
                     ? "TikTok direct post is enabled. If direct post is blocked at runtime, PostBandit falls back to TikTok inbox upload."
                     : tiktokUploadReady
@@ -1155,14 +1291,14 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                 </p>
               ) : null}
 
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                 <label className="text-xs text-[var(--app-muted)]">
                   {platform === "facebook" ? "Page Destination" : "Account"}
                   <select
                     value={draft?.connected_account_id || ""}
                     onChange={(event) => handlePlatformAccountChange(platform, event.target.value)}
                     disabled={!hasConnectedAccounts}
-                    className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
+                    className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
                   >
                     {selectableAccounts.length ? null : (
                       <option value="">
@@ -1178,8 +1314,8 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                 </label>
 
                 {platform === "tiktok" ? (
-                  <p className="inline-flex items-center text-xs text-[var(--app-muted)]">
-                    TikTok privacy selection is required.
+                  <p className="inline-flex items-center text-[10px] text-[var(--app-muted)]">
+                    Enable to choose TikTok privacy.
                   </p>
                 ) : (
                   <label className="inline-flex items-center gap-2 text-xs text-[var(--app-muted)]">
@@ -1195,14 +1331,22 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
               </div>
 
               {showOverrideEditor ? (
-                <div className="mt-3 grid gap-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3 md:grid-cols-2">
+                <div className="mt-2 grid gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2 sm:grid-cols-2">
                   <label className="text-xs text-[var(--app-muted)]">
                     Title
                     <input
                       value={draft.override.title}
                       onChange={(event) => handleOverrideFieldChange(platform, "title", event.target.value)}
-                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
+                    {PLATFORM_COPY_LIMITS[platform]?.title ? (
+                      <span className={`mt-0.5 block text-right text-[10px] ${characterCounterClass(
+                        draft.override.title.length,
+                        PLATFORM_COPY_LIMITS[platform]?.title as number
+                      )}`}>
+                        {draft.override.title.length}/{PLATFORM_COPY_LIMITS[platform]?.title}
+                      </span>
+                    ) : null}
                   </label>
                   <label className="text-xs text-[var(--app-muted)]">
                     Privacy
@@ -1251,8 +1395,16 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                       value={draft.override.caption}
                       onChange={(event) => handleOverrideFieldChange(platform, "caption", event.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
+                    {PLATFORM_COPY_LIMITS[platform]?.caption ? (
+                      <span className={`mt-0.5 block text-right text-[10px] ${characterCounterClass(
+                        draft.override.caption.length,
+                        PLATFORM_COPY_LIMITS[platform]?.caption as number
+                      )}`}>
+                        {draft.override.caption.length}/{PLATFORM_COPY_LIMITS[platform]?.caption}
+                      </span>
+                    ) : null}
                   </label>
                   <label className="text-xs text-[var(--app-muted)] md:col-span-2">
                     Description
@@ -1260,15 +1412,23 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                       value={draft.override.description}
                       onChange={(event) => handleOverrideFieldChange(platform, "description", event.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
+                    {PLATFORM_COPY_LIMITS[platform]?.description ? (
+                      <span className={`mt-0.5 block text-right text-[10px] ${characterCounterClass(
+                        draft.override.description.length,
+                        PLATFORM_COPY_LIMITS[platform]?.description as number
+                      )}`}>
+                        {draft.override.description.length}/{PLATFORM_COPY_LIMITS[platform]?.description}
+                      </span>
+                    ) : null}
                   </label>
                   <label className="text-xs text-[var(--app-muted)]">
                     Hashtags
                     <input
                       value={draft.override.hashtags}
                       onChange={(event) => handleOverrideFieldChange(platform, "hashtags", event.target.value)}
-                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                      className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                     />
                   </label>
                   <div className="text-xs text-[var(--app-muted)]">
@@ -1277,28 +1437,26 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
                       value={draft.override.scheduled_for}
                       onChange={(next) => handleOverrideFieldChange(platform, "scheduled_for", next)}
                       disabled={!providerSupportsSchedule}
-                      disabledReason={
-                        providerSupportsSchedule ? undefined : "Scheduling is not supported for this provider."
-                      }
+                      disabledReason={providerSupportsSchedule ? undefined : "Publishing is unavailable for this provider."}
                     />
                   </div>
                 </div>
               ) : null}
 
-              {latestJob?.error_message ? <p className="mt-3 text-xs text-red-700">{latestJob.error_message}</p> : null}
+              {latestJob?.error_message ? <p className="mt-2 text-[11px] text-red-700">{latestJob.error_message}</p> : null}
               {platform === "facebook" ? (
-                <div className="mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
-                  <p className="text-xs font-medium text-[var(--app-text)]">Share to personal profile (manual)</p>
-                  <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
-                    Opens Facebook&apos;s manual share flow. This does not create a publish job.
-                  </p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2">
+                  <div>
+                    <p className="text-[11px] font-medium text-[var(--app-text)]">Personal profile sharing</p>
+                    <p className="text-[10px] text-[var(--app-subtle)]">Manual share; no publish job is created.</p>
+                  </div>
                   <button
                     type="button"
                     onClick={openFacebookManualShare}
                     disabled={!selectedExportId}
-                    className="mt-2 inline-flex rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
+                    className="inline-flex rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1 text-[11px] text-[var(--app-text)] hover:bg-[var(--app-surface)] disabled:opacity-60"
                   >
-                    Share to Personal Profile
+                    Share manually
                   </button>
                 </div>
               ) : null}
@@ -1348,12 +1506,12 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => void handleCreatePublishJobs()}
           disabled={publishing || !selectedExportId || !readyExports.length}
-          className="rounded-md bg-[#1D3FD0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
+          className="rounded-md bg-[#1D3FD0] px-3.5 py-1.5 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
         >
           {publishing ? "Publishing..." : "Publish Selected Platforms"}
         </button>
@@ -1361,27 +1519,38 @@ export function SocialPublishPanel({ exports, clip: initialClip, onClipUpdate }:
           type="button"
           onClick={() => void loadPublishJobs(selectedExportId)}
           disabled={loadingJobs || !selectedExportId}
-          className="rounded-md border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
+          className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
         >
           {loadingJobs ? "Refreshing..." : "Refresh Status"}
         </button>
       </div>
 
       {publishJobs.length ? (
-        <div className="space-y-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+        <div className="space-y-1.5 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Per-platform Publish Jobs</p>
-          {publishJobs.map((job) => (
-            <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
-              <div className="text-xs text-[var(--app-muted)]">
-                <span className="font-medium">{providersByPlatform[job.platform]?.display_name || job.platform}</span>{" "}
-                • {job.id.slice(0, 8)}
-                {job.external_post_id ? ` • ${job.external_post_id}` : ""}
+          {publishJobs.map((job) => {
+            const brand = getPlatformBrandMeta(job.platform);
+            return (
+              <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5">
+                <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-muted)]">
+                  <span
+                    className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md [&_svg]:h-3.5 [&_svg]:w-3.5 ${brand.baseClassName}`}
+                    aria-hidden="true"
+                  >
+                    {brand.icon}
+                  </span>
+                  <span className="truncate">
+                    <span className="font-medium">{providersByPlatform[job.platform]?.display_name || brand.displayName}</span>{" "}
+                    • {job.id.slice(0, 8)}
+                    {job.external_post_id ? ` • ${job.external_post_id}` : ""}
+                  </span>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyles[job.status]}`}>
+                  {prettyStatus(job.status)}
+                </span>
               </div>
-              <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${statusStyles[job.status]}`}>
-                {prettyStatus(job.status)}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </div>

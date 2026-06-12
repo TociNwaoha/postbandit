@@ -27,7 +27,7 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
-required_services=(backend frontend worker)
+required_services=(backend frontend worker worker-beat)
 for service in "${required_services[@]}"; do
   if ! docker compose ps "$service" >/dev/null 2>&1; then
     echo "[deploy-guard] ERROR: service '$service' not found in docker compose"

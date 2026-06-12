@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +64,7 @@ class PublishContentInput(BaseModel):
     hashtags: list[str] | None = None
     privacy: str | None = None
     scheduled_for: datetime | None = None
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class PublishTargetInput(BaseModel):
@@ -80,10 +82,10 @@ class PublishCreateRequest(BaseModel):
 class PublishJobResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
-    export_id: uuid.UUID
-    clip_id: uuid.UUID
+    export_id: uuid.UUID | None
+    clip_id: uuid.UUID | None
     platform: SocialPlatform
-    connected_account_id: uuid.UUID
+    connected_account_id: uuid.UUID | None
     status: PublishStatus
     publish_mode: PublishMode
     caption: str | None
@@ -92,6 +94,9 @@ class PublishJobResponse(BaseModel):
     hashtags: list[str] | None
     privacy: str | None
     scheduled_for: datetime | None
+    timezone: str | None
+    destination_display_name: str | None
+    content_title_snapshot: str | None
     external_post_id: str | None
     external_post_url: str | None
     error_message: str | None
@@ -100,6 +105,28 @@ class PublishJobResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PublishJobPatchRequest(BaseModel):
+    scheduled_for: datetime | None = None
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+    caption: str | None = None
+    title: str | None = None
+    description: str | None = None
+    hashtags: list[str] | None = None
+    privacy: str | None = None
+    action: Literal["cancel", "post_now"] | None = None
+
+
+class PublishCalendarItemResponse(PublishJobResponse):
+    thumbnail_url: str | None = None
+
+
+class PublishCalendarResponse(BaseModel):
+    items: list[PublishCalendarItemResponse]
+    page: int
+    page_size: int
+    total: int
 
 
 class FullVideoExportResponse(BaseModel):

@@ -48,5 +48,11 @@ class Clip(Base):
     video: Mapped["Video"] = relationship("Video", back_populates="clips")
     exports: Mapped[list["Export"]] = relationship("Export", back_populates="clip", cascade="all, delete-orphan")
     publish_jobs: Mapped[list["PublishJob"]] = relationship(
-        "PublishJob", back_populates="clip", cascade="all, delete-orphan"
+        "PublishJob", back_populates="clip", passive_deletes=True
+    )
+    editor_projects: Mapped[list["EditorProject"]] = relationship(
+        "EditorProject", back_populates="clip", cascade="all, delete-orphan"
+    )
+    overlay_assets: Mapped[list["ClipOverlayAsset"]] = relationship(
+        "ClipOverlayAsset", back_populates="clip", cascade="all, delete-orphan"
     )

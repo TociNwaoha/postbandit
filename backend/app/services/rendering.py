@@ -61,7 +61,47 @@ def build_subtitle_cues(
     segments: Iterable[TranscriptSegment],
     clip_start: float,
     clip_end: float,
+    cadence: str = "phrase",
 ) -> list[SubtitleCue]:
+    cadence_value = getattr(cadence, "value", cadence)
+    if cadence_value not in {"phrase", "split_line", "word_by_word", "subtitle_block"}:
+        raise ValueError(f"Unsupported caption cadence: {cadence_value}")
+
+    clip_duration = max(0.0, float(clip_end) - float(clip_start))
+    normalized_segments: list[tuple[str, float, float]] = []
+    for segment in segments:
+        word = (segment.word or "").strip()
+        if not word:
+            continue
+        abs_start = max(float(segment.start_time), float(clip_start))
+        abs_end = min(float(segment.end_time), float(clip_end))
+        if abs_end <= abs_start:
+            continue
+        normalized_segments.append(
+            (
+                word,
+                max(0.0, abs_start - float(clip_start)),
+                min(clip_duration, abs_end - float(clip_start)),
+            )
+        )
+
+    if cadence_value == "word_by_word":
+        return [
+            SubtitleCue(
+                start=round(start, 3),
+                end=round(min(clip_duration, max(start + 0.08, end)), 3),
+                text=_normalize_text(word),
+            )
+            for word, start, end in normalized_segments
+            if _normalize_text(word)
+        ]
+
+    cadence_rules = {
+        "phrase": {"max_words": 8, "max_duration": 2.8, "max_gap": 0.6},
+        "split_line": {"max_words": 3, "max_duration": 1.5, "max_gap": 0.4},
+        "subtitle_block": {"max_words": 14, "max_duration": 4.8, "max_gap": 0.8},
+    }
+    rules = cadence_rules[cadence_value]
     cues: list[SubtitleCue] = []
     words: list[str] = []
     cue_start: float | None = None
@@ -76,36 +116,24 @@ def build_subtitle_cues(
             return
 
         start = max(cue_start, 0.0)
-        end = max(prev_end, start + 0.2)
+        end = min(clip_duration, max(prev_end, start + 0.2))
         text = _normalize_text(" ".join(words))
-        if text:
+        if text and end > start:
             cues.append(SubtitleCue(start=round(start, 3), end=round(end, 3), text=text))
 
         words = []
         cue_start = None
         prev_end = None
 
-    for segment in segments:
-        word = (segment.word or "").strip()
-        if not word:
-            continue
-
-        abs_start = max(float(segment.start_time), float(clip_start))
-        abs_end = min(float(segment.end_time), float(clip_end))
-        if abs_end <= abs_start:
-            continue
-
-        rel_start = abs_start - float(clip_start)
-        rel_end = abs_end - float(clip_start)
-
+    for word, rel_start, rel_end in normalized_segments:
         if cue_start is None:
             cue_start = rel_start
         else:
             gap = rel_start - (prev_end or rel_start)
             should_break = (
-                gap > 0.6
-                or len(words) >= 8
-                or (rel_end - cue_start) >= 2.8
+                gap > rules["max_gap"]
+                or len(words) >= rules["max_words"]
+                or (rel_end - cue_start) >= rules["max_duration"]
                 or _ends_sentence(words[-1] if words else "")
             )
             if should_break:
@@ -205,6 +233,9 @@ def render_video_clip(
     frame_anchor_x: float | None = None,
     frame_anchor_y: float | None = None,
     frame_zoom: float | None = None,
+    overlay_image_path: str | None = None,
+    overlay_image_config: dict | None = None,
+    overlay_text_layer_path: str | None = None,
 ) -> str:
     if clip_end <= clip_start:
         raise ValueError("Clip end time must be greater than start time")
@@ -230,36 +261,123 @@ def render_video_clip(
         crop_window.height,
     )
 
-    filter_chain = [
+    base_filters = [
         f"crop={crop_window.width}:{crop_window.height}:{crop_window.x}:{crop_window.y}",
         f"scale={target_width}:{target_height}:flags=lanczos",
         "setsar=1",
         "format=yuv420p",
     ]
 
-    if burned_ass_path:
-        ass_filter_path = _escape_filter_path(burned_ass_path)
-        filter_chain.append(f"subtitles='{ass_filter_path}'")
+    has_overlays = bool(overlay_image_path and overlay_image_config) or bool(overlay_text_layer_path)
+    if not has_overlays:
+        if burned_ass_path:
+            ass_filter_path = _escape_filter_path(burned_ass_path)
+            base_filters.append(f"subtitles='{ass_filter_path}'")
 
-    vf_arg = ",".join(filter_chain)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss", f"{clip_start:.3f}",
+            "-to", f"{clip_end:.3f}",
+            "-i", source_path,
+            "-vf", ",".join(base_filters),
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+    else:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss", f"{clip_start:.3f}",
+            "-to", f"{clip_end:.3f}",
+            "-i", source_path,
+        ]
+        input_index = 1
+        image_input_index: int | None = None
+        text_input_index: int | None = None
+        if overlay_image_path and overlay_image_config:
+            image_input_index = input_index
+            input_index += 1
+            cmd.extend(["-loop", "1", "-i", overlay_image_path])
+        if overlay_text_layer_path:
+            text_input_index = input_index
+            cmd.extend(["-loop", "1", "-i", overlay_text_layer_path])
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-ss", f"{clip_start:.3f}",
-        "-to", f"{clip_end:.3f}",
-        "-i", source_path,
-        "-vf", vf_arg,
-        "-map", "0:v:0",
-        "-map", "0:a?",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",
-        output_path,
-    ]
+        filter_nodes = [f"[0:v]{','.join(base_filters)}[vbase]"]
+        chain_label = "vbase"
+        if image_input_index is not None and overlay_image_config:
+            width = max(0.03, min(1.0, float(overlay_image_config.get("width", 0.22))))
+            opacity = max(0.0, min(1.0, float(overlay_image_config.get("opacity", 1))))
+            center_x = max(0.0, min(1.0, float(overlay_image_config.get("x", 0.82))))
+            center_y = max(0.0, min(1.0, float(overlay_image_config.get("y", 0.15))))
+            scaled_width = max(8, int(round(target_width * width)))
+            if scaled_width % 2:
+                scaled_width += 1
+            filter_nodes.append(
+                f"[{image_input_index}:v]scale={scaled_width}:-1:flags=lanczos,"
+                f"format=rgba,colorchannelmixer=aa={opacity:.4f}[overlay_image]"
+            )
+            x_expr = (
+                f"max(0\\,min({target_width}-overlay_w\\,"
+                f"{center_x * target_width:.2f}-overlay_w/2))"
+            )
+            y_expr = (
+                f"max(0\\,min({target_height}-overlay_h\\,"
+                f"{center_y * target_height:.2f}-overlay_h/2))"
+            )
+            filter_nodes.append(
+                f"[{chain_label}][overlay_image]overlay={x_expr}:{y_expr}:"
+                "eof_action=repeat:shortest=1[vimage]"
+            )
+            chain_label = "vimage"
+
+        if burned_ass_path:
+            ass_filter_path = _escape_filter_path(burned_ass_path)
+            filter_nodes.append(f"[{chain_label}]subtitles='{ass_filter_path}'[vcaptions]")
+            chain_label = "vcaptions"
+
+        if text_input_index is not None:
+            filter_nodes.append(f"[{text_input_index}:v]format=rgba[overlay_text]")
+            filter_nodes.append(
+                f"[{chain_label}][overlay_text]overlay=0:0:eof_action=repeat:shortest=1[vtext]"
+            )
+            chain_label = "vtext"
+
+        filter_script_path = Path(output_path).parent / "filtergraph.txt"
+        filter_script_path.write_text(";".join(filter_nodes), encoding="utf-8")
+        clip_duration = max(0.01, clip_end - clip_start)
+        cmd.extend(
+            [
+                "-filter_complex_script",
+                str(filter_script_path),
+                "-map",
+                f"[{chain_label}]",
+                "-map",
+                "0:a?",
+                "-t",
+                f"{clip_duration:.3f}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                output_path,
+            ]
+        )
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
     if result.returncode != 0:

@@ -19,14 +19,18 @@ class _ScalarResult:
 
 
 class _FakeSession:
-    def __init__(self, execute_values=None):
+    def __init__(self, execute_values=None, scalar_values=None):
         self.execute_values = list(execute_values or [])
+        self.scalar_values = list(scalar_values or [])
         self.deleted = []
         self.commits = 0
 
     async def execute(self, _query):
         value = self.execute_values.pop(0) if self.execute_values else None
         return _ScalarResult(value)
+
+    async def scalar(self, _query):
+        return self.scalar_values.pop(0) if self.scalar_values else None
 
     async def delete(self, entity):
         self.deleted.append(entity)

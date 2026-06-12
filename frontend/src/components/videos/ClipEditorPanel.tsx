@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import { Card } from "@/components/ui/Card";
@@ -21,11 +22,15 @@ import {
 } from "@/lib/captionPreview";
 import {
   AspectRatio,
+  CaptionCadence,
   CaptionColorVariant,
   CaptionFormat,
   CaptionStyle,
   Clip,
+  ClipOverlayAsset,
   Export,
+  ExportOverlayImageConfig,
+  ExportOverlayTextConfig,
   Video,
 } from "@/types";
 
@@ -33,6 +38,7 @@ interface ClipEditorPanelProps {
   video: Video;
   initialClip: Clip;
   initialExports: Export[];
+  initialScheduleAt?: string;
 }
 
 const ACTIVE_EXPORT_STATUSES = new Set(["queued", "rendering"]);
@@ -40,6 +46,23 @@ const CAPTION_VERTICAL_MIN = 5;
 const CAPTION_VERTICAL_MAX = 90;
 const CAPTION_SCALE_MIN = 0.25;
 const CAPTION_SCALE_MAX = 2;
+const OVERLAY_IMAGE_WIDTH_MIN = 0.05;
+const OVERLAY_IMAGE_WIDTH_MAX = 0.8;
+const HIGHLIGHT_COLORS = ["#FACC15", "#22D3EE", "#FB7185", "#4ADE80", "#C084FC"];
+const DEFAULT_IMAGE_OVERLAY: ExportOverlayImageConfig = {
+  x: 0.82,
+  y: 0.15,
+  width: 0.22,
+  opacity: 1,
+};
+const DEFAULT_TEXT_OVERLAY: ExportOverlayTextConfig = {
+  text: "",
+  x: 0.5,
+  y: 0.2,
+  font_size: 52,
+  text_color: "#FFFFFF",
+  highlights: [],
+};
 
 const exportStatusStyles: Record<string, string> = {
   queued: "border border-[var(--app-border)] bg-[var(--app-surface-soft)] text-[var(--app-subtle)]",
@@ -116,7 +139,36 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEditorPanelProps) {
+async function uploadClipOverlayAsset(clipId: string, file: File): Promise<ClipOverlayAsset> {
+  const session = await getSession();
+  const token = (session as any)?.accessToken;
+  const form = new FormData();
+  form.append("file", file);
+  const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/api/clips/${clipId}/overlay-assets`, {
+      method: "POST",
+      body: form,
+      headers,
+    });
+  } catch {
+    response = await fetch(`/api/backend/clips/${clipId}/overlay-assets`, {
+      method: "POST",
+      body: form,
+      headers,
+    });
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: "Failed to upload image" }));
+    throw new Error(body.detail || "Failed to upload image");
+  }
+  return (await response.json()) as ClipOverlayAsset;
+}
+
+export function ClipEditorPanel({ video, initialClip, initialExports, initialScheduleAt }: ClipEditorPanelProps) {
   const sourceAspectFromResolution = parseResolutionAspectRatio(video.resolution);
   const [clip, setClip] = useState<Clip>(initialClip);
   const [clipStart, setClipStart] = useState<string>(initialClip.start_time.toFixed(2));
@@ -129,11 +181,22 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold_boxed");
   const [captionColorVariant, setCaptionColorVariant] = useState<CaptionColorVariant>("classic");
   const [captionFormat, setCaptionFormat] = useState<CaptionFormat>("burned_in");
+  const [captionCadence, setCaptionCadence] = useState<CaptionCadence>("split_line");
   const [captionVerticalPosition, setCaptionVerticalPosition] = useState<number>(15);
   const [captionScale, setCaptionScale] = useState<number>(1);
   const [frameAnchorX, setFrameAnchorX] = useState<number>(0.5);
   const [frameAnchorY, setFrameAnchorY] = useState<number>(0.5);
   const [frameZoom, setFrameZoom] = useState<number>(1);
+  const [imageOverlayOpen, setImageOverlayOpen] = useState(false);
+  const [textOverlayOpen, setTextOverlayOpen] = useState(false);
+  const [overlayAsset, setOverlayAsset] = useState<ClipOverlayAsset | null>(null);
+  const [overlayImageConfig, setOverlayImageConfig] =
+    useState<ExportOverlayImageConfig>(DEFAULT_IMAGE_OVERLAY);
+  const [overlayTextConfig, setOverlayTextConfig] =
+    useState<ExportOverlayTextConfig>(DEFAULT_TEXT_OVERLAY);
+  const [selectedHighlightColor, setSelectedHighlightColor] = useState(HIGHLIGHT_COLORS[0]);
+  const [overlayUploadLoading, setOverlayUploadLoading] = useState(false);
+  const [overlayError, setOverlayError] = useState<string | null>(null);
   const [exports, setExports] = useState<Export[]>(initialExports);
   const [exportsLoading, setExportsLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -164,6 +227,15 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
     startClientY: 0,
     startVertical: 15,
     startScale: 1,
+  });
+  const overlayInteractionRef = useRef<{
+    mode: "image-drag" | "image-resize" | "text-drag" | null;
+    startClientX: number;
+    startWidth: number;
+  }>({
+    mode: null,
+    startClientX: 0,
+    startWidth: DEFAULT_IMAGE_OVERLAY.width,
   });
   const replayStopAtRef = useRef<number | null>(null);
   const replayActiveRef = useRef<boolean>(false);
@@ -322,6 +394,20 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
   const captionFontSizePx = useMemo(
     () => Math.max(14, Math.round(captionPreviewLayout.fontSizePx * captionScale)),
     [captionPreviewLayout.fontSizePx, captionScale]
+  );
+  const overlayTextWords = useMemo(
+    () => overlayTextConfig.text.trim().split(/\s+/).filter(Boolean),
+    [overlayTextConfig.text]
+  );
+  const overlayHighlightMap = useMemo(
+    () =>
+      new Map(
+        overlayTextConfig.highlights.map((highlight) => [
+          highlight.word_index,
+          highlight.color,
+        ])
+      ),
+    [overlayTextConfig.highlights]
   );
 
   const refreshExports = async () => {
@@ -525,6 +611,110 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
     setIsCaptionResizing(false);
   };
 
+  const startOverlayInteraction = (
+    mode: "image-drag" | "image-resize" | "text-drag",
+    event: PointerEvent<HTMLElement>
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    overlayInteractionRef.current = {
+      mode,
+      startClientX: event.clientX,
+      startWidth: overlayImageConfig.width,
+    };
+  };
+
+  const handleOverlayPointerMove = (event: PointerEvent<HTMLElement>) => {
+    const interaction = overlayInteractionRef.current;
+    if (!interaction.mode) return;
+    const preview = framedPreviewRef.current;
+    if (!preview) return;
+    const rect = preview.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    if (interaction.mode === "image-resize") {
+      const delta = ((event.clientX - interaction.startClientX) / rect.width) * 2;
+      setOverlayImageConfig((current) => ({
+        ...current,
+        width: clamp(
+          interaction.startWidth + delta,
+          OVERLAY_IMAGE_WIDTH_MIN,
+          OVERLAY_IMAGE_WIDTH_MAX
+        ),
+      }));
+      return;
+    }
+
+    const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+    const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+    if (interaction.mode === "image-drag") {
+      setOverlayImageConfig((current) => ({ ...current, x, y }));
+    } else {
+      setOverlayTextConfig((current) => ({ ...current, x, y }));
+    }
+  };
+
+  const stopOverlayInteraction = (event: PointerEvent<HTMLElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    overlayInteractionRef.current.mode = null;
+  };
+
+  const handleOverlayUpload = async (file: File) => {
+    setOverlayUploadLoading(true);
+    setOverlayError(null);
+    const previous = overlayAsset;
+    try {
+      const uploaded = await uploadClipOverlayAsset(clip.id, file);
+      setOverlayAsset(uploaded);
+      setImageOverlayOpen(true);
+      if (previous) {
+        try {
+          await api.delete(`/api/clips/${clip.id}/overlay-assets/${previous.id}`);
+        } catch {
+          // Existing exports may retain the previous asset snapshot.
+        }
+      }
+    } catch (err) {
+      setOverlayError(err instanceof Error ? err.message : "Failed to upload image");
+    } finally {
+      setOverlayUploadLoading(false);
+    }
+  };
+
+  const handleRemoveOverlayAsset = async () => {
+    const current = overlayAsset;
+    setOverlayAsset(null);
+    setOverlayImageConfig(DEFAULT_IMAGE_OVERLAY);
+    if (!current) return;
+    try {
+      await api.delete(`/api/clips/${clip.id}/overlay-assets/${current.id}`);
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 409)) {
+        setOverlayError(err instanceof Error ? err.message : "Failed to delete image");
+      }
+    }
+  };
+
+  const toggleWordHighlight = (wordIndex: number) => {
+    setOverlayTextConfig((current) => {
+      const existing = current.highlights.find((item) => item.word_index === wordIndex);
+      const remaining = current.highlights.filter((item) => item.word_index !== wordIndex);
+      if (existing?.color === selectedHighlightColor) {
+        return { ...current, highlights: remaining };
+      }
+      return {
+        ...current,
+        highlights: [
+          ...remaining,
+          { word_index: wordIndex, color: selectedHighlightColor },
+        ].sort((left, right) => left.word_index - right.word_index),
+      };
+    });
+  };
+
   const seekByTimelinePosition = useCallback(
     (clientX: number) => {
       const player = videoRef.current;
@@ -683,11 +873,20 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
         caption_style: captionStyle,
         caption_color_variant: captionColorVariant,
         caption_format: captionFormat,
+        caption_cadence: captionCadence,
         caption_vertical_position: captionVerticalPosition,
         caption_scale: captionScale,
         frame_anchor_x: clampedFrameAnchorX,
         frame_anchor_y: clampedFrameAnchorY,
         frame_zoom: frameGeometry.safeZoom,
+        overlay_image_asset_id: overlayAsset?.id || null,
+        overlay_image_config: overlayAsset ? overlayImageConfig : null,
+        overlay_text_config: overlayTextConfig.text.trim()
+          ? {
+              ...overlayTextConfig,
+              text: overlayTextConfig.text.trim(),
+            }
+          : null,
       });
       setExports((prev) => {
         const existingIndex = prev.findIndex((item) => item.id === created.id);
@@ -844,6 +1043,37 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                   </div>
                 )}
 
+                {overlayAsset ? (
+                  <div
+                    className="absolute z-[15] cursor-move touch-none rounded-sm ring-1 ring-white/70"
+                    style={{
+                      left: `${overlayImageConfig.x * 100}%`,
+                      top: `${overlayImageConfig.y * 100}%`,
+                      width: `${overlayImageConfig.width * 100}%`,
+                      opacity: overlayImageConfig.opacity,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                    onPointerDown={(event) => startOverlayInteraction("image-drag", event)}
+                    onPointerMove={handleOverlayPointerMove}
+                    onPointerUp={stopOverlayInteraction}
+                    onPointerCancel={stopOverlayInteraction}
+                  >
+                    <img
+                      src={overlayAsset.download_url}
+                      alt="Video overlay"
+                      draggable={false}
+                      className="block h-auto w-full select-none"
+                    />
+                    <div
+                      className="absolute -bottom-2 -right-2 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-[#1D3FD0]"
+                      onPointerDown={(event) => startOverlayInteraction("image-resize", event)}
+                      onPointerMove={handleOverlayPointerMove}
+                      onPointerUp={stopOverlayInteraction}
+                      onPointerCancel={stopOverlayInteraction}
+                    />
+                  </div>
+                ) : null}
+
                 {captionFormat === "burned_in" ? (
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center">
                     <div
@@ -898,16 +1128,50 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                       </div>
                     </div>
                   </div>
-                ) : (
+                ) : captionFormat === "srt" ? (
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center p-4">
                     <p className="rounded-md bg-black/70 px-3 py-2 text-center text-xs text-white">
                       SRT mode: captions are exported as a sidecar file and are not burned into this preview.
                     </p>
                   </div>
-                )}
+                ) : null}
+
+                {overlayTextConfig.text.trim() ? (
+                  <div
+                    className="absolute z-30 max-w-[82%] cursor-move touch-none select-none text-center font-bold leading-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] ring-1 ring-white/60"
+                    style={{
+                      left: `${overlayTextConfig.x * 100}%`,
+                      top: `${overlayTextConfig.y * 100}%`,
+                      color: overlayTextConfig.text_color,
+                      fontSize: `${clamp(overlayTextConfig.font_size * 0.46, 12, 74)}px`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                    onPointerDown={(event) => startOverlayInteraction("text-drag", event)}
+                    onPointerMove={handleOverlayPointerMove}
+                    onPointerUp={stopOverlayInteraction}
+                    onPointerCancel={stopOverlayInteraction}
+                  >
+                    {overlayTextWords.map((word, index) => {
+                      const highlight = overlayHighlightMap.get(index);
+                      return (
+                        <span
+                          key={`overlay-word-${index}`}
+                          className="mx-[0.12em] inline-block rounded px-[0.08em]"
+                          style={highlight ? { backgroundColor: highlight } : undefined}
+                        >
+                          {word}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
                 <div className="pointer-events-none absolute right-2 top-2 z-20 rounded-md bg-black/65 px-2 py-1 text-[11px] text-white">
-                  {captionFormat === "burned_in" ? "Burned-in caption preview" : "SRT style preview"}
+                  {captionFormat === "burned_in"
+                    ? "Burned-in caption preview"
+                    : captionFormat === "srt"
+                      ? "SRT sidecar"
+                      : "Captions disabled"}
                 </div>
               </div>
               <div className="mt-2 space-y-1 text-xs text-[var(--app-muted)]">
@@ -1119,6 +1383,235 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
             <p className="mt-2 text-[11px] text-[var(--app-subtle)]">
               Anchor: x {clampedFrameAnchorX.toFixed(3)} • y {clampedFrameAnchorY.toFixed(3)}
             </p>
+
+            <div className="mt-4 border-t border-[var(--app-border)] pt-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImageOverlayOpen((current) => !current)}
+                  className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                    imageOverlayOpen
+                      ? "border-[#1D3FD0] bg-[#1D3FD0]/10 text-[#1D3FD0]"
+                      : "border-[var(--app-border)] text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
+                  }`}
+                >
+                  {overlayAsset ? "Edit Image / Logo" : "Add Image / Logo"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTextOverlayOpen((current) => !current)}
+                  className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                    textOverlayOpen
+                      ? "border-[#1D3FD0] bg-[#1D3FD0]/10 text-[#1D3FD0]"
+                      : "border-[var(--app-border)] text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
+                  }`}
+                >
+                  {overlayTextConfig.text.trim() ? "Edit Overlay Text" : "Add Overlay Text"}
+                </button>
+              </div>
+
+              {imageOverlayOpen ? (
+                <div className="mt-3 space-y-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-[var(--app-text)]">Image or logo</p>
+                    {overlayAsset ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveOverlayAsset()}
+                        className="text-xs font-medium text-red-600 hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  <label className="block cursor-pointer rounded-md border border-dashed border-[var(--app-border)] bg-white px-3 py-2 text-center text-xs font-medium text-[#1D3FD0] hover:bg-[#F4F8FF]">
+                    {overlayUploadLoading
+                      ? "Uploading..."
+                      : overlayAsset
+                        ? "Replace image"
+                        : "Upload PNG, JPG, or WebP"}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={overlayUploadLoading}
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void handleOverlayUpload(file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {overlayAsset ? (
+                    <>
+                      <p className="truncate text-[11px] text-[var(--app-muted)]">
+                        {overlayAsset.original_filename || "Uploaded image"} • {overlayAsset.width}×
+                        {overlayAsset.height}
+                      </p>
+                      <label className="block text-xs text-[var(--app-muted)]">
+                        Size
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={OVERLAY_IMAGE_WIDTH_MIN}
+                            max={OVERLAY_IMAGE_WIDTH_MAX}
+                            step={0.01}
+                            value={overlayImageConfig.width}
+                            onChange={(event) =>
+                              setOverlayImageConfig((current) => ({
+                                ...current,
+                                width: Number(event.target.value),
+                              }))
+                            }
+                            className="w-full accent-[#1D3FD0]"
+                          />
+                          <span className="w-10 text-right text-[11px] text-[var(--app-text)]">
+                            {Math.round(overlayImageConfig.width * 100)}%
+                          </span>
+                        </div>
+                      </label>
+                      <label className="block text-xs text-[var(--app-muted)]">
+                        Opacity
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={0.1}
+                            max={1}
+                            step={0.05}
+                            value={overlayImageConfig.opacity}
+                            onChange={(event) =>
+                              setOverlayImageConfig((current) => ({
+                                ...current,
+                                opacity: Number(event.target.value),
+                              }))
+                            }
+                            className="w-full accent-[#1D3FD0]"
+                          />
+                          <span className="w-10 text-right text-[11px] text-[var(--app-text)]">
+                            {Math.round(overlayImageConfig.opacity * 100)}%
+                          </span>
+                        </div>
+                      </label>
+                      <p className="text-[11px] text-[var(--app-subtle)]">
+                        Drag the image in the framed preview. Use its corner handle or Size slider to resize it.
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {textOverlayOpen ? (
+                <div className="mt-3 space-y-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-[var(--app-text)]">Overlay text</p>
+                    {overlayTextConfig.text ? (
+                      <button
+                        type="button"
+                        onClick={() => setOverlayTextConfig(DEFAULT_TEXT_OVERLAY)}
+                        className="text-xs font-medium text-red-600 hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  <textarea
+                    rows={2}
+                    maxLength={280}
+                    value={overlayTextConfig.text}
+                    onChange={(event) =>
+                      setOverlayTextConfig((current) => ({
+                        ...current,
+                        text: event.target.value,
+                        highlights: [],
+                      }))
+                    }
+                    placeholder="Add a hook, CTA, or label"
+                    className="w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs text-[var(--app-muted)]">
+                      Text color
+                      <input
+                        type="color"
+                        value={overlayTextConfig.text_color}
+                        onChange={(event) =>
+                          setOverlayTextConfig((current) => ({
+                            ...current,
+                            text_color: event.target.value.toUpperCase(),
+                          }))
+                        }
+                        className="mt-1 h-9 w-full cursor-pointer rounded-md border border-[var(--app-border)] bg-white p-1"
+                      />
+                    </label>
+                    <label className="text-xs text-[var(--app-muted)]">
+                      Font size
+                      <input
+                        type="number"
+                        min={16}
+                        max={160}
+                        value={overlayTextConfig.font_size}
+                        onChange={(event) =>
+                          setOverlayTextConfig((current) => ({
+                            ...current,
+                            font_size: clamp(Number(event.target.value) || 16, 16, 160),
+                          }))
+                        }
+                        className="mt-1 h-9 w-full rounded-md border border-[var(--app-border)] bg-white px-2 text-sm text-[var(--app-text)]"
+                      />
+                    </label>
+                  </div>
+                  {overlayTextWords.length ? (
+                    <>
+                      <div>
+                        <p className="text-[11px] font-medium text-[var(--app-muted)]">Highlight color</p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {HIGHLIGHT_COLORS.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => setSelectedHighlightColor(color)}
+                              aria-label={`Use highlight color ${color}`}
+                              className={`h-7 w-7 rounded-full border-2 ${
+                                selectedHighlightColor === color
+                                  ? "border-[#091528] ring-2 ring-[#1D3FD0]/25"
+                                  : "border-white"
+                              }`}
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-[var(--app-muted)]">
+                          Click words to apply or remove the selected highlight.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {overlayTextWords.map((word, index) => {
+                            const highlight = overlayHighlightMap.get(index);
+                            return (
+                              <button
+                                key={`highlight-word-${index}`}
+                                type="button"
+                                onClick={() => toggleWordHighlight(index)}
+                                className="rounded-md border border-[var(--app-border)] px-2 py-1 text-xs font-semibold text-[#091528]"
+                                style={{ backgroundColor: highlight || "#FFFFFF" }}
+                              >
+                                {word}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  <p className="text-[11px] text-[var(--app-subtle)]">
+                    Drag the text directly in the framed preview. It remains visible for the full clip.
+                  </p>
+                </div>
+              ) : null}
+
+              {overlayError ? <p className="mt-2 text-xs text-red-700">{overlayError}</p> : null}
+            </div>
           </div>
         </Card>
       </div>
@@ -1135,7 +1628,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
         <div className="mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-xs text-[var(--app-muted)]">
           Selected aspect from Framing: <span className="font-semibold text-[var(--app-text)]">{aspectRatio}</span>
         </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <label className="text-xs text-[var(--app-muted)]">
             Caption Style
             <select
@@ -1217,15 +1710,33 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
             </div>
           </label>
           <label className="text-xs text-[var(--app-muted)]">
-            Caption Format
+            Caption Output
             <select
               value={captionFormat}
               onChange={(event) => setCaptionFormat(event.target.value as CaptionFormat)}
               className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             >
-              <option value="burned_in">burned_in</option>
-              <option value="srt">srt</option>
+              <option value="none">None</option>
+              <option value="burned_in">Burned In</option>
+              <option value="srt">SRT Sidecar</option>
             </select>
+          </label>
+          <label className="text-xs text-[var(--app-muted)]">
+            Caption Pacing
+            <select
+              value={captionCadence}
+              onChange={(event) => setCaptionCadence(event.target.value as CaptionCadence)}
+              disabled={captionFormat === "none"}
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
+            >
+              <option value="split_line">Split Line</option>
+              <option value="word_by_word">Word by Word</option>
+              <option value="subtitle_block">Subtitle Block</option>
+              <option value="phrase">Existing Phrase</option>
+            </select>
+            <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+              Controls timing groups independently from visual style.
+            </p>
           </label>
         </div>
 
@@ -1269,7 +1780,8 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
                     <p className="font-medium">Export {item.id.slice(0, 8)}</p>
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
                       {item.aspect_ratio} • {formatCaptionStyleLabel(item.caption_style)} •{" "}
-                      {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format}
+                      {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format} •{" "}
+                      {item.caption_cadence}
                     </p>
                   </div>
                   <span
@@ -1313,7 +1825,12 @@ export function ClipEditorPanel({ video, initialClip, initialExports }: ClipEdit
       </Card>
 
       <Card>
-        <SocialPublishPanel clip={clip} exports={exports} onClipUpdate={setClip} />
+        <SocialPublishPanel
+          clip={clip}
+          exports={exports}
+          onClipUpdate={setClip}
+          initialScheduledFor={initialScheduleAt}
+        />
       </Card>
     </div>
   );

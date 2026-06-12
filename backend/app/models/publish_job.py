@@ -11,12 +11,14 @@ from app.models.connected_account import SocialPlatform
 
 
 class PublishStatus(str, enum.Enum):
+    scheduled = "scheduled"
     queued = "queued"
     publishing = "publishing"
     published = "published"
     failed = "failed"
     waiting_user_action = "waiting_user_action"
     provider_not_configured = "provider_not_configured"
+    cancelled = "cancelled"
 
 
 class PublishMode(str, enum.Enum):
@@ -31,11 +33,11 @@ class PublishJob(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    export_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("exports.id", ondelete="CASCADE"), nullable=False, index=True
+    export_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exports.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    clip_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("clips.id", ondelete="CASCADE"), nullable=False, index=True
+    clip_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clips.id", ondelete="SET NULL"), nullable=True, index=True
     )
     platform: Mapped[SocialPlatform] = mapped_column(
         SAEnum(
@@ -46,8 +48,8 @@ class PublishJob(Base):
         nullable=False,
         index=True,
     )
-    connected_account_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("connected_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    connected_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connected_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     status: Mapped[PublishStatus] = mapped_column(
         SAEnum(
@@ -74,6 +76,9 @@ class PublishJob(Base):
     hashtags: Mapped[list[str] | None] = mapped_column(JSONB)
     privacy: Mapped[str | None] = mapped_column(String(64))
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    timezone: Mapped[str | None] = mapped_column(String(100))
+    destination_display_name: Mapped[str | None] = mapped_column(String(255))
+    content_title_snapshot: Mapped[str | None] = mapped_column(String(500))
     external_post_id: Mapped[str | None] = mapped_column(String(255))
     external_post_url: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -84,9 +89,11 @@ class PublishJob(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="publish_jobs")
-    export: Mapped["Export"] = relationship("Export", back_populates="publish_jobs")
-    clip: Mapped["Clip"] = relationship("Clip", back_populates="publish_jobs")
-    connected_account: Mapped["ConnectedAccount"] = relationship("ConnectedAccount", back_populates="publish_jobs")
+    export: Mapped["Export | None"] = relationship("Export", back_populates="publish_jobs")
+    clip: Mapped["Clip | None"] = relationship("Clip", back_populates="publish_jobs")
+    connected_account: Mapped["ConnectedAccount | None"] = relationship(
+        "ConnectedAccount", back_populates="publish_jobs"
+    )
     attempts: Mapped[list["PublishAttempt"]] = relationship(
         "PublishAttempt", back_populates="publish_job", cascade="all, delete-orphan"
     )

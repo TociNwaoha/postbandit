@@ -76,6 +76,20 @@ services:
       retries: 3
       start_period: 30s
 
+  worker-beat:
+    build: ./backend
+    restart: always
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - clipbandit_storage:/tmp/clipbandit-storage
+    command: celery -A app.celery_app beat --loglevel=info
+
   frontend:
     build: ./frontend
     restart: always

@@ -11,9 +11,11 @@ celery_app = Celery(
         "app.worker.tasks.ingest",
         "app.worker.tasks.ingest_playlist",
         "app.worker.tasks.cleanup",
+        "app.worker.tasks.editor_preview",
         "app.worker.tasks.transcribe",
         "app.worker.tasks.score",
         "app.worker.tasks.render",
+        "app.worker.tasks.editor_render",
         "app.worker.tasks.publish",
         "app.worker.tasks.content_generation",
     ],
@@ -38,9 +40,19 @@ if settings.stale_queued_upload_cleanup_enabled:
         "schedule": 3600.0,
         "args": (bool(settings.stale_queued_upload_cleanup_dry_run),),
     }
+if settings.raw_source_retention_enabled:
+    beat_schedule["raw-source-retention-hourly"] = {
+        "task": "app.worker.tasks.cleanup.sweep_raw_source_retention",
+        "schedule": 3600.0,
+        "args": (False,),
+    }
 beat_schedule["generate-daily-content"] = {
     "task": "generate_daily_content",
     "schedule": crontab(hour=8, minute=0),
+}
+beat_schedule["process-scheduled-publish-jobs"] = {
+    "task": "app.worker.tasks.publish.process_scheduled_publish_jobs",
+    "schedule": 60.0,
 }
 
 celery_app.conf.update(
@@ -54,9 +66,11 @@ celery_app.conf.update(
         "app.worker.tasks.ingest.*": {"queue": "ingest"},
         "app.worker.tasks.ingest_playlist.*": {"queue": "ingest"},
         "app.worker.tasks.cleanup.*": {"queue": "ingest"},
+        "app.worker.tasks.editor_preview.*": {"queue": "ingest"},
         "app.worker.tasks.transcribe.*": {"queue": "transcribe"},
         "app.worker.tasks.score.*": {"queue": "score"},
         "app.worker.tasks.render.*": {"queue": "render"},
+        "app.worker.tasks.editor_render.*": {"queue": "render"},
         "app.worker.tasks.publish.*": {"queue": "publish"},
         "app.worker.tasks.content_generation.*": {"queue": "ingest"},
         "generate_daily_content": {"queue": "ingest"},

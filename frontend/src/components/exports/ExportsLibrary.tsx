@@ -264,7 +264,8 @@ export function ExportsLibrary({
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
                       {item.clip_title || `Clip ${shortId(item.clip_id)}`} • {item.aspect_ratio} •{" "}
                       {formatCaptionStyleLabel(item.caption_style)} •{" "}
-                      {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format}
+                      {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format} •{" "}
+                      {item.caption_cadence}
                     </p>
                     <p className="mt-1 text-xs text-[var(--app-subtle)]">
                       Created {formatRelativeTime(item.created_at)}

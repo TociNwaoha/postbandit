@@ -63,6 +63,8 @@ export interface Video {
   external_metadata_json?: Record<string, unknown>;
   storage_key: string | null;
   source_download_url?: string | null;
+  editor_preview_download_url?: string | null;
+  editor_preview_status?: "pending" | "ready" | "failed" | null;
   duration_sec: number | null;
   resolution: string | null;
   file_size_bytes: number | null;
@@ -197,8 +199,43 @@ export type CaptionStyle =
   | "cinema_outline"
   | "clean_highlight";
 export type CaptionColorVariant = "classic" | "warm" | "cool";
-export type CaptionFormat = "burned_in" | "srt";
+export type CaptionFormat = "none" | "burned_in" | "srt";
+export type CaptionCadence = "phrase" | "split_line" | "word_by_word" | "subtitle_block";
 export type ExportStatus = "queued" | "rendering" | "ready" | "error";
+
+export interface ClipOverlayAsset {
+  id: string;
+  clip_id: string;
+  user_id: string;
+  original_filename: string | null;
+  mime_type: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  download_url: string;
+  created_at: string;
+}
+
+export interface ExportOverlayImageConfig {
+  x: number;
+  y: number;
+  width: number;
+  opacity: number;
+}
+
+export interface ExportOverlayTextHighlight {
+  word_index: number;
+  color: string;
+}
+
+export interface ExportOverlayTextConfig {
+  text: string;
+  x: number;
+  y: number;
+  font_size: number;
+  text_color: string;
+  highlights: ExportOverlayTextHighlight[];
+}
 
 export interface Export {
   id: string;
@@ -209,11 +246,15 @@ export interface Export {
   caption_style: CaptionStyle | null;
   caption_color_variant: CaptionColorVariant;
   caption_format: CaptionFormat;
+  caption_cadence: CaptionCadence;
   caption_vertical_position?: number | null;
   caption_scale?: number | null;
   frame_anchor_x?: number | null;
   frame_anchor_y?: number | null;
   frame_zoom?: number | null;
+  overlay_image_asset_id?: string | null;
+  overlay_image_config?: ExportOverlayImageConfig | null;
+  overlay_text_config?: ExportOverlayTextConfig | null;
   storage_key: string | null;
   srt_key: string | null;
   download_url: string | null;
@@ -393,22 +434,24 @@ export interface PublicExportShare {
 }
 
 export type PublishJobStatus =
+  | "scheduled"
   | "queued"
   | "publishing"
   | "published"
   | "failed"
   | "waiting_user_action"
-  | "provider_not_configured";
+  | "provider_not_configured"
+  | "cancelled";
 
 export type PublishMode = "now" | "scheduled";
 
 export interface SocialPublishJob {
   id: string;
   user_id: string;
-  export_id: string;
-  clip_id: string;
+  export_id: string | null;
+  clip_id: string | null;
   platform: SocialPlatform;
-  connected_account_id: string;
+  connected_account_id: string | null;
   status: PublishJobStatus;
   publish_mode: PublishMode;
   caption: string | null;
@@ -417,12 +460,39 @@ export interface SocialPublishJob {
   hashtags: string[] | null;
   privacy: string | null;
   scheduled_for: string | null;
+  timezone: string | null;
+  destination_display_name: string | null;
+  content_title_snapshot: string | null;
   external_post_id: string | null;
   external_post_url: string | null;
   error_message: string | null;
   provider_metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface PublishCalendarItem extends SocialPublishJob {
+  thumbnail_url: string | null;
+}
+
+export interface PublishCalendarResponse {
+  items: PublishCalendarItem[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface PlatformCopyFields {
+  title: string | null;
+  caption: string | null;
+  description: string | null;
+  hashtags: string[];
+}
+
+export interface PlatformCopyGenerateResponse {
+  provider_used: "deepseek";
+  results: Partial<Record<SocialPlatform, PlatformCopyFields>>;
+  errors: Partial<Record<SocialPlatform, string>>;
 }
 
 export interface FullVideoExportResponse {
@@ -464,3 +534,5 @@ export interface ContentQueueItem {
   created_at: string;
   updated_at: string;
 }
+
+export * from "./editor";

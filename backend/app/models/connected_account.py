@@ -50,5 +50,5 @@ class ConnectedAccount(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="connected_accounts")
     publish_jobs: Mapped[list["PublishJob"]] = relationship(
-        "PublishJob", back_populates="connected_account", cascade="all, delete-orphan"
+        "PublishJob", back_populates="connected_account", passive_deletes=True
     )
