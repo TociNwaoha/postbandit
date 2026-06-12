@@ -46,8 +46,8 @@ def test_build_publish_job_list_query_unfiltered():
 
     sql = _sql_text(query)
     assert "publish_jobs.user_id" in sql
-    assert "publish_jobs.export_id" not in sql
-    assert "publish_jobs.publish_mode" not in sql
+    assert "publish_jobs.export_id =" not in sql
+    assert "publish_jobs.publish_mode =" not in sql
     assert "publish_jobs.scheduled_for >=" not in sql
     assert "publish_jobs.scheduled_for <" not in sql
 
@@ -96,7 +96,7 @@ async def test_list_publish_jobs_keeps_existing_behavior_without_filters():
     assert result == []
     sql = _sql_text(db.last_query)
     assert "publish_jobs.user_id" in sql
-    assert "publish_jobs.publish_mode" not in sql
+    assert "publish_jobs.publish_mode =" not in sql
 
 
 @pytest.mark.asyncio
