@@ -247,6 +247,20 @@ def execute_publish_job(self, publish_job_id: str):
             attempt.finished_at = datetime.now(timezone.utc)
             db.commit()
 
+            from app.worker.tasks.workflow import (
+                process_publish_workflow_source,
+                reconcile_social_workflow_runs,
+            )
+
+            if publish_job.status == PublishStatus.published:
+                process_publish_workflow_source.apply_async(
+                    args=[str(publish_job.id)],
+                    queue="publish",
+                    countdown=1,
+                )
+            if publish_job.workflow_run_id:
+                reconcile_social_workflow_runs.apply_async(queue="publish", countdown=2)
+
             return {
                 "publish_job_id": str(publish_job.id),
                 "status": publish_job.status.value,
@@ -259,6 +273,10 @@ def execute_publish_job(self, publish_job_id: str):
             attempt.error_message = str(exc)[:500]
             attempt.finished_at = datetime.now(timezone.utc)
             db.commit()
+            if publish_job.workflow_run_id:
+                from app.worker.tasks.workflow import reconcile_social_workflow_runs
+
+                reconcile_social_workflow_runs.apply_async(queue="publish", countdown=2)
             return {
                 "publish_job_id": str(publish_job.id),
                 "status": publish_job.status.value,

@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.worker.tasks.render",
         "app.worker.tasks.editor_render",
         "app.worker.tasks.publish",
+        "app.worker.tasks.workflow",
         "app.worker.tasks.content_generation",
     ],
 )
@@ -54,6 +55,14 @@ beat_schedule["process-scheduled-publish-jobs"] = {
     "task": "app.worker.tasks.publish.process_scheduled_publish_jobs",
     "schedule": 60.0,
 }
+beat_schedule["poll-social-workflows"] = {
+    "task": "app.worker.tasks.workflow.poll_social_workflows",
+    "schedule": 300.0,
+}
+beat_schedule["reconcile-social-workflow-runs"] = {
+    "task": "app.worker.tasks.workflow.reconcile_social_workflow_runs",
+    "schedule": 60.0,
+}
 
 celery_app.conf.update(
     task_serializer="json",
@@ -72,6 +81,7 @@ celery_app.conf.update(
         "app.worker.tasks.render.*": {"queue": "render"},
         "app.worker.tasks.editor_render.*": {"queue": "render"},
         "app.worker.tasks.publish.*": {"queue": "publish"},
+        "app.worker.tasks.workflow.*": {"queue": "publish"},
         "app.worker.tasks.content_generation.*": {"queue": "ingest"},
         "generate_daily_content": {"queue": "ingest"},
     },

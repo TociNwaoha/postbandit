@@ -86,6 +86,7 @@ class PublishJobResponse(BaseModel):
     clip_id: uuid.UUID | None
     platform: SocialPlatform
     connected_account_id: uuid.UUID | None
+    workflow_run_id: uuid.UUID | None
     status: PublishStatus
     publish_mode: PublishMode
     caption: str | None

@@ -28,6 +28,7 @@ TIKTOK_STATUS_FETCH_URL = "https://open.tiktokapis.com/v2/post/publish/status/fe
 TIKTOK_SCOPES = [
     "user.info.basic",
     "user.info.profile",
+    "video.list",
     "video.publish",
     "video.upload",
 ]

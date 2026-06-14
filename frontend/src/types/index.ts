@@ -452,6 +452,7 @@ export interface SocialPublishJob {
   clip_id: string | null;
   platform: SocialPlatform;
   connected_account_id: string | null;
+  workflow_run_id: string | null;
   status: PublishJobStatus;
   publish_mode: PublishMode;
   caption: string | null;
@@ -487,6 +488,69 @@ export interface PlatformCopyFields {
   caption: string | null;
   description: string | null;
   hashtags: string[];
+}
+
+export type WorkflowCopyMode = "ai_platform" | "reuse_source";
+export type WorkflowRunStatus =
+  | "waiting_asset"
+  | "processing"
+  | "queued"
+  | "completed"
+  | "partial_failed"
+  | "failed"
+  | "skipped";
+
+export interface SocialWorkflow {
+  id: string;
+  user_id: string;
+  name: string;
+  source_account_id: string | null;
+  source_platform: SocialPlatform;
+  copy_mode: WorkflowCopyMode;
+  destination_configs: Array<{
+    connected_account_id: string;
+    platform: SocialPlatform;
+    display_name?: string | null;
+    privacy?: string | null;
+  }>;
+  enabled: boolean;
+  cursor_json: Record<string, unknown>;
+  last_checked_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflow_id: string;
+  user_id: string;
+  source_publish_job_id: string | null;
+  source_export_id: string | null;
+  source_platform: SocialPlatform;
+  source_external_post_id: string;
+  source_external_url: string | null;
+  source_title: string | null;
+  source_description: string | null;
+  source_published_at: string | null;
+  status: WorkflowRunStatus;
+  generated_copy_json: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowRunList {
+  items: WorkflowRun[];
+  total: number;
+}
+
+export interface WorkflowSourceCapability {
+  connected_account_id: string;
+  platform: SocialPlatform;
+  status: "ready" | "reconnect_required" | "unsupported";
+  message: string | null;
+  missing_scopes: string[];
 }
 
 export interface PlatformCopyGenerateResponse {

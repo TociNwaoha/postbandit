@@ -73,6 +73,17 @@ const workspaceNavItems = [
     ),
   },
   {
+    label: "Workflows",
+    href: "/workflows",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 7H13C16.3137 7 19 9.68629 19 13V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M16 14L19 17L22 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="5" cy="7" r="3" stroke="currentColor" strokeWidth="2" />
+      </svg>
+    ),
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: (
