@@ -564,6 +564,9 @@ export interface SocialWorkflow {
   poll_cursor_json: Record<string, unknown>;
   last_polled_at: string | null;
   last_error: string | null;
+  source_account_status?: "connected" | "needs_reconnection" | "poll_error";
+  source_account_action?: string | null;
+  source_account_message?: string | null;
   created_at: string;
   updated_at: string;
   source_posts: SocialWorkflowSourcePost[];

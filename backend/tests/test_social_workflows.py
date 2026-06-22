@@ -2,9 +2,11 @@ from app.services.social.security import redact_url, sanitize_sensitive_text
 from app.models.connected_account import SocialPlatform
 from app.models.video import VideoSourceType
 from app.services.workflows.official_sources import (
+    is_reconnect_required_source_error,
     _parse_facebook_timestamp,
     _parse_instagram_timestamp,
     _parse_youtube_timestamp,
+    source_poll_error_message,
     _video_source_type_for_platform,
 )
 
@@ -53,3 +55,13 @@ def test_workflow_video_source_type_for_platform():
     assert _video_source_type_for_platform(SocialPlatform.instagram) == VideoSourceType.instagram
     assert _video_source_type_for_platform(SocialPlatform.youtube) == VideoSourceType.youtube
     assert _video_source_type_for_platform(SocialPlatform.facebook) == VideoSourceType.facebook
+
+
+def test_source_poll_error_message_marks_expired_instagram_session_as_reconnect_required():
+    raw_error = (
+        'Instagram media poll failed: HTTP 400: {"error":{"message":"Error validating access token: '
+        'Session has expired on Monday.","type":"OAuthException","code":190}}'
+    )
+
+    assert is_reconnect_required_source_error(raw_error) is True
+    assert source_poll_error_message(SocialPlatform.instagram, raw_error) == "Reconnect the Instagram source account."

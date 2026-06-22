@@ -95,7 +95,11 @@ def _iter_instagram_media(access_token: str) -> list[OfficialSourceMedia]:
     try:
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             response = client.get(INSTAGRAM_MEDIA_URL, params=params)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                body = sanitize_sensitive_text(response.text)
+                raise RuntimeError(f"Instagram media poll failed: HTTP {response.status_code}: {body}") from exc
             payload = response.json()
     except Exception as exc:
         raise RuntimeError(f"Instagram media poll failed: {sanitize_sensitive_text(exc)}") from exc
@@ -337,6 +341,36 @@ def _source_account_error(platform: SocialPlatform) -> str:
     return f"Reconnect the {platform.value} source account."
 
 
+def is_reconnect_required_source_error(error: object) -> bool:
+    normalized = str(error or "").lower()
+    reconnect_markers = (
+        "session has expired",
+        "error validating access token",
+        "oauth exception",
+        "oauthexception",
+        "invalid oauth",
+        "token has expired",
+        "expired token",
+        "code 190",
+        "reconnect required",
+        "refresh token is unavailable",
+    )
+    if any(marker in normalized for marker in reconnect_markers):
+        return True
+    return "190" in normalized and ("oauth" in normalized or "access token" in normalized)
+
+
+def reconnect_required_source_message(platform: SocialPlatform) -> str:
+    return _source_account_error(platform)
+
+
+def source_poll_error_message(platform: SocialPlatform, error: object) -> str:
+    sanitized = sanitize_sensitive_text(error)
+    if is_reconnect_required_source_error(sanitized):
+        return reconnect_required_source_message(platform)
+    return sanitized
+
+
 def _raw_instagram_media_url(raw_metadata: dict, access_token: str) -> str | None:
     # Re-fetch just before import so signed/temporary media URLs are not persisted.
     media_id = str(raw_metadata.get("id") or "").strip()
@@ -412,7 +446,7 @@ def poll_source_workflow(workflow_id: str) -> dict:
             media_rows = _iter_source_media(workflow, account)
             db.flush()
         except Exception as exc:
-            workflow.last_error = sanitize_sensitive_text(exc)
+            workflow.last_error = source_poll_error_message(workflow.source_platform, exc)
             workflow.last_polled_at = now
             db.commit()
             logger.warning(

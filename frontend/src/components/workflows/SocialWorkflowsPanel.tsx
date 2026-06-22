@@ -102,6 +102,20 @@ function sourceHelpText(platform: SocialPlatform): string {
   return "PostBandit polls your connected Instagram professional account. If the official API exposes a reusable video file, it imports automatically.";
 }
 
+function workflowNeedsReconnect(workflow: SocialWorkflow): boolean {
+  return workflow.source_account_status === "needs_reconnection";
+}
+
+function workflowSourceMessage(workflow: SocialWorkflow): string | null {
+  if (workflow.source_account_status === "needs_reconnection") {
+    return workflow.source_account_message || `Reconnect the ${getPlatformBrandMeta(workflow.source_platform).displayName} source account.`;
+  }
+  if (workflow.source_account_status === "poll_error") {
+    return workflow.source_account_message || workflow.last_error || "The source poll failed. Try polling again or reconnect the source account.";
+  }
+  return null;
+}
+
 export function SocialWorkflowsPanel() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [workflows, setWorkflows] = useState<SocialWorkflow[]>([]);
@@ -362,7 +376,11 @@ export function SocialWorkflowsPanel() {
             </p>
           </Card>
         ) : (
-          workflows.map((workflow) => (
+          workflows.map((workflow) => {
+            const needsReconnect = workflowNeedsReconnect(workflow);
+            const sourceMessage = workflowSourceMessage(workflow);
+            const sourceBrand = getPlatformBrandMeta(workflow.source_platform);
+            return (
             <Card key={workflow.id} className="space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -371,9 +389,14 @@ export function SocialWorkflowsPanel() {
                     <span className="rounded-full bg-[#EEF3FF] px-2 py-0.5 text-xs font-semibold text-[var(--app-primary)]">
                       {statusLabel(workflow.status)}
                     </span>
+                    {needsReconnect ? (
+                      <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                        Needs reconnection
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-sm text-[var(--app-muted)]">
-                    {getPlatformBrandMeta(workflow.source_platform).displayName} source · {workflow.destination_targets_json.length} destination(s) · {statusLabel(workflow.copy_mode)}
+                    {sourceBrand.displayName} source · {workflow.destination_targets_json.length} destination(s) · {statusLabel(workflow.copy_mode)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--app-muted)]">
                     <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-1">
@@ -391,12 +414,46 @@ export function SocialWorkflowsPanel() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => void pollNow(workflow.id)}>Poll now</Button>
+                  {needsReconnect ? (
+                    <a
+                      href="/connections"
+                      className="inline-flex items-center justify-center rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
+                    >
+                      Reconnect source
+                    </a>
+                  ) : null}
+                  <Button variant="secondary" onClick={() => void pollNow(workflow.id)} disabled={needsReconnect}>
+                    Poll now
+                  </Button>
                   <Button variant="secondary" onClick={() => void pauseOrResume(workflow)}>
                     {workflow.status === "active" ? "Pause" : "Resume"}
                   </Button>
                 </div>
               </div>
+
+              {sourceMessage ? (
+                <div
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    needsReconnect
+                      ? "border-orange-200 bg-orange-50 text-orange-800"
+                      : "border-red-200 bg-red-50 text-red-700"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p>
+                      <span className="font-semibold">
+                        {needsReconnect ? `${sourceBrand.displayName} source needs reconnection.` : "Source poll failed."}
+                      </span>{" "}
+                      {sourceMessage}
+                    </p>
+                    {needsReconnect ? (
+                      <a className="font-semibold text-orange-800 underline underline-offset-2" href="/connections">
+                        Open Connections
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-subtle)]">Workflow activity</p>
@@ -407,8 +464,16 @@ export function SocialWorkflowsPanel() {
 
               <div className="space-y-3">
                 {workflow.source_posts.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-5 text-sm text-[var(--app-muted)]">
-                    No detected source posts yet. Use Poll now, or wait for the scheduled poll to find new posts from the selected source account.
+                  <div
+                    className={`rounded-xl border border-dashed px-4 py-5 text-sm ${
+                      needsReconnect
+                        ? "border-orange-200 bg-orange-50 text-orange-800"
+                        : "border-[var(--app-border)] text-[var(--app-muted)]"
+                    }`}
+                  >
+                    {needsReconnect
+                      ? `No source posts can be detected until the ${sourceBrand.displayName} source account is reconnected.`
+                      : "No detected source posts yet. Use Poll now, or wait for the scheduled poll to find new posts from the selected source account."}
                   </div>
                 ) : (
                   workflow.source_posts.slice(0, 12).map((post) => {
@@ -545,7 +610,8 @@ export function SocialWorkflowsPanel() {
                 )}
               </div>
             </Card>
-          ))
+            );
+          })
         )}
       </div>
     </div>

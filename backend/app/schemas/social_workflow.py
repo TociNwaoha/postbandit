@@ -87,6 +87,9 @@ class SocialWorkflowResponse(BaseModel):
     poll_cursor_json: dict
     last_polled_at: datetime | None
     last_error: str | None
+    source_account_status: str = "connected"
+    source_account_action: str | None = None
+    source_account_message: str | None = None
     created_at: datetime
     updated_at: datetime
     source_posts: list[SocialWorkflowSourcePostResponse] = Field(default_factory=list)

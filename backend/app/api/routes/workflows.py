@@ -29,6 +29,10 @@ from app.schemas.social_workflow import (
     SocialWorkflowResponse,
 )
 from app.schemas.social import PublishJobResponse
+from app.services.workflows.official_sources import (
+    is_reconnect_required_source_error,
+    reconnect_required_source_message,
+)
 
 router = APIRouter(prefix="/social/workflows", tags=["social-workflows"])
 
@@ -148,6 +152,16 @@ def _workflow_response_payload(
         key=lambda post: post.published_at or post.created_at,
         reverse=True,
     )
+    source_account_status = "connected"
+    source_account_action = None
+    source_account_message = None
+    if workflow.last_error and is_reconnect_required_source_error(workflow.last_error):
+        source_account_status = "needs_reconnection"
+        source_account_action = f"reconnect_{workflow.source_platform.value}"
+        source_account_message = reconnect_required_source_message(workflow.source_platform)
+    elif workflow.last_error:
+        source_account_status = "poll_error"
+        source_account_message = workflow.last_error
     return {
         "id": workflow.id,
         "user_id": workflow.user_id,
@@ -161,6 +175,9 @@ def _workflow_response_payload(
         "poll_cursor_json": workflow.poll_cursor_json,
         "last_polled_at": workflow.last_polled_at,
         "last_error": workflow.last_error,
+        "source_account_status": source_account_status,
+        "source_account_action": source_account_action,
+        "source_account_message": source_account_message,
         "created_at": workflow.created_at,
         "updated_at": workflow.updated_at,
         "source_posts": [
