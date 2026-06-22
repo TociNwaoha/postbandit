@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.database import SyncSessionLocal
@@ -502,13 +502,20 @@ def poll_source_workflow(workflow_id: str) -> dict:
             )
             return {"workflow_id": workflow_id, "created": 0, "enqueued": 0, "error": workflow.last_error}
 
-        watch_started_at = workflow.created_at
+        existing_source_count = db.execute(
+            select(func.count(SocialWorkflowSourcePost.id)).where(
+                SocialWorkflowSourcePost.workflow_id == workflow.id,
+            )
+        ).scalar_one()
+        # First empty workflow scan backfills the latest official API results.
+        # Later scans only watch posts from workflow creation forward.
+        watch_started_at = None if existing_source_count == 0 else workflow.created_at
         if watch_started_at and watch_started_at.tzinfo is None:
             watch_started_at = watch_started_at.replace(tzinfo=timezone.utc)
         elif watch_started_at:
             watch_started_at = watch_started_at.astimezone(timezone.utc)
         for media in media_rows:
-            if media.media_type != "VIDEO":
+            if media.media_type not in {"VIDEO", "REELS"}:
                 continue
             if media.timestamp and watch_started_at and media.timestamp < watch_started_at:
                 continue
