@@ -230,4 +230,33 @@ class R2Client:
             current = current.parent
 
 
+def empty_local_storage_root() -> dict[str, int]:
+    """Best-effort drain for the local fallback storage directory.
+
+    The directory itself is preserved so local storage endpoints keep a stable
+    root, but every child file/directory is removed.
+    """
+    root = LOCAL_STORAGE_ROOT.resolve()
+    expected = Path("/tmp/clipbandit-storage").resolve()
+    if root != expected:
+        raise RuntimeError(f"Refusing to empty unexpected local storage root: {root}")
+
+    root.mkdir(parents=True, exist_ok=True)
+    removed_files = 0
+    removed_dirs = 0
+    failures = 0
+    for child in list(root.iterdir()):
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+                removed_dirs += 1
+            else:
+                child.unlink(missing_ok=True)
+                removed_files += 1
+        except OSError as exc:
+            failures += 1
+            logger.warning("[storage] failed to remove local storage path=%s error=%s", child, exc)
+    return {"removed_files": removed_files, "removed_dirs": removed_dirs, "failures": failures}
+
+
 r2_client = R2Client()

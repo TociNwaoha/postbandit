@@ -13,7 +13,7 @@ from app.models.export import Export, ExportStatus
 from app.models.publish_attempt import PublishAttempt
 from app.models.publish_job import PublishJob, PublishMode, PublishStatus
 from app.services.crypto import decrypt_secret, encrypt_secret, encryption_available
-from app.services.r2 import r2_client
+from app.services.r2 import empty_local_storage_root, r2_client
 from app.services.social.registry import get_adapter
 from app.services.social.security import sanitize_sensitive_text
 from app.services.social.types import PublishPayload
@@ -27,6 +27,31 @@ STALE_QUEUED_AFTER = timedelta(minutes=5)
 def _missing_x_media_scopes(scopes: list[str] | None) -> list[str]:
     present = {scope.strip().lower() for scope in (scopes or []) if isinstance(scope, str) and scope.strip()}
     return sorted(X_REQUIRED_MEDIA_SCOPES - present)
+
+
+def _empty_local_storage_after_success(publish_job_id: str) -> None:
+    try:
+        summary = empty_local_storage_root()
+    except Exception as exc:
+        logger.warning(
+            "[publish] local storage cleanup failed after successful post publish_job_id=%s error=%s",
+            publish_job_id,
+            exc,
+        )
+        return
+
+    if summary.get("failures"):
+        logger.warning(
+            "[publish] local storage cleanup incomplete after successful post publish_job_id=%s summary=%s",
+            publish_job_id,
+            summary,
+        )
+    else:
+        logger.info(
+            "[publish] local storage emptied after successful post publish_job_id=%s summary=%s",
+            publish_job_id,
+            summary,
+        )
 
 
 @celery_app.task(name="app.worker.tasks.publish.execute_publish_job", bind=True, queue="publish", max_retries=0)
@@ -247,6 +272,9 @@ def execute_publish_job(self, publish_job_id: str):
             attempt.error_message = result.error_message
             attempt.finished_at = datetime.now(timezone.utc)
             db.commit()
+
+            if publish_job.status == PublishStatus.published:
+                _empty_local_storage_after_success(publish_job_id)
 
             return {
                 "publish_job_id": str(publish_job.id),
