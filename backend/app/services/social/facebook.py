@@ -27,6 +27,7 @@ FACEBOOK_SCOPES = [
     "pages_show_list",
     "pages_manage_posts",
     "pages_read_engagement",
+    "pages_read_user_content",
     "public_profile",
 ]
 

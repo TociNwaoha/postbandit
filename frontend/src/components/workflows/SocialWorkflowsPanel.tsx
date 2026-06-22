@@ -10,6 +10,7 @@ import { api, ApiError } from "@/lib/api";
 import { ConnectedAccount, SocialPlatform, SocialWorkflow } from "@/types";
 
 const DESTINATION_PLATFORMS: SocialPlatform[] = ["instagram", "threads", "facebook", "youtube", "x", "tiktok"];
+const SOURCE_PLATFORMS: SocialPlatform[] = ["instagram", "youtube", "facebook"];
 
 function statusLabel(value: string): string {
   return value
@@ -22,13 +23,37 @@ function destinationName(account: ConnectedAccount): string {
   return account.display_name || account.username_or_channel_name || account.external_account_id;
 }
 
+function isValidWorkflowSource(account: ConnectedAccount, platform: SocialPlatform): boolean {
+  if (platform === "instagram") {
+    return account.platform === "instagram" && account.destination_type === "instagram_professional";
+  }
+  if (platform === "facebook") {
+    return account.platform === "facebook" && account.destination_type === "facebook_page";
+  }
+  if (platform === "youtube") {
+    return account.platform === "youtube";
+  }
+  return false;
+}
+
+function sourceHelpText(platform: SocialPlatform): string {
+  if (platform === "youtube") {
+    return "PostBandit detects new YouTube uploads with the official API. YouTube does not provide a reusable source file, so runs usually require attaching the original export/file.";
+  }
+  if (platform === "facebook") {
+    return "PostBandit polls your connected Facebook Page videos. If Graph exposes a reusable source URL, it imports automatically; otherwise it marks Original file required.";
+  }
+  return "PostBandit polls your connected Instagram professional account. If the official API exposes a reusable video file, it imports automatically.";
+}
+
 export function SocialWorkflowsPanel() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [workflows, setWorkflows] = useState<SocialWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("Instagram repurpose workflow");
+  const [name, setName] = useState("Social repurpose workflow");
+  const [sourcePlatform, setSourcePlatform] = useState<SocialPlatform>("instagram");
   const [sourceAccountId, setSourceAccountId] = useState("");
   const [copyMode, setCopyMode] = useState<"reuse_source" | "platform_ai" | "both">("both");
   const [selectedDestinationIds, setSelectedDestinationIds] = useState<Set<string>>(new Set());
@@ -43,10 +68,6 @@ export function SocialWorkflowsPanel() {
       ]);
       setAccounts(accountRows);
       setWorkflows(workflowRows);
-      const firstInstagram = accountRows.find(
-        (account) => account.platform === "instagram" && account.destination_type === "instagram_professional"
-      );
-      if (firstInstagram && !sourceAccountId) setSourceAccountId(firstInstagram.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load workflows");
     } finally {
@@ -59,9 +80,14 @@ export function SocialWorkflowsPanel() {
   }, []);
 
   const sourceAccounts = useMemo(
-    () => accounts.filter((account) => account.platform === "instagram" && account.destination_type === "instagram_professional"),
-    [accounts]
+    () => accounts.filter((account) => isValidWorkflowSource(account, sourcePlatform)),
+    [accounts, sourcePlatform]
   );
+
+  useEffect(() => {
+    if (sourceAccountId && sourceAccounts.some((account) => account.id === sourceAccountId)) return;
+    setSourceAccountId(sourceAccounts[0]?.id || "");
+  }, [sourceAccountId, sourceAccounts]);
 
   const destinationAccounts = useMemo(
     () =>
@@ -76,7 +102,7 @@ export function SocialWorkflowsPanel() {
 
   const createWorkflow = async () => {
     if (!sourceAccountId) {
-      setError("Connect an Instagram professional account first.");
+      setError(`Connect a ${getPlatformBrandMeta(sourcePlatform).displayName} source account first.`);
       return;
     }
     const destinations = destinationAccounts
@@ -91,7 +117,7 @@ export function SocialWorkflowsPanel() {
     try {
       await api.post<SocialWorkflow>("/api/social/workflows", {
         name,
-        source_platform: "instagram",
+        source_platform: sourcePlatform,
         source_account_id: sourceAccountId,
         copy_mode: copyMode,
         auto_publish: true,
@@ -143,14 +169,14 @@ export function SocialWorkflowsPanel() {
       <Card className="space-y-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--app-subtle)]">Official API workflow</p>
-          <h2 className="mt-1 text-2xl font-bold text-[var(--app-text)]">Repurpose Instagram posts automatically</h2>
+          <h2 className="mt-1 text-2xl font-bold text-[var(--app-text)]">Repurpose social posts automatically</h2>
           <p className="mt-1 max-w-3xl text-sm text-[var(--app-muted)]">
-            PostBandit polls your connected Instagram professional account. When the official API exposes a usable video file,
-            it imports, processes, exports, and publishes it to your selected destinations. No scraping or browser automation.
+            Choose Instagram, YouTube, or Facebook as a source. PostBandit uses official APIs only, then imports when a reusable
+            file is available or marks the run Original file required. No scraping or browser automation.
           </p>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_220px]">
+        <div className="grid gap-4 lg:grid-cols-[1fr_180px_1fr_220px]">
           <label className="space-y-1 text-sm font-medium text-[var(--app-muted)]">
             Workflow name
             <input
@@ -160,7 +186,21 @@ export function SocialWorkflowsPanel() {
             />
           </label>
           <label className="space-y-1 text-sm font-medium text-[var(--app-muted)]">
-            Instagram source
+            Source app
+            <select
+              value={sourcePlatform}
+              onChange={(event) => setSourcePlatform(event.target.value as SocialPlatform)}
+              className="w-full rounded-xl border border-[var(--app-border)] bg-white px-3 py-2 text-[var(--app-text)] outline-none focus:border-[var(--app-primary)]"
+            >
+              {SOURCE_PLATFORMS.map((platform) => (
+                <option key={platform} value={platform}>
+                  {getPlatformBrandMeta(platform).displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm font-medium text-[var(--app-muted)]">
+            {getPlatformBrandMeta(sourcePlatform).displayName} source
             <select
               value={sourceAccountId}
               onChange={(event) => setSourceAccountId(event.target.value)}
@@ -187,6 +227,10 @@ export function SocialWorkflowsPanel() {
             </select>
           </label>
         </div>
+
+        <p className="rounded-xl border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-xs text-[var(--app-muted)]">
+          {sourceHelpText(sourcePlatform)}
+        </p>
 
         <div>
           <p className="mb-2 text-sm font-semibold text-[var(--app-text)]">Destinations</p>
@@ -223,7 +267,7 @@ export function SocialWorkflowsPanel() {
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-[var(--app-muted)]">
-            Auto-publish is enabled. If Instagram does not provide a reusable video URL, the run will be marked Original file required.
+            Auto-publish is enabled. If the source API does not provide a reusable video URL, the run will be marked Original file required.
           </p>
           <Button onClick={() => void createWorkflow()} disabled={saving}>
             {saving ? "Saving..." : "Create Workflow"}
@@ -234,7 +278,9 @@ export function SocialWorkflowsPanel() {
       <div className="space-y-3">
         {workflows.length === 0 ? (
           <Card>
-            <p className="text-sm text-[var(--app-muted)]">No workflows yet. Create one above after connecting Instagram and at least one destination.</p>
+            <p className="text-sm text-[var(--app-muted)]">
+              No workflows yet. Create one above after connecting a source account and at least one destination.
+            </p>
           </Card>
         ) : (
           workflows.map((workflow) => (
@@ -248,7 +294,7 @@ export function SocialWorkflowsPanel() {
                     </span>
                   </div>
                   <p className="text-sm text-[var(--app-muted)]">
-                    Instagram source · {workflow.destination_targets_json.length} destination(s) · {statusLabel(workflow.copy_mode)}
+                    {getPlatformBrandMeta(workflow.source_platform).displayName} source · {workflow.destination_targets_json.length} destination(s) · {statusLabel(workflow.copy_mode)}
                   </p>
                 </div>
                 <div className="flex gap-2">

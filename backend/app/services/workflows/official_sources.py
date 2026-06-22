@@ -4,7 +4,7 @@ import logging
 import tempfile
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import httpx
 from sqlalchemy import select
@@ -26,23 +26,30 @@ from app.models.social_workflow_source_post import (
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video, VideoImportMode, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ai_copy import AICopyError, AICopyUnavailableError, generate_platform_copy, provider_configured
-from app.services.crypto import decrypt_secret
+from app.services.crypto import decrypt_secret, encrypt_secret
 from app.services.r2 import r2_client
+from app.services.social.meta import GraphRequestError, graph_get
 from app.services.social.security import redact_url, sanitize_sensitive_text
 
 logger = logging.getLogger(__name__)
 
 INSTAGRAM_MEDIA_FIELDS = "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp"
 INSTAGRAM_MEDIA_URL = "https://graph.instagram.com/me/media"
+YOUTUBE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+YOUTUBE_PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItems"
+FACEBOOK_VIDEO_FIELDS = "id,title,description,permalink_url,picture,created_time,source"
 MAX_SOURCE_POSTS_PER_POLL = 25
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 @dataclass(frozen=True)
-class InstagramSourceMedia:
+class OfficialSourceMedia:
+    platform: SocialPlatform
     id: str
     media_type: str
     caption: str | None
+    title: str | None
     media_url: str | None
     permalink: str | None
     thumbnail_url: str | None
@@ -50,10 +57,14 @@ class InstagramSourceMedia:
     raw: dict
 
 
-def _parse_instagram_timestamp(value: object) -> datetime | None:
+def _parse_iso_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
     text = value.strip().replace("Z", "+00:00")
+    # Meta timestamps commonly use +0000 offsets, while datetime.fromisoformat
+    # expects +00:00. Normalize only the compact timezone suffix.
+    if len(text) >= 5 and text[-5] in {"+", "-"} and text[-2] != ":":
+        text = f"{text[:-2]}:{text[-2:]}"
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
@@ -63,7 +74,19 @@ def _parse_instagram_timestamp(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _iter_instagram_media(access_token: str) -> list[InstagramSourceMedia]:
+def _parse_instagram_timestamp(value: object) -> datetime | None:
+    return _parse_iso_timestamp(value)
+
+
+def _parse_youtube_timestamp(value: object) -> datetime | None:
+    return _parse_iso_timestamp(value)
+
+
+def _parse_facebook_timestamp(value: object) -> datetime | None:
+    return _parse_iso_timestamp(value)
+
+
+def _iter_instagram_media(access_token: str) -> list[OfficialSourceMedia]:
     params = {
         "fields": INSTAGRAM_MEDIA_FIELDS,
         "limit": str(MAX_SOURCE_POSTS_PER_POLL),
@@ -81,7 +104,7 @@ def _iter_instagram_media(access_token: str) -> list[InstagramSourceMedia]:
     if not isinstance(rows, list):
         return []
 
-    media: list[InstagramSourceMedia] = []
+    media: list[OfficialSourceMedia] = []
     for item in rows:
         if not isinstance(item, dict):
             continue
@@ -89,10 +112,12 @@ def _iter_instagram_media(access_token: str) -> list[InstagramSourceMedia]:
         if not media_id:
             continue
         media.append(
-            InstagramSourceMedia(
+            OfficialSourceMedia(
+                platform=SocialPlatform.instagram,
                 id=media_id,
                 media_type=str(item.get("media_type") or "").strip().upper(),
                 caption=str(item.get("caption") or "").strip() or None,
+                title=None,
                 media_url=redact_url(str(item.get("media_url") or "").strip()) if item.get("media_url") else None,
                 permalink=str(item.get("permalink") or "").strip() or None,
                 thumbnail_url=str(item.get("thumbnail_url") or "").strip() or None,
@@ -103,7 +128,216 @@ def _iter_instagram_media(access_token: str) -> list[InstagramSourceMedia]:
     return media
 
 
-def _raw_media_url(raw_metadata: dict, access_token: str) -> str | None:
+def _youtube_video_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _refresh_youtube_access_token(account: ConnectedAccount) -> str:
+    access_token = decrypt_secret(account.access_token_encrypted)
+    expires_at = account.token_expires_at
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        else:
+            expires_at = expires_at.astimezone(timezone.utc)
+    if not expires_at or expires_at > datetime.now(timezone.utc) + timedelta(seconds=90):
+        return access_token
+    if not account.refresh_token_encrypted:
+        return access_token
+
+    refresh_token = decrypt_secret(account.refresh_token_encrypted)
+    with httpx.Client(timeout=30) as client:
+        response = client.post(
+            YOUTUBE_TOKEN_URL,
+            data={
+                "client_id": settings.youtube_client_id,
+                "client_secret": settings.youtube_client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+    token = str(payload.get("access_token") or "").strip()
+    if not token:
+        return access_token
+    account.access_token_encrypted = encrypt_secret(token)
+    expires_in = payload.get("expires_in")
+    if isinstance(expires_in, (int, float)):
+        account.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+    return token
+
+
+def _youtube_uploads_playlist_id(account: ConnectedAccount, access_token: str) -> str | None:
+    metadata = account.metadata_json or {}
+    channel = metadata.get("channel") if isinstance(metadata, dict) else None
+    content_details = channel.get("contentDetails") if isinstance(channel, dict) else None
+    related = content_details.get("relatedPlaylists") if isinstance(content_details, dict) else None
+    uploads = related.get("uploads") if isinstance(related, dict) else None
+    if isinstance(uploads, str) and uploads.strip():
+        return uploads.strip()
+
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
+        response = client.get(
+            YOUTUBE_CHANNELS_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"part": "id,snippet,contentDetails", "mine": "true"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+    item = ((payload.get("items") if isinstance(payload, dict) else None) or [None])[0]
+    if not isinstance(item, dict):
+        return None
+    account.metadata_json = {**metadata, "channel": item}
+    content_details = item.get("contentDetails") if isinstance(item.get("contentDetails"), dict) else {}
+    related = content_details.get("relatedPlaylists") if isinstance(content_details.get("relatedPlaylists"), dict) else {}
+    uploads = related.get("uploads")
+    return str(uploads).strip() if isinstance(uploads, str) and uploads.strip() else None
+
+
+def _iter_youtube_uploads(account: ConnectedAccount) -> list[OfficialSourceMedia]:
+    try:
+        access_token = _refresh_youtube_access_token(account)
+        uploads_playlist_id = _youtube_uploads_playlist_id(account, access_token)
+        if not uploads_playlist_id:
+            return []
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            response = client.get(
+                YOUTUBE_PLAYLIST_ITEMS_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={
+                    "part": "snippet,contentDetails",
+                    "playlistId": uploads_playlist_id,
+                    "maxResults": str(MAX_SOURCE_POSTS_PER_POLL),
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        raise RuntimeError(f"YouTube uploads poll failed: {sanitize_sensitive_text(exc)}") from exc
+
+    rows = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    media: list[OfficialSourceMedia] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        snippet = item.get("snippet") if isinstance(item.get("snippet"), dict) else {}
+        content = item.get("contentDetails") if isinstance(item.get("contentDetails"), dict) else {}
+        resource_id = snippet.get("resourceId") if isinstance(snippet.get("resourceId"), dict) else {}
+        video_id = str(content.get("videoId") or resource_id.get("videoId") or "").strip()
+        if not video_id:
+            continue
+        thumbnails = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+        thumbnail_url = None
+        for key in ("maxres", "standard", "high", "medium", "default"):
+            thumb = thumbnails.get(key)
+            if isinstance(thumb, dict) and thumb.get("url"):
+                thumbnail_url = str(thumb["url"])
+                break
+        title = str(snippet.get("title") or "").strip() or None
+        description = str(snippet.get("description") or "").strip() or None
+        media.append(
+            OfficialSourceMedia(
+                platform=SocialPlatform.youtube,
+                id=video_id,
+                media_type="VIDEO",
+                caption=description,
+                title=title,
+                media_url=None,
+                permalink=_youtube_video_url(video_id),
+                thumbnail_url=thumbnail_url,
+                timestamp=_parse_youtube_timestamp(content.get("videoPublishedAt") or snippet.get("publishedAt")),
+                raw={
+                    "id": video_id,
+                    "title": title,
+                    "description": description,
+                    "playlist_item_id": item.get("id"),
+                    "publishedAt": content.get("videoPublishedAt") or snippet.get("publishedAt"),
+                    "uploads_playlist_id": uploads_playlist_id,
+                },
+            )
+        )
+    return media
+
+
+def _graph_base() -> str:
+    return f"https://graph.facebook.com/{settings.meta_graph_api_version}"
+
+
+def _iter_facebook_page_videos(account: ConnectedAccount) -> list[OfficialSourceMedia]:
+    access_token = decrypt_secret(account.access_token_encrypted)
+    page_id = str(account.external_account_id or "").strip()
+    if not page_id:
+        return []
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            payload = graph_get(
+                client,
+                url=f"{_graph_base()}/{page_id}/videos",
+                params={
+                    "fields": FACEBOOK_VIDEO_FIELDS,
+                    "limit": str(MAX_SOURCE_POSTS_PER_POLL),
+                    "access_token": access_token,
+                },
+            )
+    except GraphRequestError as exc:
+        raise RuntimeError(f"Facebook Page video poll failed: {sanitize_sensitive_text(exc)}") from exc
+
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    media: list[OfficialSourceMedia] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        video_id = str(item.get("id") or "").strip()
+        if not video_id:
+            continue
+        title = str(item.get("title") or "").strip() or None
+        description = str(item.get("description") or "").strip() or None
+        media.append(
+            OfficialSourceMedia(
+                platform=SocialPlatform.facebook,
+                id=video_id,
+                media_type="VIDEO",
+                caption=description,
+                title=title,
+                media_url=redact_url(str(item.get("source") or "").strip()) if item.get("source") else None,
+                permalink=str(item.get("permalink_url") or "").strip() or None,
+                thumbnail_url=str(item.get("picture") or "").strip() or None,
+                timestamp=_parse_facebook_timestamp(item.get("created_time")),
+                raw={key: value for key, value in item.items() if key != "source"},
+            )
+        )
+    return media
+
+
+def _iter_source_media(workflow: SocialWorkflow, account: ConnectedAccount) -> list[OfficialSourceMedia]:
+    if workflow.source_platform == SocialPlatform.instagram:
+        access_token = decrypt_secret(account.access_token_encrypted)
+        return _iter_instagram_media(access_token)
+    if workflow.source_platform == SocialPlatform.youtube:
+        return _iter_youtube_uploads(account)
+    if workflow.source_platform == SocialPlatform.facebook:
+        return _iter_facebook_page_videos(account)
+    raise RuntimeError(f"{workflow.source_platform.value} source workflows are not enabled")
+
+
+def _source_account_error(platform: SocialPlatform) -> str:
+    if platform == SocialPlatform.instagram:
+        return "Reconnect the Instagram source account."
+    if platform == SocialPlatform.youtube:
+        return "Reconnect the YouTube source account with readonly permissions."
+    if platform == SocialPlatform.facebook:
+        return "Reconnect the Facebook Page source account with video read permissions."
+    return f"Reconnect the {platform.value} source account."
+
+
+def _raw_instagram_media_url(raw_metadata: dict, access_token: str) -> str | None:
     # Re-fetch just before import so signed/temporary media URLs are not persisted.
     media_id = str(raw_metadata.get("id") or "").strip()
     if not media_id:
@@ -125,6 +359,24 @@ def _raw_media_url(raw_metadata: dict, access_token: str) -> str | None:
     return str(media_url).strip() if isinstance(media_url, str) and media_url.strip() else None
 
 
+def _raw_facebook_media_url(raw_metadata: dict, access_token: str) -> str | None:
+    # Re-fetch just before import so signed/temporary media URLs are not persisted.
+    video_id = str(raw_metadata.get("id") or "").strip()
+    if not video_id:
+        return None
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            payload = graph_get(
+                client,
+                url=f"{_graph_base()}/{video_id}",
+                params={"fields": "id,source", "access_token": access_token},
+            )
+    except GraphRequestError as exc:
+        raise RuntimeError(f"Facebook media URL lookup failed: {sanitize_sensitive_text(exc)}") from exc
+    media_url = payload.get("source") if isinstance(payload, dict) else None
+    return str(media_url).strip() if isinstance(media_url, str) and media_url.strip() else None
+
+
 def _sync_status(source_post: SocialWorkflowSourcePost, status: SocialWorkflowSourceStatus, error: str | None = None) -> None:
     source_post.status = status
     source_post.error_message = sanitize_sensitive_text(error) if error else None
@@ -133,7 +385,7 @@ def _sync_status(source_post: SocialWorkflowSourcePost, status: SocialWorkflowSo
         source_post.workflow_run.error_message = source_post.error_message
 
 
-def poll_instagram_workflow(workflow_id: str) -> dict:
+def poll_source_workflow(workflow_id: str) -> dict:
     workflow_uuid = uuid.UUID(workflow_id)
     created = 0
     enqueued = 0
@@ -150,20 +402,25 @@ def poll_instagram_workflow(workflow_id: str) -> dict:
             return {"workflow_id": workflow_id, "created": 0, "enqueued": 0, "skipped": "inactive_or_locked"}
 
         account = db.get(ConnectedAccount, workflow.source_account_id) if workflow.source_account_id else None
-        if not account or account.platform != SocialPlatform.instagram:
-            workflow.last_error = "Reconnect the Instagram source account."
+        if not account or account.platform != workflow.source_platform:
+            workflow.last_error = _source_account_error(workflow.source_platform)
             workflow.last_polled_at = now
             db.commit()
             return {"workflow_id": workflow_id, "created": 0, "enqueued": 0, "error": workflow.last_error}
 
         try:
-            access_token = decrypt_secret(account.access_token_encrypted)
-            media_rows = _iter_instagram_media(access_token)
+            media_rows = _iter_source_media(workflow, account)
+            db.flush()
         except Exception as exc:
             workflow.last_error = sanitize_sensitive_text(exc)
             workflow.last_polled_at = now
             db.commit()
-            logger.warning("[workflows] instagram poll failed workflow_id=%s error=%s", workflow_id, workflow.last_error)
+            logger.warning(
+                "[workflows] source poll failed workflow_id=%s platform=%s error=%s",
+                workflow_id,
+                workflow.source_platform.value,
+                workflow.last_error,
+            )
             return {"workflow_id": workflow_id, "created": 0, "enqueued": 0, "error": workflow.last_error}
 
         watch_started_at = workflow.created_at
@@ -179,7 +436,7 @@ def poll_instagram_workflow(workflow_id: str) -> dict:
             existing_source_id = db.execute(
                 select(SocialWorkflowSourcePost.id).where(
                     SocialWorkflowSourcePost.workflow_id == workflow.id,
-                    SocialWorkflowSourcePost.source_platform == SocialPlatform.instagram,
+                    SocialWorkflowSourcePost.source_platform == workflow.source_platform,
                     SocialWorkflowSourcePost.external_post_id == media.id,
                 )
             ).scalar_one_or_none()
@@ -189,10 +446,10 @@ def poll_instagram_workflow(workflow_id: str) -> dict:
                 user_id=workflow.user_id,
                 workflow_id=workflow.id,
                 source_account_id=workflow.source_account_id,
-                source_platform=SocialPlatform.instagram,
+                source_platform=workflow.source_platform,
                 external_post_id=media.id,
                 permalink=media.permalink,
-                caption_snapshot=media.caption,
+                caption_snapshot=media.caption or media.title,
                 thumbnail_url=media.thumbnail_url,
                 published_at=media.timestamp,
                 status=SocialWorkflowSourceStatus.detected,
@@ -230,7 +487,9 @@ def poll_active_official_source_workflows() -> dict:
             select(SocialWorkflow.id)
             .where(
                 SocialWorkflow.status == SocialWorkflowStatus.active,
-                SocialWorkflow.source_platform == SocialPlatform.instagram,
+                SocialWorkflow.source_platform.in_(
+                    [SocialPlatform.instagram, SocialPlatform.youtube, SocialPlatform.facebook]
+                ),
             )
             .order_by(SocialWorkflow.last_polled_at.asc().nullsfirst(), SocialWorkflow.created_at.asc())
             .limit(50)
@@ -245,7 +504,7 @@ def poll_active_official_source_workflows() -> dict:
     return {"workflow_count": len(workflows), "task_ids": task_ids}
 
 
-def _download_source_media(media_url: str, destination: Path) -> tuple[int, str | None]:
+def _download_source_media(media_url: str, destination: Path, *, platform_label: str) -> tuple[int, str | None]:
     max_bytes = int(settings.max_upload_size_mb) * 1024 * 1024
     bytes_written = 0
     content_type = None
@@ -254,7 +513,7 @@ def _download_source_media(media_url: str, destination: Path) -> tuple[int, str 
             response.raise_for_status()
             content_type = response.headers.get("content-type")
             if content_type and not any(kind in content_type.lower() for kind in ("video/", "octet-stream")):
-                raise RuntimeError(f"Instagram media returned unsupported content type: {content_type}")
+                raise RuntimeError(f"{platform_label} media returned unsupported content type: {content_type}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             with destination.open("wb") as out:
                 for chunk in response.iter_bytes(DOWNLOAD_CHUNK_SIZE):
@@ -262,14 +521,42 @@ def _download_source_media(media_url: str, destination: Path) -> tuple[int, str 
                         continue
                     bytes_written += len(chunk)
                     if bytes_written > max_bytes:
-                        raise RuntimeError("Instagram source media exceeded the configured upload size limit")
+                        raise RuntimeError(f"{platform_label} source media exceeded the configured upload size limit")
                     out.write(chunk)
     if bytes_written <= 0:
-        raise RuntimeError("Instagram source media download was empty")
+        raise RuntimeError(f"{platform_label} source media download was empty")
     return bytes_written, content_type
 
 
-def import_instagram_source_post(source_post_id: str) -> dict:
+def _video_source_type_for_platform(platform: SocialPlatform) -> VideoSourceType:
+    if platform == SocialPlatform.instagram:
+        return VideoSourceType.instagram
+    if platform == SocialPlatform.facebook:
+        return VideoSourceType.facebook
+    if platform == SocialPlatform.youtube:
+        return VideoSourceType.youtube
+    return VideoSourceType.upload
+
+
+def _platform_title(platform: SocialPlatform) -> str:
+    if platform == SocialPlatform.youtube:
+        return "YouTube"
+    if platform == SocialPlatform.facebook:
+        return "Facebook"
+    if platform == SocialPlatform.instagram:
+        return "Instagram"
+    return platform.value.title()
+
+
+def _raw_media_url_for_source(platform: SocialPlatform, raw_metadata: dict, access_token: str) -> str | None:
+    if platform == SocialPlatform.instagram:
+        return _raw_instagram_media_url(raw_metadata, access_token)
+    if platform == SocialPlatform.facebook:
+        return _raw_facebook_media_url(raw_metadata, access_token)
+    return None
+
+
+def import_source_post(source_post_id: str) -> dict:
     source_uuid = uuid.UUID(source_post_id)
     with SyncSessionLocal() as db:
         source_post = db.execute(
@@ -286,17 +573,18 @@ def import_instagram_source_post(source_post_id: str) -> dict:
         account = db.get(ConnectedAccount, source_post.source_account_id) if source_post.source_account_id else None
         raw_metadata = dict(source_post.raw_metadata_json or {"id": source_post.external_post_id})
         account_token_encrypted = account.access_token_encrypted if account else None
+        platform = source_post.source_platform
         workflow_present = workflow is not None
         _sync_status(source_post, SocialWorkflowSourceStatus.importing)
         db.commit()
 
-    tmp_dir = Path(tempfile.mkdtemp(prefix="clipbandit-instagram-source-"))
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"clipbandit-{platform.value}-source-"))
     tmp_media = tmp_dir / "source.mp4"
     try:
         if not workflow_present or not account_token_encrypted:
-            raise RuntimeError("Reconnect the Instagram source account before importing this post.")
+            raise RuntimeError(_source_account_error(platform))
         access_token = decrypt_secret(account_token_encrypted)
-        media_url = _raw_media_url(raw_metadata, access_token)
+        media_url = _raw_media_url_for_source(platform, raw_metadata, access_token)
         if not media_url:
             with SyncSessionLocal() as db:
                 source_post = db.get(SocialWorkflowSourcePost, source_uuid)
@@ -304,32 +592,33 @@ def import_instagram_source_post(source_post_id: str) -> dict:
                     _sync_status(
                         source_post,
                         SocialWorkflowSourceStatus.original_required,
-                        "Official Instagram API did not provide a reusable video file for this post.",
+                        f"Official {_platform_title(platform)} API did not provide a reusable video file for this post.",
                     )
                     db.commit()
             return {"source_post_id": source_post_id, "status": "original_required"}
 
-        size_bytes, content_type = _download_source_media(media_url, tmp_media)
+        size_bytes, content_type = _download_source_media(media_url, tmp_media, platform_label=_platform_title(platform))
 
         with SyncSessionLocal() as db:
             source_post = db.get(SocialWorkflowSourcePost, source_uuid)
             if not source_post:
                 return {"source_post_id": source_post_id, "status": "missing"}
             video_id = uuid.uuid4()
-            storage_key = f"videos/{source_post.user_id}/{video_id}/source/instagram.mp4"
+            storage_key = f"videos/{source_post.user_id}/{video_id}/source/{platform.value}.mp4"
             r2_client.upload_file(str(tmp_media), storage_key)
-            title = (source_post.caption_snapshot or "Instagram source import").replace("\n", " ").strip()[:140]
+            title = (source_post.caption_snapshot or f"{_platform_title(platform)} source import").replace("\n", " ").strip()[:140]
             video = Video(
                 id=video_id,
                 user_id=source_post.user_id,
-                title=title or "Instagram source import",
-                source_type=VideoSourceType.instagram,
+                title=title or f"{_platform_title(platform)} source import",
+                source_type=_video_source_type_for_platform(platform),
                 source_url=source_post.permalink,
+                source_video_id=source_post.external_post_id if platform == SocialPlatform.youtube else None,
                 thumbnail_url=source_post.thumbnail_url,
                 import_state=VideoImportState.processing,
                 import_mode=VideoImportMode.server_download,
                 external_metadata_json={
-                    "source_platform": "instagram",
+                    "source_platform": platform.value,
                     "source_external_post_id": source_post.external_post_id,
                     "source_permalink": source_post.permalink,
                     "source_workflow_id": str(source_post.workflow_id),
@@ -345,7 +634,7 @@ def import_instagram_source_post(source_post_id: str) -> dict:
             job = Job(
                 video_id=video.id,
                 type="transcribe",
-                payload={"source": "official_instagram_workflow", "source_post_id": str(source_post.id)},
+                payload={"source": f"official_{platform.value}_workflow", "source_post_id": str(source_post.id)},
                 status=JobStatus.queued,
             )
             db.add(job)
@@ -367,7 +656,7 @@ def import_instagram_source_post(source_post_id: str) -> dict:
         return {"source_post_id": source_post_id, "status": "imported_processing", "video_id": video_id_str}
     except Exception as exc:
         message = sanitize_sensitive_text(exc)
-        logger.warning("[workflows] instagram source import failed source_post_id=%s error=%s", source_post_id, message)
+        logger.warning("[workflows] source import failed source_post_id=%s platform=%s error=%s", source_post_id, platform.value, message)
         with SyncSessionLocal() as db:
             source_post = db.get(SocialWorkflowSourcePost, source_uuid)
             if source_post:

@@ -30,17 +30,32 @@ from app.schemas.social_workflow import (
 router = APIRouter(prefix="/social/workflows", tags=["social-workflows"])
 
 
+ENABLED_SOURCE_PLATFORMS = {SocialPlatform.instagram, SocialPlatform.youtube, SocialPlatform.facebook}
+
+
 def _destination_type(account: ConnectedAccount) -> str:
     metadata = account.metadata_json or {}
     return str(metadata.get("destination_type") or metadata.get("provider_destination_type") or account.platform.value)
 
 
-async def _validate_source_account(db: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID) -> ConnectedAccount:
+async def _validate_source_account(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    account_id: uuid.UUID,
+    platform: SocialPlatform,
+) -> ConnectedAccount:
     account = await db.scalar(select(ConnectedAccount).where(ConnectedAccount.id == account_id, ConnectedAccount.user_id == user_id))
     if not account:
-        raise HTTPException(status_code=404, detail="Instagram source account not found")
-    if account.platform != SocialPlatform.instagram or _destination_type(account) != "instagram_professional":
+        raise HTTPException(status_code=404, detail=f"{platform.value.title()} source account not found")
+    if account.platform != platform:
+        raise HTTPException(status_code=400, detail="Workflow source account platform mismatch")
+    destination_type = _destination_type(account)
+    if platform == SocialPlatform.instagram and destination_type != "instagram_professional":
         raise HTTPException(status_code=400, detail="Workflow source must be a connected Instagram professional account")
+    if platform == SocialPlatform.facebook and destination_type != "facebook_page":
+        raise HTTPException(status_code=400, detail="Workflow source must be a connected Facebook Page")
+    if platform == SocialPlatform.youtube and account.platform != SocialPlatform.youtube:
+        raise HTTPException(status_code=400, detail="Workflow source must be a connected YouTube channel")
     return account
 
 
@@ -107,14 +122,14 @@ async def create_workflow(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if body.source_platform != SocialPlatform.instagram:
-        raise HTTPException(status_code=400, detail="Instagram is the only official source platform enabled in v1")
-    await _validate_source_account(db, current_user.id, body.source_account_id)
+    if body.source_platform not in ENABLED_SOURCE_PLATFORMS:
+        raise HTTPException(status_code=400, detail="Enabled workflow sources are Instagram, YouTube, and Facebook Pages")
+    await _validate_source_account(db, current_user.id, body.source_account_id, body.source_platform)
     destinations = await _validate_destinations(db, current_user.id, body.destinations)
     workflow = SocialWorkflow(
         user_id=current_user.id,
         name=body.name.strip(),
-        source_platform=SocialPlatform.instagram,
+        source_platform=body.source_platform,
         source_account_id=body.source_account_id,
         status=SocialWorkflowStatus.active,
         copy_mode=body.copy_mode,

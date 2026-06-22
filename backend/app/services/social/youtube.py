@@ -21,6 +21,7 @@ YOUTUBE_UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/userinfo.profile",
 ]
 
@@ -175,7 +176,7 @@ class YouTubeAdapter(SocialProviderAdapter):
                     channels_resp = client.get(
                         YOUTUBE_CHANNELS_URL,
                         headers=headers,
-                        params={"part": "id,snippet", "mine": "true"},
+                        params={"part": "id,snippet,contentDetails", "mine": "true"},
                     )
                     channels_resp.raise_for_status()
                     channels_data = channels_resp.json()
