@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { api, ApiError } from "@/lib/api";
-import { ConnectedAccount, SocialPlatform, SocialWorkflow } from "@/types";
+import { ConnectedAccount, Export, SocialPlatform, SocialPublishJob, SocialWorkflow, SocialWorkflowSourcePost } from "@/types";
 
 const DESTINATION_PLATFORMS: SocialPlatform[] = ["instagram", "threads", "facebook", "youtube", "x", "tiktok"];
 const SOURCE_PLATFORMS: SocialPlatform[] = ["instagram", "youtube", "facebook"];
@@ -21,6 +21,62 @@ function statusLabel(value: string): string {
 
 function destinationName(account: ConnectedAccount): string {
   return account.display_name || account.username_or_channel_name || account.external_account_id;
+}
+
+function shortId(value: string): string {
+  return value.slice(0, 8);
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return "Not scheduled";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function sourcePostTitle(post: SocialWorkflowSourcePost): string {
+  return post.caption_snapshot || post.permalink || `${getPlatformBrandMeta(post.source_platform).displayName} post ${shortId(post.external_post_id)}`;
+}
+
+function exportLabel(item: Export): string {
+  const title = item.clip_title || item.video_title || `Export ${shortId(item.id)}`;
+  return `${title} · ${item.aspect_ratio} · ${shortId(item.id)}`;
+}
+
+function sourceStatusDescription(post: SocialWorkflowSourcePost): string {
+  if (post.error_message) return post.error_message;
+  if (post.status === "original_required") return "Official API found the post, but did not provide a reusable source video file.";
+  if (post.status === "detected") return "Detected and waiting to import.";
+  if (post.status === "importing") return "Downloading the source through the official API.";
+  if (post.status === "imported_processing") return "Imported into PostBandit and processing.";
+  if (post.status === "ready_to_publish") return "Ready for workflow publishing.";
+  if (post.status === "publishing") return "Publishing to selected destinations.";
+  if (post.status === "completed") return "Workflow completed.";
+  if (post.status === "partial_failed") return "Some destinations failed; successful destinations remain published.";
+  return "Workflow step failed.";
+}
+
+function publishJobLabel(job: SocialPublishJob): string {
+  if (job.status === "scheduled") return `Scheduled ${formatDateTime(job.scheduled_for)}`;
+  if (job.status === "published") return "Published";
+  if (job.status === "queued") return "Queued";
+  if (job.status === "publishing") return "Publishing";
+  if (job.status === "cancelled") return "Cancelled";
+  if (job.status === "waiting_user_action") return "Needs action";
+  if (job.status === "provider_not_configured") return "Provider setup needed";
+  return "Failed";
+}
+
+function statusBadgeClass(status: string): string {
+  if (["completed", "published"].includes(status)) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (["scheduled", "ready_to_publish"].includes(status)) return "bg-blue-50 text-blue-700 border-blue-200";
+  if (["queued", "publishing", "importing", "imported_processing", "detected"].includes(status)) return "bg-amber-50 text-amber-700 border-amber-200";
+  if (["original_required", "waiting_user_action", "provider_not_configured"].includes(status)) return "bg-orange-50 text-orange-700 border-orange-200";
+  if (["cancelled"].includes(status)) return "bg-slate-50 text-slate-600 border-slate-200";
+  return "bg-red-50 text-red-700 border-red-200";
 }
 
 function isValidWorkflowSource(account: ConnectedAccount, platform: SocialPlatform): boolean {
@@ -49,8 +105,11 @@ function sourceHelpText(platform: SocialPlatform): string {
 export function SocialWorkflowsPanel() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [workflows, setWorkflows] = useState<SocialWorkflow[]>([]);
+  const [readyExports, setReadyExports] = useState<Export[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [attachingPostId, setAttachingPostId] = useState<string | null>(null);
+  const [selectedExportByPost, setSelectedExportByPost] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("Social repurpose workflow");
   const [sourcePlatform, setSourcePlatform] = useState<SocialPlatform>("instagram");
@@ -62,12 +121,14 @@ export function SocialWorkflowsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [accountRows, workflowRows] = await Promise.all([
+      const [accountRows, workflowRows, exportRows] = await Promise.all([
         api.get<ConnectedAccount[]>("/api/social/accounts"),
         api.get<SocialWorkflow[]>("/api/social/workflows"),
+        api.get<Export[]>("/api/exports"),
       ]);
       setAccounts(accountRows);
       setWorkflows(workflowRows);
+      setReadyExports(exportRows.filter((item) => item.status === "ready"));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load workflows");
     } finally {
@@ -151,6 +212,24 @@ export function SocialWorkflowsPanel() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update workflow");
+    }
+  };
+
+  const attachExport = async (postId: string) => {
+    const exportId = selectedExportByPost[postId] || readyExports[0]?.id;
+    if (!exportId) {
+      setError("No ready exports are available to attach yet.");
+      return;
+    }
+    setAttachingPostId(postId);
+    setError(null);
+    try {
+      await api.post(`/api/social/workflows/source-posts/${postId}/attach-export`, { export_id: exportId });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to attach export");
+    } finally {
+      setAttachingPostId(null);
     }
   };
 
@@ -296,6 +375,20 @@ export function SocialWorkflowsPanel() {
                   <p className="text-sm text-[var(--app-muted)]">
                     {getPlatformBrandMeta(workflow.source_platform).displayName} source · {workflow.destination_targets_json.length} destination(s) · {statusLabel(workflow.copy_mode)}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--app-muted)]">
+                    <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-1">
+                      {workflow.source_posts.length} source post(s)
+                    </span>
+                    <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-1">
+                      {workflow.source_posts.flatMap((post) => post.publish_jobs || []).filter((job) => job.status === "scheduled").length} scheduled
+                    </span>
+                    <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-1">
+                      {workflow.source_posts.flatMap((post) => post.publish_jobs || []).filter((job) => job.status === "published").length} published
+                    </span>
+                    <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-1">
+                      {workflow.source_posts.filter((post) => post.status === "original_required").length} need original
+                    </span>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="secondary" onClick={() => void pollNow(workflow.id)}>Poll now</Button>
@@ -305,31 +398,150 @@ export function SocialWorkflowsPanel() {
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-[var(--app-border)]">
-                <div className="grid grid-cols-[1.2fr_150px_1fr] bg-[var(--app-surface-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-subtle)]">
-                  <span>Source post</span>
-                  <span>Status</span>
-                  <span>Result</span>
-                </div>
+              <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-subtle)]">Workflow activity</p>
+                <p className="text-xs text-[var(--app-muted)]">
+                  Detected source posts, available recovery actions, and destination publish jobs created by this workflow.
+                </p>
+              </div>
+
+              <div className="space-y-3">
                 {workflow.source_posts.length === 0 ? (
-                  <p className="px-3 py-3 text-sm text-[var(--app-muted)]">No detected source posts yet.</p>
+                  <div className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-5 text-sm text-[var(--app-muted)]">
+                    No detected source posts yet. Use Poll now, or wait for the scheduled poll to find new posts from the selected source account.
+                  </div>
                 ) : (
-                  workflow.source_posts.slice(0, 8).map((post) => (
-                    <div key={post.id} className="grid grid-cols-[1.2fr_150px_1fr] gap-3 border-t border-[var(--app-border)] px-3 py-2 text-sm">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-[var(--app-text)]">{post.caption_snapshot || post.permalink || post.external_post_id}</p>
-                        {post.permalink ? (
-                          <a className="text-xs text-[var(--app-primary)] hover:underline" href={post.permalink} target="_blank" rel="noreferrer">
-                            Open source
-                          </a>
-                        ) : null}
+                  workflow.source_posts.slice(0, 12).map((post) => {
+                    const sourceBrand = getPlatformBrandMeta(post.source_platform);
+                    const jobs = post.publish_jobs || [];
+                    return (
+                      <div key={post.id} className="rounded-xl border border-[var(--app-border)] bg-white p-3">
+                        <div className="grid gap-3 lg:grid-cols-[88px_1fr]">
+                          <div className="relative h-24 overflow-hidden rounded-lg bg-[var(--app-surface-soft)]">
+                            {post.thumbnail_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={post.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-[var(--app-subtle)]">No preview</div>
+                            )}
+                            <span className={`absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-md ${sourceBrand.badgeClassName}`}>
+                              {sourceBrand.icon}
+                            </span>
+                          </div>
+
+                          <div className="min-w-0 space-y-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-[var(--app-text)]">{sourcePostTitle(post)}</p>
+                                <p className="text-xs text-[var(--app-muted)]">
+                                  Source posted {formatDateTime(post.published_at)} · ID {shortId(post.external_post_id)}
+                                </p>
+                              </div>
+                              <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusBadgeClass(post.status)}`}>
+                                {statusLabel(post.status)}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-[var(--app-muted)]">{sourceStatusDescription(post)}</p>
+
+                            <div className="flex flex-wrap gap-2 text-xs">
+                              {post.permalink ? (
+                                <a className="rounded-lg border border-[var(--app-border)] px-2 py-1 text-[var(--app-primary)] hover:bg-[#F8FAFF]" href={post.permalink} target="_blank" rel="noreferrer">
+                                  Open source
+                                </a>
+                              ) : null}
+                              {post.video_id ? (
+                                <a className="rounded-lg border border-[var(--app-border)] px-2 py-1 text-[var(--app-primary)] hover:bg-[#F8FAFF]" href={`/videos/${post.video_id}`}>
+                                  View imported video
+                                </a>
+                              ) : null}
+                              {post.export_id ? (
+                                <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">
+                                  Export attached
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {post.status === "original_required" ? (
+                              <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
+                                <p className="text-xs font-semibold text-orange-800">Original file required</p>
+                                <p className="mt-1 text-xs text-orange-700">
+                                  Attach an existing ready PostBandit export to continue this workflow run.
+                                </p>
+                                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                                  <select
+                                    value={selectedExportByPost[post.id] || readyExports[0]?.id || ""}
+                                    onChange={(event) =>
+                                      setSelectedExportByPost((current) => ({ ...current, [post.id]: event.target.value }))
+                                    }
+                                    className="min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-2 py-1.5 text-xs text-[var(--app-text)] outline-none"
+                                  >
+                                    {readyExports.length === 0 ? <option value="">No ready exports available</option> : null}
+                                    {readyExports.map((item) => (
+                                      <option key={item.id} value={item.id}>
+                                        {exportLabel(item)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={readyExports.length === 0 || attachingPostId === post.id}
+                                    onClick={() => void attachExport(post.id)}
+                                  >
+                                    {attachingPostId === post.id ? "Attaching..." : "Attach export"}
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <div>
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-subtle)]">
+                                Destination jobs
+                              </p>
+                              {jobs.length === 0 ? (
+                                <p className="rounded-lg border border-dashed border-[var(--app-border)] px-3 py-2 text-xs text-[var(--app-muted)]">
+                                  No destination jobs yet. Jobs appear here after the workflow has an export ready to publish.
+                                </p>
+                              ) : (
+                                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                  {jobs.map((job) => {
+                                    const brand = getPlatformBrandMeta(job.platform);
+                                    return (
+                                      <div key={job.id} className="rounded-lg border border-[var(--app-border)] p-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${brand.badgeClassName}`}>
+                                            {brand.icon}
+                                          </span>
+                                          <span className="min-w-0">
+                                            <span className="block truncate text-xs font-semibold text-[var(--app-text)]">{brand.displayName}</span>
+                                            <span className="block truncate text-[11px] text-[var(--app-muted)]">
+                                              {job.destination_display_name || "Destination"}
+                                            </span>
+                                          </span>
+                                        </div>
+                                        <div className="mt-2 flex items-center justify-between gap-2">
+                                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(job.status)}`}>
+                                            {publishJobLabel(job)}
+                                          </span>
+                                          {job.external_post_url ? (
+                                            <a className="text-[11px] text-[var(--app-primary)] hover:underline" href={job.external_post_url} target="_blank" rel="noreferrer">
+                                              Open
+                                            </a>
+                                          ) : null}
+                                        </div>
+                                        {job.error_message ? <p className="mt-1 line-clamp-2 text-[11px] text-red-600">{job.error_message}</p> : null}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-[var(--app-muted)]">{statusLabel(post.status)}</span>
-                      <span className="text-[var(--app-muted)]">
-                        {post.error_message || (post.export_id ? "Export prepared" : post.video_id ? "Video imported" : "Waiting")}
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </Card>

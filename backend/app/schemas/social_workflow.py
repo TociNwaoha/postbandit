@@ -6,6 +6,7 @@ from app.models.connected_account import SocialPlatform
 from app.models.social_workflow import SocialWorkflowCopyMode, SocialWorkflowStatus
 from app.models.social_workflow_run import SocialWorkflowRunStatus
 from app.models.social_workflow_source_post import SocialWorkflowSourceStatus
+from app.schemas.social import PublishJobResponse
 
 
 class SocialWorkflowDestinationInput(BaseModel):
@@ -68,6 +69,7 @@ class SocialWorkflowSourcePostResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     workflow_run: SocialWorkflowRunResponse | None = None
+    publish_jobs: list[PublishJobResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

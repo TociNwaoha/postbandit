@@ -548,6 +548,7 @@ export interface SocialWorkflowSourcePost {
   created_at: string;
   updated_at: string;
   workflow_run?: SocialWorkflowRun | null;
+  publish_jobs?: SocialPublishJob[];
 }
 
 export interface SocialWorkflow {

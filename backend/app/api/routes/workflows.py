@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.connected_account import ConnectedAccount, SocialPlatform
 from app.models.export import Export, ExportStatus
+from app.models.publish_job import PublishJob
 from app.models.social_workflow import SocialWorkflow, SocialWorkflowStatus
 from app.models.social_workflow_source_post import (
     SocialWorkflowSourcePost,
@@ -26,6 +28,7 @@ from app.schemas.social_workflow import (
     SocialWorkflowPollResponse,
     SocialWorkflowResponse,
 )
+from app.schemas.social import PublishJobResponse
 
 router = APIRouter(prefix="/social/workflows", tags=["social-workflows"])
 
@@ -105,6 +108,101 @@ async def _workflow_or_404(db: AsyncSession, user_id: uuid.UUID, workflow_id: uu
     return workflow
 
 
+async def _workflow_publish_jobs_by_source(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    workflows: list[SocialWorkflow],
+) -> dict[uuid.UUID, list[PublishJobResponse]]:
+    source_post_ids = [
+        source_post.id
+        for workflow in workflows
+        for source_post in workflow.source_posts
+    ]
+    if not source_post_ids:
+        return {}
+
+    result = await db.execute(
+        select(PublishJob)
+        .where(
+            PublishJob.user_id == user_id,
+            PublishJob.workflow_source_post_id.in_(source_post_ids),
+        )
+        .order_by(
+            PublishJob.scheduled_for.asc().nullslast(),
+            PublishJob.created_at.asc(),
+        )
+    )
+    grouped: dict[uuid.UUID, list[PublishJobResponse]] = defaultdict(list)
+    for job in result.scalars().all():
+        if job.workflow_source_post_id:
+            grouped[job.workflow_source_post_id].append(PublishJobResponse.model_validate(job))
+    return grouped
+
+
+def _workflow_response_payload(
+    workflow: SocialWorkflow,
+    jobs_by_source: dict[uuid.UUID, list[PublishJobResponse]],
+) -> dict:
+    source_posts = sorted(
+        workflow.source_posts,
+        key=lambda post: post.published_at or post.created_at,
+        reverse=True,
+    )
+    return {
+        "id": workflow.id,
+        "user_id": workflow.user_id,
+        "name": workflow.name,
+        "source_platform": workflow.source_platform,
+        "source_account_id": workflow.source_account_id,
+        "status": workflow.status,
+        "copy_mode": workflow.copy_mode,
+        "auto_publish": workflow.auto_publish,
+        "destination_targets_json": workflow.destination_targets_json,
+        "poll_cursor_json": workflow.poll_cursor_json,
+        "last_polled_at": workflow.last_polled_at,
+        "last_error": workflow.last_error,
+        "created_at": workflow.created_at,
+        "updated_at": workflow.updated_at,
+        "source_posts": [
+            {
+                "id": source_post.id,
+                "user_id": source_post.user_id,
+                "workflow_id": source_post.workflow_id,
+                "source_account_id": source_post.source_account_id,
+                "source_platform": source_post.source_platform,
+                "external_post_id": source_post.external_post_id,
+                "permalink": source_post.permalink,
+                "caption_snapshot": source_post.caption_snapshot,
+                "thumbnail_url": source_post.thumbnail_url,
+                "published_at": source_post.published_at,
+                "status": source_post.status,
+                "video_id": source_post.video_id,
+                "export_id": source_post.export_id,
+                "workflow_run_id": source_post.workflow_run_id,
+                "error_message": source_post.error_message,
+                "raw_metadata_json": source_post.raw_metadata_json,
+                "created_at": source_post.created_at,
+                "updated_at": source_post.updated_at,
+                "workflow_run": source_post.workflow_run,
+                "publish_jobs": jobs_by_source.get(source_post.id, []),
+            }
+            for source_post in source_posts
+        ],
+    }
+
+
+async def _workflow_responses(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    workflows: list[SocialWorkflow],
+) -> list[SocialWorkflowResponse]:
+    jobs_by_source = await _workflow_publish_jobs_by_source(db, user_id, workflows)
+    return [
+        SocialWorkflowResponse.model_validate(_workflow_response_payload(workflow, jobs_by_source))
+        for workflow in workflows
+    ]
+
+
 @router.get("", response_model=list[SocialWorkflowResponse])
 async def list_workflows(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(
@@ -113,7 +211,8 @@ async def list_workflows(db: AsyncSession = Depends(get_db), current_user: User 
         .where(SocialWorkflow.user_id == current_user.id)
         .order_by(SocialWorkflow.created_at.desc())
     )
-    return result.scalars().unique().all()
+    workflows = result.scalars().unique().all()
+    return await _workflow_responses(db, current_user.id, workflows)
 
 
 @router.post("", response_model=SocialWorkflowResponse, status_code=status.HTTP_201_CREATED)
@@ -140,7 +239,8 @@ async def create_workflow(
     db.add(workflow)
     await db.commit()
     await db.refresh(workflow)
-    return await _workflow_or_404(db, current_user.id, workflow.id)
+    workflow = await _workflow_or_404(db, current_user.id, workflow.id)
+    return (await _workflow_responses(db, current_user.id, [workflow]))[0]
 
 
 @router.get("/{workflow_id}", response_model=SocialWorkflowResponse)
@@ -149,7 +249,8 @@ async def get_workflow(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _workflow_or_404(db, current_user.id, workflow_id)
+    workflow = await _workflow_or_404(db, current_user.id, workflow_id)
+    return (await _workflow_responses(db, current_user.id, [workflow]))[0]
 
 
 @router.patch("/{workflow_id}", response_model=SocialWorkflowResponse)
@@ -171,7 +272,8 @@ async def update_workflow(
     if body.destinations is not None:
         workflow.destination_targets_json = await _validate_destinations(db, current_user.id, body.destinations)
     await db.commit()
-    return await _workflow_or_404(db, current_user.id, workflow.id)
+    workflow = await _workflow_or_404(db, current_user.id, workflow.id)
+    return (await _workflow_responses(db, current_user.id, [workflow]))[0]
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
