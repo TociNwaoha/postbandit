@@ -4,6 +4,8 @@ import json
 
 import httpx
 
+from app.services.social.security import sanitize_sensitive_text
+
 
 class GraphRequestError(Exception):
     pass
@@ -21,13 +23,13 @@ def extract_graph_error(response: httpx.Response) -> str:
             for key in ("error_user_msg", "message", "type", "code", "error_subcode"):
                 value = error.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()[:240]
+                    return sanitize_sensitive_text(value.strip(), max_length=240)
                 if isinstance(value, int):
                     return str(value)
         for key in ("error_description", "error_message", "error"):
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()[:240]
+                return sanitize_sensitive_text(value.strip(), max_length=240)
 
     return f"http_{response.status_code}"
 

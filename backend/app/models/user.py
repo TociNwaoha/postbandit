@@ -62,3 +62,6 @@ class User(Base):
     storage_usage: Mapped["UserStorageUsage | None"] = relationship(
         "UserStorageUsage", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    social_workflows: Mapped[list["SocialWorkflow"]] = relationship(
+        "SocialWorkflow", back_populates="user", cascade="all, delete-orphan"
+    )

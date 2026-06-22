@@ -18,6 +18,9 @@ from app.models.editor_asset import EditorAsset
 from app.models.editor_render import EditorRender
 from app.models.user_storage_usage import UserStorageUsage
 from app.models.clip_overlay_asset import ClipOverlayAsset
+from app.models.social_workflow import SocialWorkflow
+from app.models.social_workflow_run import SocialWorkflowRun
+from app.models.social_workflow_source_post import SocialWorkflowSourcePost
 
 __all__ = [
     "User",
@@ -40,4 +43,7 @@ __all__ = [
     "EditorRender",
     "UserStorageUsage",
     "ClipOverlayAsset",
+    "SocialWorkflow",
+    "SocialWorkflowRun",
+    "SocialWorkflowSourcePost",
 ]

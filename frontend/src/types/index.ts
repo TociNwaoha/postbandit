@@ -9,7 +9,7 @@ export interface User {
   updated_at: string;
 }
 
-export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist";
+export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram";
 export type ClipProfile = "viral" | "sermon";
 export type VideoStatus =
   | "queued"
@@ -500,6 +500,72 @@ export interface FullVideoExportResponse {
   export_id: string;
   export_status: string;
   reused_existing_export: boolean;
+}
+
+export type SocialWorkflowStatus = "active" | "paused";
+export type SocialWorkflowCopyMode = "reuse_source" | "platform_ai" | "both";
+export type SocialWorkflowRunStatus =
+  | "detected"
+  | "importing"
+  | "imported_processing"
+  | "ready_to_publish"
+  | "publishing"
+  | "completed"
+  | "original_required"
+  | "import_failed"
+  | "partial_failed";
+export type SocialWorkflowSourceStatus = SocialWorkflowRunStatus;
+
+export interface SocialWorkflowRun {
+  id: string;
+  user_id: string;
+  workflow_id: string;
+  status: SocialWorkflowRunStatus;
+  publish_job_ids_json: string[];
+  destination_results_json: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SocialWorkflowSourcePost {
+  id: string;
+  user_id: string;
+  workflow_id: string;
+  source_account_id: string | null;
+  source_platform: SocialPlatform;
+  external_post_id: string;
+  permalink: string | null;
+  caption_snapshot: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  status: SocialWorkflowSourceStatus;
+  video_id: string | null;
+  export_id: string | null;
+  workflow_run_id: string | null;
+  error_message: string | null;
+  raw_metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  workflow_run?: SocialWorkflowRun | null;
+}
+
+export interface SocialWorkflow {
+  id: string;
+  user_id: string;
+  name: string;
+  source_platform: SocialPlatform;
+  source_account_id: string | null;
+  status: SocialWorkflowStatus;
+  copy_mode: SocialWorkflowCopyMode;
+  auto_publish: boolean;
+  destination_targets_json: Array<Record<string, unknown>>;
+  poll_cursor_json: Record<string, unknown>;
+  last_polled_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  source_posts: SocialWorkflowSourcePost[];
 }
 
 

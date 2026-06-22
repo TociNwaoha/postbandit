@@ -22,6 +22,7 @@ class VideoSourceType(str, enum.Enum):
     youtube_single = "youtube_single"
     youtube_playlist = "youtube_playlist"
     youtube = "youtube"
+    instagram = "instagram"
 
 
 class VideoStatus(str, enum.Enum):
