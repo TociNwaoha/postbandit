@@ -76,13 +76,17 @@ def upgrade() -> None:
                   AND column_name = 'copy_mode'
                   AND udt_name <> 'social_workflow_copy_mode'
             ) THEN
-                UPDATE social_workflows
-                SET copy_mode = 'both'
-                WHERE copy_mode::text NOT IN ('reuse_source', 'platform_ai', 'both');
                 ALTER TABLE social_workflows ALTER COLUMN copy_mode DROP DEFAULT;
                 ALTER TABLE social_workflows
                 ALTER COLUMN copy_mode TYPE social_workflow_copy_mode
-                USING copy_mode::text::social_workflow_copy_mode;
+                USING (
+                    CASE
+                        WHEN copy_mode::text IN ('reuse_source', 'platform_ai', 'both') THEN copy_mode::text
+                        WHEN copy_mode::text IN ('ai_copy', 'ai', 'platform_copy') THEN 'platform_ai'
+                        WHEN copy_mode::text IN ('source', 'source_copy', 'original', 'reuse_original') THEN 'reuse_source'
+                        ELSE 'both'
+                    END
+                )::social_workflow_copy_mode;
                 ALTER TABLE social_workflows ALTER COLUMN copy_mode SET DEFAULT 'both'::social_workflow_copy_mode;
             END IF;
 
@@ -149,23 +153,26 @@ def upgrade() -> None:
                   AND column_name = 'status'
                   AND udt_name <> 'social_workflow_run_status'
             ) THEN
-                UPDATE social_workflow_runs
-                SET status = 'detected'
-                WHERE status::text NOT IN (
-                    'detected',
-                    'importing',
-                    'imported_processing',
-                    'ready_to_publish',
-                    'publishing',
-                    'completed',
-                    'original_required',
-                    'import_failed',
-                    'partial_failed'
-                );
                 ALTER TABLE social_workflow_runs ALTER COLUMN status DROP DEFAULT;
                 ALTER TABLE social_workflow_runs
                 ALTER COLUMN status TYPE social_workflow_run_status
-                USING status::text::social_workflow_run_status;
+                USING (
+                    CASE
+                        WHEN status::text IN (
+                            'detected',
+                            'importing',
+                            'imported_processing',
+                            'ready_to_publish',
+                            'publishing',
+                            'completed',
+                            'original_required',
+                            'import_failed',
+                            'partial_failed'
+                        ) THEN status::text
+                        WHEN status::text IN ('failed', 'error') THEN 'import_failed'
+                        ELSE 'detected'
+                    END
+                )::social_workflow_run_status;
                 ALTER TABLE social_workflow_runs ALTER COLUMN status SET DEFAULT 'detected'::social_workflow_run_status;
             END IF;
 
