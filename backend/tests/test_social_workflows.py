@@ -65,3 +65,4 @@ def test_source_poll_error_message_marks_expired_instagram_session_as_reconnect_
 
     assert is_reconnect_required_source_error(raw_error) is True
     assert source_poll_error_message(SocialPlatform.instagram, raw_error) == "Reconnect the Instagram source account."
+    assert is_reconnect_required_source_error("Reconnect the Instagram source account.") is True

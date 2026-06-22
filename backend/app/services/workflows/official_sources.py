@@ -353,6 +353,7 @@ def is_reconnect_required_source_error(error: object) -> bool:
         "expired token",
         "code 190",
         "reconnect required",
+        "reconnect the",
         "refresh token is unavailable",
     )
     if any(marker in normalized for marker in reconnect_markers):
