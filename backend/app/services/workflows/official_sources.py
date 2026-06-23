@@ -28,6 +28,7 @@ from app.models.video import Video, VideoImportMode, VideoImportState, VideoSour
 from app.services.ai_copy import AICopyError, AICopyUnavailableError, generate_platform_copy, provider_configured
 from app.services.crypto import decrypt_secret, encrypt_secret
 from app.services.r2 import r2_client
+from app.services.social.instagram import ensure_instagram_account_token
 from app.services.social.meta import GraphRequestError, graph_get
 from app.services.social.security import redact_url, sanitize_sensitive_text
 
@@ -322,7 +323,7 @@ def _iter_facebook_page_videos(account: ConnectedAccount) -> list[OfficialSource
 
 def _iter_source_media(workflow: SocialWorkflow, account: ConnectedAccount) -> list[OfficialSourceMedia]:
     if workflow.source_platform == SocialPlatform.instagram:
-        access_token = decrypt_secret(account.access_token_encrypted)
+        access_token = ensure_instagram_account_token(account)
         return _iter_instagram_media(access_token)
     if workflow.source_platform == SocialPlatform.youtube:
         return _iter_youtube_uploads(account)
