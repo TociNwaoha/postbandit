@@ -470,6 +470,7 @@ def poll_source_workflow(workflow_id: str) -> dict:
     created = 0
     enqueued = 0
     new_source_ids: list[str] = []
+    dispatch_source_ids: list[str] = []
     now = datetime.now(timezone.utc)
 
     with SyncSessionLocal() as db:
@@ -555,13 +556,32 @@ def poll_source_workflow(workflow_id: str) -> dict:
             created += 1
             new_source_ids.append(str(source_post.id))
 
+        # Redispatch existing detected posts as well as brand-new detections.
+        # This makes Poll Now self-healing if a previous deploy created ledger
+        # rows but lost the import task before workers could claim them.
+        detected_source_ids = db.execute(
+            select(SocialWorkflowSourcePost.id)
+            .where(
+                SocialWorkflowSourcePost.workflow_id == workflow.id,
+                SocialWorkflowSourcePost.status == SocialWorkflowSourceStatus.detected,
+            )
+            .order_by(SocialWorkflowSourcePost.created_at.asc())
+            .limit(50)
+        ).scalars().all()
+        seen_source_ids: set[str] = set()
+        for source_id in [*new_source_ids, *[str(source_id) for source_id in detected_source_ids]]:
+            if source_id in seen_source_ids:
+                continue
+            seen_source_ids.add(source_id)
+            dispatch_source_ids.append(source_id)
+
         workflow.last_polled_at = now
         workflow.last_error = None
         db.commit()
 
     from app.worker.tasks.social_workflows import import_source_post_media
 
-    for source_id in new_source_ids:
+    for source_id in dispatch_source_ids:
         import_source_post_media.apply_async(args=[source_id], queue="ingest")
         enqueued += 1
 
