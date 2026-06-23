@@ -931,6 +931,44 @@ def _source_post_destination_targets(source_post: SocialWorkflowSourcePost, work
     return workflow.destination_targets_json or []
 
 
+def _resolve_destination_account(
+    db,
+    workflow: SocialWorkflow,
+    target: dict,
+) -> tuple[ConnectedAccount | None, dict]:
+    account_id_raw = target.get("connected_account_id")
+    platform_raw = target.get("platform")
+    try:
+        account_id = uuid.UUID(str(account_id_raw))
+        platform = SocialPlatform(str(platform_raw))
+    except (TypeError, ValueError):
+        return None, target
+
+    account = db.get(ConnectedAccount, account_id)
+    if account and account.user_id == workflow.user_id and account.platform == platform:
+        return account, target
+
+    # OAuth reconnects can replace the connected-account row. Relink a stale
+    # workflow destination to the user's newest account for the same platform.
+    candidates = db.execute(
+        select(ConnectedAccount)
+        .where(
+            ConnectedAccount.user_id == workflow.user_id,
+            ConnectedAccount.platform == platform,
+        )
+        .order_by(ConnectedAccount.updated_at.desc())
+    ).scalars().all()
+    if len(candidates) != 1:
+        return None, target
+    account = candidates[0]
+    repaired = {
+        **target,
+        "connected_account_id": str(account.id),
+        "display_name": account.display_name or account.username_or_channel_name or account.external_account_id,
+    }
+    return account, repaired
+
+
 def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: SocialWorkflow, export: Export) -> list[str]:
     clip = db.get(Clip, export.clip_id)
     if not clip:
@@ -939,19 +977,21 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
     platforms = [str(target.get("platform")) for target in targets if target.get("platform")]
     copy_by_platform = _copy_for_destinations(source_post, workflow, clip, platforms)
     created_job_ids: list[str] = []
+    repaired_targets: list[dict] = []
+    targets_changed = False
 
     for target in targets:
-        account_id_raw = target.get("connected_account_id")
         platform_raw = target.get("platform")
-        if not account_id_raw or not platform_raw:
+        if not platform_raw:
             continue
         try:
-            account_id = uuid.UUID(str(account_id_raw))
             platform = SocialPlatform(str(platform_raw))
         except ValueError:
             continue
-        account = db.get(ConnectedAccount, account_id)
-        if not account or account.user_id != workflow.user_id or account.platform != platform:
+        account, repaired_target = _resolve_destination_account(db, workflow, target)
+        repaired_targets.append(repaired_target)
+        targets_changed = targets_changed or repaired_target != target
+        if not account:
             continue
         existing = db.execute(
             select(PublishJob.id).where(
@@ -988,6 +1028,14 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
         db.add(job)
         db.flush()
         created_job_ids.append(str(job.id))
+
+    if targets_changed:
+        metadata = dict(source_post.raw_metadata_json or {})
+        if metadata.get("workflow_destination_targets_override"):
+            metadata["workflow_destination_targets_override"] = repaired_targets
+            source_post.raw_metadata_json = metadata
+        else:
+            workflow.destination_targets_json = repaired_targets
     return created_job_ids
 
 
@@ -1069,6 +1117,21 @@ def start_source_post_workflow(source_post_id: str, destination_targets: list[di
             }
 
         job_ids = _create_publish_jobs(db, source_post, workflow, export)
+        if not job_ids:
+            _sync_status(
+                source_post,
+                SocialWorkflowSourceStatus.ready_to_publish,
+                "No valid destination account is connected. Reconnect or select a destination, then publish again.",
+            )
+            db.commit()
+            return {
+                "source_post_id": source_post_id,
+                "status": SocialWorkflowSourceStatus.ready_to_publish.value,
+                "import_task_id": None,
+                "publish_job_ids": [],
+                "publish_task_ids": [],
+                "skipped": "no_valid_destination",
+            }
         _sync_status(source_post, SocialWorkflowSourceStatus.publishing)
         if source_post.workflow_run:
             source_post.workflow_run.publish_job_ids_json = job_ids
@@ -1146,6 +1209,13 @@ def continue_ready_official_source_workflows() -> dict:
             if not workflow.auto_publish:
                 continue
             job_ids = _create_publish_jobs(db, source_post, workflow, export)
+            if not job_ids:
+                _sync_status(
+                    source_post,
+                    SocialWorkflowSourceStatus.ready_to_publish,
+                    "No valid destination account is connected. Reconnect or select a destination, then publish again.",
+                )
+                continue
             jobs_to_enqueue.extend(job_ids)
             _sync_status(source_post, SocialWorkflowSourceStatus.publishing)
             if source_post.workflow_run:
@@ -1167,6 +1237,12 @@ def continue_ready_official_source_workflows() -> dict:
         for source_post in publishing_posts:
             jobs = db.execute(select(PublishJob).where(PublishJob.workflow_source_post_id == source_post.id)).scalars().all()
             if not jobs:
+                _sync_status(
+                    source_post,
+                    SocialWorkflowSourceStatus.ready_to_publish,
+                    "No destination jobs were created. Reconnect or select a destination, then publish again.",
+                )
+                finalized += 1
                 continue
             terminal = {PublishStatus.published, PublishStatus.failed, PublishStatus.waiting_user_action, PublishStatus.provider_not_configured, PublishStatus.cancelled}
             if any(job.status not in terminal for job in jobs):
