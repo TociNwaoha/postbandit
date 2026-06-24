@@ -1229,9 +1229,18 @@ def continue_ready_official_source_workflows() -> dict:
             for job_id in jobs_to_enqueue:
                 execute_publish_job.apply_async(args=[job_id], queue="publish")
 
+        # Revisit partial failures because a failed destination job can be retried later.
+        # This keeps the source-post summary aligned with the current job outcomes.
         publishing_posts = db.execute(
             select(SocialWorkflowSourcePost)
-            .where(SocialWorkflowSourcePost.status == SocialWorkflowSourceStatus.publishing)
+            .where(
+                SocialWorkflowSourcePost.status.in_(
+                    [
+                        SocialWorkflowSourceStatus.publishing,
+                        SocialWorkflowSourceStatus.partial_failed,
+                    ]
+                )
+            )
             .limit(50)
         ).scalars().all()
         for source_post in publishing_posts:
