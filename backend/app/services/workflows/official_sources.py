@@ -44,6 +44,7 @@ YOUTUBE_PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItem
 FACEBOOK_VIDEO_FIELDS = "id,title,description,permalink_url,picture,created_time,source"
 MAX_SOURCE_POSTS_PER_POLL = 25
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+WORKFLOW_SOURCE_PLACEHOLDER_TITLE = "Workflow Source Video"
 
 
 @dataclass(frozen=True)
@@ -687,6 +688,34 @@ def _platform_title(platform: SocialPlatform) -> str:
     return platform.value.title()
 
 
+def _clean_workflow_title_candidate(value: object, max_length: int = 140) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.replace("\n", " ").split())
+    if not text or text == WORKFLOW_SOURCE_PLACEHOLDER_TITLE:
+        return None
+    if len(text) > max_length:
+        return text[: max_length - 3].rstrip() + "..."
+    return text
+
+
+def workflow_source_clip_title(source_post: SocialWorkflowSourcePost, video: Video | None = None) -> str:
+    raw_metadata = source_post.raw_metadata_json if isinstance(source_post.raw_metadata_json, dict) else {}
+    candidates: list[object] = [
+        video.title if video else None,
+        raw_metadata.get("title"),
+        source_post.caption_snapshot,
+        raw_metadata.get("caption"),
+        raw_metadata.get("description"),
+        raw_metadata.get("name"),
+    ]
+    for candidate in candidates:
+        title = _clean_workflow_title_candidate(candidate)
+        if title:
+            return title
+    return f"{_platform_title(source_post.source_platform)} source video"
+
+
 def _raw_media_url_for_source(platform: SocialPlatform, raw_metadata: dict, access_token: str) -> str | None:
     if platform == SocialPlatform.instagram:
         return _raw_instagram_media_url(raw_metadata, access_token)
@@ -823,6 +852,7 @@ def _ensure_full_video_export(db, source_post: SocialWorkflowSourcePost, video: 
     clip = db.execute(
         select(Clip).where(Clip.video_id == video.id, Clip.start_time <= 0.01).order_by(Clip.duration_sec.desc().nullslast())
     ).scalars().first()
+    derived_title = workflow_source_clip_title(source_post, video)
     if not clip or abs(float(clip.end_time) - duration) > 0.75:
         words = db.execute(
             select(TranscriptSegment.word)
@@ -837,11 +867,14 @@ def _ensure_full_video_export(db, source_post: SocialWorkflowSourcePost, video: 
             score=0.0,
             hook_score=0.0,
             energy_score=0.0,
-            title="Workflow Source Video",
+            title=derived_title,
             transcript_text=" ".join([word for word in words if word])[:5000],
             status=ClipStatus.ready,
         )
         db.add(clip)
+        db.flush()
+    elif clip.title == WORKFLOW_SOURCE_PLACEHOLDER_TITLE and derived_title != WORKFLOW_SOURCE_PLACEHOLDER_TITLE:
+        clip.title = derived_title
         db.flush()
 
     if not clip.thumbnail_key:
