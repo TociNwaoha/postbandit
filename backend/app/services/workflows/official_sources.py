@@ -1091,14 +1091,20 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
         targets_changed = targets_changed or repaired_target != target
         if not account:
             continue
-        existing = db.execute(
-            select(PublishJob.id).where(
+        existing_job = db.execute(
+            select(PublishJob).where(
                 PublishJob.workflow_source_post_id == source_post.id,
                 PublishJob.connected_account_id == account.id,
             )
-        ).scalar_one_or_none()
-        if existing:
-            created_job_ids.append(str(existing))
+        ).scalars().first()
+        if existing_job:
+            repaired_title = copy.get("title") or clip.title or source_post.caption_snapshot
+            if repaired_title:
+                if existing_job.title == WORKFLOW_SOURCE_PLACEHOLDER_TITLE:
+                    existing_job.title = str(repaired_title)[:500]
+                if existing_job.content_title_snapshot == WORKFLOW_SOURCE_PLACEHOLDER_TITLE:
+                    existing_job.content_title_snapshot = str(repaired_title)[:500]
+            created_job_ids.append(str(existing_job.id))
             continue
         copy = copy_by_platform.get(platform.value, {})
         job = PublishJob(
