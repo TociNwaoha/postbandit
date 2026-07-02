@@ -48,7 +48,7 @@ services:
     volumes:
       - ./backend:/app
       - clipbandit_storage:/tmp/clipbandit-storage
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -106,7 +106,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
-    command: npm run dev
+    command: sh -c "npm run build && npm run start"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/auth/providers"]
       interval: 30s
