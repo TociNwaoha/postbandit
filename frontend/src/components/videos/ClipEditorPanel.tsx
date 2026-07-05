@@ -42,8 +42,8 @@ interface ClipEditorPanelProps {
 }
 
 const ACTIVE_EXPORT_STATUSES = new Set(["queued", "rendering"]);
-const CAPTION_VERTICAL_MIN = 5;
-const CAPTION_VERTICAL_MAX = 90;
+const CAPTION_VERTICAL_MIN = 0;
+const CAPTION_VERTICAL_MAX = 98;
 const CAPTION_SCALE_MIN = 0.25;
 const CAPTION_SCALE_MAX = 2;
 const OVERLAY_IMAGE_WIDTH_MIN = 0.05;
@@ -1075,13 +1075,13 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                 ) : null}
 
                 {captionFormat === "burned_in" ? (
-                  <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center">
+                  <div className="pointer-events-none absolute inset-0 z-20">
                     <div
-                      className="w-full"
+                      className="absolute left-0 right-0 w-full"
                       style={{
                         paddingLeft: `${captionPreviewLayout.marginXPercent}%`,
                         paddingRight: `${captionPreviewLayout.marginXPercent}%`,
-                        paddingBottom: `${captionVerticalPosition}%`,
+                        bottom: `${captionVerticalPosition}%`,
                       }}
                     >
                       <div
