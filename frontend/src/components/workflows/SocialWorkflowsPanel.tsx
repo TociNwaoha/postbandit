@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
+import { UploadModal } from "@/components/upload/UploadModal";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -10,11 +11,13 @@ import { api, ApiError } from "@/lib/api";
 import {
   ConnectedAccount,
   Export,
+  FullVideoExportResponse,
   SocialPlatform,
   SocialPublishJob,
   SocialWorkflow,
   SocialWorkflowImportMode,
   SocialWorkflowSourcePost,
+  VideoListItem,
 } from "@/types";
 
 const DESTINATION_PLATFORMS: SocialPlatform[] = ["instagram", "threads", "facebook", "youtube", "x", "tiktok"];
@@ -52,6 +55,12 @@ function sourcePostTitle(post: SocialWorkflowSourcePost): string {
 function exportLabel(item: Export): string {
   const title = item.clip_title || item.video_title || `Export ${shortId(item.id)}`;
   return `${title} · ${item.aspect_ratio} · ${shortId(item.id)}`;
+}
+
+function videoLabel(item: VideoListItem): string {
+  const title = item.title || `Video ${shortId(item.id)}`;
+  const duration = item.duration_sec ? `${Math.round(item.duration_sec / 60)}m` : "ready";
+  return `${title} · ${duration} · ${shortId(item.id)}`;
 }
 
 function sourceStatusDescription(post: SocialWorkflowSourcePost): string {
@@ -150,12 +159,17 @@ export function SocialWorkflowsPanel() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [workflows, setWorkflows] = useState<SocialWorkflow[]>([]);
   const [readyExports, setReadyExports] = useState<Export[]>([]);
+  const [readyVideos, setReadyVideos] = useState<VideoListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [attachingPostId, setAttachingPostId] = useState<string | null>(null);
+  const [preparingVideoPostId, setPreparingVideoPostId] = useState<string | null>(null);
   const [startingPostId, setStartingPostId] = useState<string | null>(null);
   const [selectedExportByPost, setSelectedExportByPost] = useState<Record<string, string>>({});
+  const [selectedVideoByPost, setSelectedVideoByPost] = useState<Record<string, string>>({});
   const [selectedDestinationIdsByPost, setSelectedDestinationIdsByPost] = useState<Record<string, string[]>>({});
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("Social repurpose workflow");
   const [sourcePlatform, setSourcePlatform] = useState<SocialPlatform>("instagram");
@@ -169,14 +183,16 @@ export function SocialWorkflowsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [accountRows, workflowRows, exportRows] = await Promise.all([
+      const [accountRows, workflowRows, exportRows, videoRows] = await Promise.all([
         api.get<ConnectedAccount[]>("/api/social/accounts"),
         api.get<SocialWorkflow[]>("/api/social/workflows"),
         api.get<Export[]>("/api/exports"),
+        api.get<VideoListItem[]>("/api/videos?limit=100&offset=0"),
       ]);
       setAccounts(accountRows);
       setWorkflows(workflowRows);
       setReadyExports(exportRows.filter((item) => item.status === "ready"));
+      setReadyVideos(videoRows.filter((item) => item.status === "ready"));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load workflows");
     } finally {
@@ -244,6 +260,7 @@ export function SocialWorkflowsPanel() {
   };
 
   const pollNow = async (workflowId: string) => {
+    setNotice(null);
     setError(null);
     try {
       await api.post(`/api/social/workflows/${workflowId}/poll-now`, {});
@@ -254,6 +271,7 @@ export function SocialWorkflowsPanel() {
   };
 
   const pauseOrResume = async (workflow: SocialWorkflow) => {
+    setNotice(null);
     setError(null);
     try {
       await api.patch<SocialWorkflow>(`/api/social/workflows/${workflow.id}`, {
@@ -265,21 +283,62 @@ export function SocialWorkflowsPanel() {
     }
   };
 
-  const attachExport = async (postId: string) => {
+  const attachExport = async (workflow: SocialWorkflow, post: SocialWorkflowSourcePost, exportIdOverride?: string) => {
+    const postId = post.id;
     const exportId = selectedExportByPost[postId] || readyExports[0]?.id;
-    if (!exportId) {
+    const selectedExportId = exportIdOverride || exportId;
+    if (!selectedExportId) {
       setError("No ready exports are available to attach yet.");
       return;
     }
     setAttachingPostId(postId);
+    setNotice(null);
     setError(null);
     try {
-      await api.post(`/api/social/workflows/source-posts/${postId}/attach-export`, { export_id: exportId });
+      await api.post(`/api/social/workflows/source-posts/${postId}/attach-export`, { export_id: selectedExportId });
+      await api.post(`/api/social/workflows/source-posts/${postId}/start`, {
+        destinations: selectedDestinationsForPost(workflow, postId)
+          .map((accountId) => destinationAccounts.find((account) => account.id === accountId))
+          .filter(Boolean)
+          .map((account) => ({ platform: account!.platform, connected_account_id: account!.id })),
+      });
+      setNotice("Export attached. Publishing will start now, or automatically after the export finishes rendering.");
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to attach export");
+      setError(err instanceof ApiError ? err.message : "Failed to attach export and continue workflow");
     } finally {
       setAttachingPostId(null);
+    }
+  };
+
+  const useReadyVideoOriginal = async (workflow: SocialWorkflow, post: SocialWorkflowSourcePost) => {
+    const videoId = selectedVideoByPost[post.id] || readyVideos[0]?.id;
+    if (!videoId) {
+      setError("No ready videos are available yet. Upload the original first, then wait for processing to finish.");
+      return;
+    }
+    setPreparingVideoPostId(post.id);
+    setNotice(null);
+    setError(null);
+    try {
+      const payload = await api.post<FullVideoExportResponse>(`/api/social/videos/${videoId}/full-export`, {});
+      await api.post(`/api/social/workflows/source-posts/${post.id}/attach-export`, { export_id: payload.export_id });
+      if (payload.export_status === "ready") {
+        await api.post(`/api/social/workflows/source-posts/${post.id}/start`, {
+          destinations: selectedDestinationsForPost(workflow, post.id)
+            .map((accountId) => destinationAccounts.find((account) => account.id === accountId))
+            .filter(Boolean)
+            .map((account) => ({ platform: account!.platform, connected_account_id: account!.id })),
+        });
+        setNotice("Ready video attached and publishing started.");
+      } else {
+        setNotice("Ready video attached. PostBandit is rendering the full export and will publish when it is ready.");
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to use this video as the workflow original");
+    } finally {
+      setPreparingVideoPostId(null);
     }
   };
 
@@ -303,6 +362,7 @@ export function SocialWorkflowsPanel() {
       return;
     }
     setStartingPostId(post.id);
+    setNotice(null);
     setError(null);
     try {
       await api.post(`/api/social/workflows/source-posts/${post.id}/start`, { destinations });
@@ -325,6 +385,7 @@ export function SocialWorkflowsPanel() {
   return (
     <div className="space-y-5">
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      {notice ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">{notice}</div> : null}
 
       <Card className="space-y-4">
         <div>
@@ -707,31 +768,77 @@ export function SocialWorkflowsPanel() {
                               <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
                                 <p className="text-xs font-semibold text-orange-800">Original file required</p>
                                 <p className="mt-1 text-xs text-orange-700">
-                                  Attach an existing ready PostBandit export to continue this workflow run.
+                                  Official APIs can see this post but cannot provide a reusable video file. Attach a ready export,
+                                  select a ready uploaded video, or upload the original file to continue.
                                 </p>
-                                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                                  <select
-                                    value={selectedExportByPost[post.id] || readyExports[0]?.id || ""}
-                                    onChange={(event) =>
-                                      setSelectedExportByPost((current) => ({ ...current, [post.id]: event.target.value }))
-                                    }
-                                    className="min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-2 py-1.5 text-xs text-[var(--app-text)] outline-none"
-                                  >
-                                    {readyExports.length === 0 ? <option value="">No ready exports available</option> : null}
-                                    {readyExports.map((item) => (
-                                      <option key={item.id} value={item.id}>
-                                        {exportLabel(item)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    disabled={readyExports.length === 0 || attachingPostId === post.id}
-                                    onClick={() => void attachExport(post.id)}
-                                  >
-                                    {attachingPostId === post.id ? "Attaching..." : "Attach export"}
-                                  </Button>
+                                <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                                  <div className="rounded-lg border border-orange-200 bg-white/70 p-2">
+                                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-orange-800">
+                                      Use existing ready export
+                                    </p>
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                      <select
+                                        value={selectedExportByPost[post.id] || readyExports[0]?.id || ""}
+                                        onChange={(event) =>
+                                          setSelectedExportByPost((current) => ({ ...current, [post.id]: event.target.value }))
+                                        }
+                                        className="min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-2 py-1.5 text-xs text-[var(--app-text)] outline-none"
+                                      >
+                                        {readyExports.length === 0 ? <option value="">No ready exports available</option> : null}
+                                        {readyExports.map((item) => (
+                                          <option key={item.id} value={item.id}>
+                                            {exportLabel(item)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={readyExports.length === 0 || attachingPostId === post.id}
+                                        onClick={() => void attachExport(workflow, post)}
+                                      >
+                                        {attachingPostId === post.id ? "Continuing..." : "Attach & publish"}
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-lg border border-orange-200 bg-white/70 p-2">
+                                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-orange-800">
+                                      Use uploaded original video
+                                    </p>
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                      <select
+                                        value={selectedVideoByPost[post.id] || readyVideos[0]?.id || ""}
+                                        onChange={(event) =>
+                                          setSelectedVideoByPost((current) => ({ ...current, [post.id]: event.target.value }))
+                                        }
+                                        className="min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-2 py-1.5 text-xs text-[var(--app-text)] outline-none"
+                                      >
+                                        {readyVideos.length === 0 ? <option value="">No ready videos available</option> : null}
+                                        {readyVideos.map((item) => (
+                                          <option key={item.id} value={item.id}>
+                                            {videoLabel(item)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={readyVideos.length === 0 || preparingVideoPostId === post.id}
+                                        onClick={() => void useReadyVideoOriginal(workflow, post)}
+                                      >
+                                        {preparingVideoPostId === post.id ? "Preparing..." : "Use video"}
+                                      </Button>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                      <p className="text-[11px] text-orange-700">
+                                        Upload first, then select it here after processing finishes.
+                                      </p>
+                                      <Button size="sm" variant="ghost" onClick={() => setIsUploadOpen(true)}>
+                                        Upload original
+                                      </Button>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             ) : null}
@@ -790,6 +897,14 @@ export function SocialWorkflowsPanel() {
           })
         )}
       </div>
+      <UploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploaded={async () => {
+          setNotice("Original uploaded. Wait for processing to finish, then select it under Use uploaded original video.");
+          await load();
+        }}
+      />
     </div>
   );
 }

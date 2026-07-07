@@ -1091,6 +1091,7 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
         targets_changed = targets_changed or repaired_target != target
         if not account:
             continue
+        copy = copy_by_platform.get(platform.value, {})
         existing_job = db.execute(
             select(PublishJob).where(
                 PublishJob.workflow_source_post_id == source_post.id,
@@ -1106,7 +1107,6 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
                     existing_job.content_title_snapshot = str(repaired_title)[:500]
             created_job_ids.append(str(existing_job.id))
             continue
-        copy = copy_by_platform.get(platform.value, {})
         job = PublishJob(
             user_id=workflow.user_id,
             export_id=export.id,

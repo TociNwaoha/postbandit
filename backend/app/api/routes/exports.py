@@ -40,7 +40,7 @@ def _resolve_caption_color_variant(
 def _normalize_caption_vertical_position(value: float | None) -> float | None:
     if value is None:
         return None
-    return round(min(90.0, max(5.0, float(value))), 2)
+    return round(min(98.0, max(0.0, float(value))), 2)
 
 
 def _normalize_caption_scale(value: float | None) -> float:

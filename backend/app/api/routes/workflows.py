@@ -413,8 +413,10 @@ async def attach_export_to_source_post(
     export = await db.scalar(select(Export).where(Export.id == body.export_id, Export.user_id == current_user.id))
     if not export:
         raise HTTPException(status_code=404, detail="Export not found")
-    if export.status != ExportStatus.ready or not export.storage_key:
-        raise HTTPException(status_code=400, detail="Attached export must be ready")
+    if export.status == ExportStatus.ready and not export.storage_key:
+        raise HTTPException(status_code=400, detail="Attached export is missing its media file")
+    if export.status not in {ExportStatus.ready, ExportStatus.queued, ExportStatus.rendering}:
+        raise HTTPException(status_code=400, detail="Attached export must be ready, queued, or rendering")
     source_post.export_id = export.id
     source_post.status = SocialWorkflowSourceStatus.ready_to_publish
     source_post.error_message = None
