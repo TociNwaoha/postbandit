@@ -8,6 +8,10 @@ class UserBase(BaseModel):
     email: EmailStr
     tier: UserTier = UserTier.starter
     videos_used: int = 0
+    onboarding_completed_at: datetime | None = None
+    onboarding_skipped_at: datetime | None = None
+    onboarding_role: str | None = None
+    onboarding_metadata_json: dict | None = None
 
 
 class UserCreate(BaseModel):

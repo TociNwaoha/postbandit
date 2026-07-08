@@ -1,12 +1,32 @@
 export type UserTier = "starter" | "creator" | "agency";
+export type OnboardingRole = "creator" | "founder" | "agency" | "team";
 
 export interface User {
   id: string;
   email: string;
   tier: UserTier;
   videos_used: number;
+  onboarding_completed_at?: string | null;
+  onboarding_skipped_at?: string | null;
+  onboarding_role?: OnboardingRole | null;
+  onboarding_metadata_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OnboardingStatus {
+  completed_at: string | null;
+  skipped_at: string | null;
+  role: OnboardingRole | null;
+  tier: UserTier;
+  metadata: Record<string, unknown>;
+  should_onboard: boolean;
+}
+
+export interface OnboardingProfilePatch {
+  role?: OnboardingRole | null;
+  tier?: UserTier | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram" | "facebook";

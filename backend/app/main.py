@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from sqlalchemy import select
 
-from app.api.routes import auth, carousels, clips, content_queue, editor, exports, health, social, storage, videos, workflows
+from app.api.routes import auth, carousels, clips, content_queue, editor, exports, health, onboarding, social, storage, videos, workflows
 from app.config import settings
 from app.database import SessionLocal, engine
 
@@ -106,5 +106,6 @@ app.include_router(storage.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(social.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
+app.include_router(onboarding.router, prefix="/api")
 
 app.include_router(content_queue.router, prefix="/api")
