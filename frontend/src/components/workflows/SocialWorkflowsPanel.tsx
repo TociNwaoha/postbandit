@@ -168,6 +168,7 @@ export function SocialWorkflowsPanel() {
   const [selectedExportByPost, setSelectedExportByPost] = useState<Record<string, string>>({});
   const [selectedVideoByPost, setSelectedVideoByPost] = useState<Record<string, string>>({});
   const [selectedDestinationIdsByPost, setSelectedDestinationIdsByPost] = useState<Record<string, string[]>>({});
+  const [expandedWorkflowIds, setExpandedWorkflowIds] = useState<Set<string>>(new Set());
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -350,6 +351,18 @@ export function SocialWorkflowsPanel() {
     const current = selectedDestinationsForPost(workflow, postId);
     const next = current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId];
     setSelectedDestinationIdsByPost((state) => ({ ...state, [postId]: next }));
+  };
+
+  const toggleWorkflowVideos = (workflowId: string) => {
+    setExpandedWorkflowIds((current) => {
+      const next = new Set(current);
+      if (next.has(workflowId)) {
+        next.delete(workflowId);
+      } else {
+        next.add(workflowId);
+      }
+      return next;
+    });
   };
 
   const startSourcePost = async (workflow: SocialWorkflow, post: SocialWorkflowSourcePost) => {
@@ -571,6 +584,7 @@ export function SocialWorkflowsPanel() {
             const needsReconnect = workflowNeedsReconnect(workflow);
             const sourceMessage = workflowSourceMessage(workflow);
             const sourceBrand = getPlatformBrandMeta(workflow.source_platform);
+            const workflowVideosOpen = expandedWorkflowIds.has(workflow.id);
             return (
             <Card key={workflow.id} className="space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -654,10 +668,23 @@ export function SocialWorkflowsPanel() {
                 <p className="text-xs text-[var(--app-muted)]">
                   Detected source posts, available recovery actions, and destination publish jobs created by this workflow.
                 </p>
+                {workflow.source_posts.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => toggleWorkflowVideos(workflow.id)}
+                    >
+                      {workflowVideosOpen ? "Hide workflow videos" : "View workflow videos"}
+                    </Button>
+                    <span className="text-xs text-[var(--app-muted)]">
+                      {workflow.source_posts.length} video(s) detected
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
-              <div className="space-y-3">
-                {workflow.source_posts.length === 0 ? (
+              {workflow.source_posts.length === 0 ? (
                   <div
                     className={`rounded-xl border border-dashed px-4 py-5 text-sm ${
                       needsReconnect
@@ -669,7 +696,14 @@ export function SocialWorkflowsPanel() {
                       ? `No source posts can be detected until the ${sourceBrand.displayName} source account is reconnected.`
                       : "No detected source posts yet. Use Poll now, or wait for the scheduled poll to find new posts from the selected source account."}
                   </div>
-                ) : (
+              ) : workflowVideosOpen ? (
+                <div className="space-y-3">
+                  {workflow.source_posts.length > 12 ? (
+                    <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                      Showing the first 12 workflow videos. Use filters/search in a future pass for larger workflow libraries.
+                    </p>
+                  ) : null}
+                  {(
                   workflow.source_posts.slice(0, 12).map((post) => {
                     const sourceBrand = getPlatformBrandMeta(post.source_platform);
                     const jobs = post.publish_jobs || [];
@@ -890,8 +924,9 @@ export function SocialWorkflowsPanel() {
                       </div>
                     );
                   })
-                )}
-              </div>
+                  )}
+                </div>
+              ) : null}
             </Card>
             );
           })
