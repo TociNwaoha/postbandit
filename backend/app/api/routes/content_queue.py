@@ -54,6 +54,7 @@ async def upsert_brand_profile(
     row.tone = body.tone
     row.use_phrases = body.use_phrases
     row.avoid_phrases = body.avoid_phrases
+    row.ai_cmo_enabled = body.ai_cmo_enabled
     row.post_frequency = body.post_frequency
     row.preferred_platforms = body.preferred_platforms
 

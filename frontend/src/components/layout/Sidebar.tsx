@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+
+import { ApiError, api } from "@/lib/api";
+import { BrandProfile } from "@/types";
 
 const workspaceNavItems = [
   {
@@ -128,6 +132,39 @@ export function Sidebar() {
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
   const initials = userEmail.slice(0, 2).toUpperCase();
+  const [aiCmoEnabled, setAiCmoEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    let active = true;
+
+    const loadAiCmoStatus = async () => {
+      try {
+        const profile = await api.get<BrandProfile>("/api/brand-profile");
+        if (active) setAiCmoEnabled(profile.ai_cmo_enabled ?? true);
+      } catch (err) {
+        if (active) {
+          setAiCmoEnabled(false);
+          if (!(err instanceof ApiError && err.status === 404)) {
+            // Non-blocking: sidebar still renders with the safe "off" indicator.
+            console.warn("[sidebar] failed to load AI CMO status", err);
+          }
+        }
+      }
+    };
+
+    const onStatusChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean }>).detail;
+      if (typeof detail?.enabled === "boolean") setAiCmoEnabled(detail.enabled);
+    };
+
+    void loadAiCmoStatus();
+    window.addEventListener("ai-cmo-status-changed", onStatusChanged);
+    return () => {
+      active = false;
+      window.removeEventListener("ai-cmo-status-changed", onStatusChanged);
+    };
+  }, [session?.user]);
 
   return (
     <aside className="flex min-h-screen w-60 flex-col border-r border-[var(--app-border)] bg-white">
@@ -163,7 +200,27 @@ export function Sidebar() {
           })}
         </div>
         <div className="pt-2">
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-subtle)]">AI CMO</p>
+          <div className="flex items-center gap-2 px-3 pb-1.5">
+            <span
+              className={`relative flex h-3 w-3 items-center justify-center rounded-full ${
+                aiCmoEnabled ? "bg-emerald-500" : "bg-red-500"
+              }`}
+              aria-label={aiCmoEnabled ? "AI CMO is on" : "AI CMO is off"}
+              title={aiCmoEnabled ? "AI CMO is on" : "AI CMO is off"}
+            >
+              <span
+                className={`absolute h-6 w-6 rounded-full blur-sm ${
+                  aiCmoEnabled ? "bg-emerald-400/35" : "bg-red-500/35"
+                }`}
+              />
+              <span
+                className={`absolute h-10 w-10 rounded-full blur-md ${
+                  aiCmoEnabled ? "bg-emerald-400/10" : "bg-red-500/10"
+                }`}
+              />
+            </span>
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--app-muted)]">AI CMO</p>
+          </div>
           <div className="space-y-0.5">
             {aiCmoNavItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");

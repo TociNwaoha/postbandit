@@ -17,6 +17,7 @@ class BrandProfileUpsertRequest(BaseModel):
     tone: str = Field(min_length=1, max_length=50)
     use_phrases: list[str] = Field(default_factory=list)
     avoid_phrases: list[str] = Field(default_factory=list)
+    ai_cmo_enabled: bool = True
     post_frequency: int = Field(default=1, ge=0, le=5)
     preferred_platforms: list[str] = Field(default_factory=list)
 
@@ -47,6 +48,7 @@ class BrandProfileResponse(BaseModel):
     tone: str
     use_phrases: list[str]
     avoid_phrases: list[str]
+    ai_cmo_enabled: bool
     post_frequency: int
     preferred_platforms: list[str]
     created_at: datetime

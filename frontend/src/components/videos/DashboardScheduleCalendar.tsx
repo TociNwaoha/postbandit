@@ -457,44 +457,44 @@ export function DashboardScheduleCalendar() {
               if (event.target === event.currentTarget) setSelectedDay(null);
             }}
           >
-            <div className="w-full max-w-[560px] rounded-2xl bg-white p-7 shadow-2xl sm:p-9">
-              <div className="flex items-start justify-between gap-4">
+            <div className="w-full max-w-[430px] rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h4 className="app-display text-4xl font-extrabold tracking-[-0.04em] text-[#091528]">
+                  <h4 className="app-display text-3xl font-extrabold tracking-[-0.04em] text-[#091528]">
                     Schedule Post
                   </h4>
-                  <p className="mt-3 text-xl text-[#4A5568]">{selectedDayLabel}</p>
+                  <p className="mt-2 text-base text-[#4A5568]">{selectedDayLabel}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedDay(null)}
-                  className="rounded-full p-2 text-[#7A8495] transition hover:bg-[#F4F8FF] hover:text-[#091528]"
+                  className="rounded-full p-1.5 text-[#7A8495] transition hover:bg-[#F4F8FF] hover:text-[#091528]"
                   aria-label="Close schedule modal"
                 >
-                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                 </button>
               </div>
 
-              <label className="mt-6 block text-sm font-semibold text-[#4A5568]">
+              <label className="mt-4 block text-xs font-semibold text-[#4A5568]">
                 Planned time
                 <input
                   type="time"
                   step={300}
                   value={scheduleTime}
                   onChange={(event) => setScheduleTime(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-[#E1E5EC] px-4 py-3 text-base text-[#091528] outline-none focus:border-[var(--app-primary)] focus:ring-2 focus:ring-[rgba(29,63,208,0.12)]"
+                  className="mt-1.5 w-full rounded-lg border border-[#E1E5EC] px-3 py-2 text-sm text-[#091528] outline-none focus:border-[var(--app-primary)] focus:ring-2 focus:ring-[rgba(29,63,208,0.12)]"
                 />
               </label>
 
               {selectedDayIsPast ? (
-                <p className="mt-6 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="mt-4 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800">
                   Historical days are view-only. Choose today or a future day to schedule content.
                 </p>
               ) : (
                 <>
-                  <div className="mt-8 space-y-4">
+                  <div className="mt-5 space-y-2.5">
                     <ScheduleOptionLink
                       href={`/content-queue?scheduledFor=${encodedSchedule}&type=text`}
                       label="Text Post"
@@ -519,31 +519,31 @@ export function DashboardScheduleCalendar() {
                   </div>
 
                   {selectedPostKind === "video" ? (
-                    <div className="mt-4 rounded-2xl border border-[#E1E5EC] bg-[#F8FAFF] p-3">
-                      <p className="px-1 text-sm font-semibold text-[#091528]">Schedule a ready video clip</p>
-                      <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-3 rounded-xl border border-[#E1E5EC] bg-[#F8FAFF] p-2.5">
+                      <p className="px-1 text-xs font-semibold text-[#091528]">Schedule a ready video clip</p>
+                      <div className="mt-2 max-h-48 space-y-1.5 overflow-y-auto pr-1">
                         {uniqueReadyExports.length ? (
                           uniqueReadyExports.map((item) => (
                             <Link
                               key={item.id}
                               href={`/videos/${item.video_id}/clips/${item.clip_id}?scheduleAt=${encodedSchedule}#publish-social`}
-                              className="flex items-center gap-3 rounded-xl border border-[#E1E5EC] bg-white p-2 transition hover:border-[var(--app-primary)]"
+                              className="flex items-center gap-2 rounded-lg border border-[#E1E5EC] bg-white p-1.5 transition hover:border-[var(--app-primary)]"
                             >
                               {item.clip_thumbnail_url ? (
-                                <img src={item.clip_thumbnail_url} alt="" className="h-12 w-20 rounded-lg object-cover" />
+                                <img src={item.clip_thumbnail_url} alt="" className="h-10 w-16 rounded-md object-cover" />
                               ) : (
-                                <span className="h-12 w-20 rounded-lg bg-[var(--app-surface-soft)]" />
+                                <span className="h-10 w-16 rounded-md bg-[var(--app-surface-soft)]" />
                               )}
                               <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-[#091528]">
+                                <span className="block truncate text-xs font-semibold text-[#091528]">
                                   {item.clip_title || item.video_title || `Clip ${item.clip_id.slice(0, 8)}`}
                                 </span>
-                                <span className="block text-xs text-[#6A7280]">Open publish drawer with this time prefilled</span>
+                                <span className="block text-[11px] text-[#6A7280]">Opens with this time prefilled</span>
                               </span>
                             </Link>
                           ))
                         ) : (
-                          <p className="rounded-xl border border-dashed border-[#CBD5E1] bg-white px-3 py-4 text-sm text-[#6A7280]">
+                          <p className="rounded-lg border border-dashed border-[#CBD5E1] bg-white px-3 py-3 text-xs text-[#6A7280]">
                             No ready clip exports are available yet. Export a clip first, then schedule it here.
                           </p>
                         )}
@@ -551,7 +551,7 @@ export function DashboardScheduleCalendar() {
                     </div>
                   ) : null}
 
-                  <div className="my-8 h-px bg-[#E1E5EC]" />
+                  <div className="my-5 h-px bg-[#E1E5EC]" />
 
                   <ScheduleOptionLink
                     href={`/content-queue?scheduledFor=${encodedSchedule}`}
@@ -562,7 +562,7 @@ export function DashboardScheduleCalendar() {
                   <button
                     type="button"
                     onClick={() => setSelectedDay(null)}
-                    className="mt-8 w-full rounded-xl px-4 py-3 text-center text-lg font-medium text-[#4A5568] transition hover:bg-[#F4F8FF]"
+                    className="mt-5 w-full rounded-lg px-3 py-2 text-center text-base font-medium text-[#4A5568] transition hover:bg-[#F4F8FF]"
                   >
                     Cancel
                   </button>
@@ -593,7 +593,7 @@ type ScheduleOptionIcon = "text" | "image" | "video" | "story" | "drafts";
 function ScheduleIcon({ type }: { type: ScheduleOptionIcon }) {
   if (type === "text") {
     return (
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M7 3H14L19 8V21H7V3Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         <path d="M14 3V8H19" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         <path d="M10 12H16M10 16H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -602,7 +602,7 @@ function ScheduleIcon({ type }: { type: ScheduleOptionIcon }) {
   }
   if (type === "image") {
     return (
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
         <path d="M7 16L10.5 12.5L13 15L15 13L19 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         <circle cx="9" cy="9" r="1.2" fill="currentColor" />
@@ -611,7 +611,7 @@ function ScheduleIcon({ type }: { type: ScheduleOptionIcon }) {
   }
   if (type === "video") {
     return (
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <rect x="3" y="7" width="13" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
         <path d="M16 10L21 7.5V16.5L16 14V10Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
       </svg>
@@ -619,7 +619,7 @@ function ScheduleIcon({ type }: { type: ScheduleOptionIcon }) {
   }
   if (type === "story") {
     return (
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M7 8H5V20H19V8H17" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         <path d="M9 8L10.5 5H13.5L15 8" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         <circle cx="12" cy="14" r="3" stroke="currentColor" strokeWidth="2" />
@@ -627,7 +627,7 @@ function ScheduleIcon({ type }: { type: ScheduleOptionIcon }) {
     );
   }
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M3 7H9L11 9H21V19H3V7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
       <path d="M3 11H21" stroke="currentColor" strokeWidth="2" />
     </svg>
@@ -635,9 +635,9 @@ function ScheduleIcon({ type }: { type: ScheduleOptionIcon }) {
 }
 
 function scheduleOptionClass(active = false): string {
-  return `flex w-full items-center gap-6 rounded-2xl border px-6 py-5 text-left transition ${
+  return `flex w-full items-center gap-4 rounded-xl border px-4 py-3 text-left transition ${
     active
-      ? "border-[var(--app-primary)] bg-[#F4F8FF] text-[var(--app-primary)] shadow-[0_12px_32px_rgba(29,63,208,0.12)]"
+      ? "border-[var(--app-primary)] bg-[#F4F8FF] text-[var(--app-primary)] shadow-[0_8px_24px_rgba(29,63,208,0.12)]"
       : "border-[#E1E5EC] bg-white text-[#091528] hover:border-[var(--app-primary)] hover:bg-[#F8FAFF]"
   }`;
 }
@@ -656,7 +656,7 @@ function ScheduleOptionLink({
       <span className="text-[#6B7280]">
         <ScheduleIcon type={icon} />
       </span>
-      <span className="app-display text-2xl font-bold tracking-[-0.03em]">{label}</span>
+      <span className="app-display text-lg font-bold tracking-[-0.03em]">{label}</span>
     </Link>
   );
 }
@@ -677,7 +677,7 @@ function ScheduleOptionButton({
       <span className={active ? "text-[var(--app-primary)]" : "text-[#6B7280]"}>
         <ScheduleIcon type={icon} />
       </span>
-      <span className="app-display text-2xl font-bold tracking-[-0.03em]">{label}</span>
+      <span className="app-display text-lg font-bold tracking-[-0.03em]">{label}</span>
     </button>
   );
 }

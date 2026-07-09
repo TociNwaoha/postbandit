@@ -604,6 +604,7 @@ export interface BrandProfile {
   tone: string;
   use_phrases: string[];
   avoid_phrases: string[];
+  ai_cmo_enabled: boolean;
   post_frequency: number;
   preferred_platforms: string[];
   created_at: string;
