@@ -611,6 +611,34 @@ export interface BrandProfile {
   updated_at: string;
 }
 
+export interface DeveloperApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface DeveloperUsage {
+  plan: string;
+  limits: {
+    per_hour: number;
+    per_day: number;
+  };
+  usage: {
+    this_hour: number;
+    today: number;
+    hour_percent: number;
+    day_percent: number;
+    warning: boolean;
+  };
+  reset: {
+    hour_resets_at: string;
+    day_resets_at: string;
+  };
+}
+
 export type ContentQueueStatus = "draft" | "rendering" | "ready" | "approved" | "rejected" | "posted";
 
 export interface ContentQueueItem {

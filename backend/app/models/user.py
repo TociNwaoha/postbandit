@@ -69,3 +69,6 @@ class User(Base):
     social_workflows: Mapped[list["SocialWorkflow"]] = relationship(
         "SocialWorkflow", back_populates="user", cascade="all, delete-orphan"
     )
+    api_keys: Mapped[list["ApiKey"]] = relationship(
+        "ApiKey", back_populates="user", cascade="all, delete-orphan"
+    )
