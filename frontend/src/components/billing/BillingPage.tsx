@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
@@ -172,6 +173,21 @@ export function BillingPage() {
               >
                 {current ? "Restart checkout" : `Start ${plan.name}`}
               </Button>
+              <p className="mt-3 text-center text-xs leading-5 text-[var(--app-muted)]">
+                By subscribing you agree to our{" "}
+                <Link href="/terms" className="underline underline-offset-2">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy" className="underline underline-offset-2">
+                  Privacy Policy
+                </Link>
+                . See our{" "}
+                <Link href="/refunds" className="underline underline-offset-2">
+                  Refund Policy
+                </Link>
+                .
+              </p>
             </Card>
           );
         })}
