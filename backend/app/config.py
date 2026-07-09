@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # Public URLs
     backend_public_url: str = "http://localhost:8000"
     frontend_public_url: str = "http://localhost:3001"
+    frontend_url: str = "http://localhost:3001"
+
+    # Stripe Billing
+    stripe_billing_enabled: bool = False
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_creator_price_id: str = ""
+    stripe_pro_price_id: str = ""
+    stripe_elite_price_id: str = ""
 
     # Backblaze B2 (S3-compatible API)
     b2_key_id: str = "placeholder"

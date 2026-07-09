@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
 import { OnboardingStatus } from "@/types";
+import { TrialBanner } from "@/components/billing/TrialBanner";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 
@@ -54,6 +55,7 @@ export function DashboardLayout({ title, children }: DashboardLayoutProps) {
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
         <Header title={title} />
+        <TrialBanner />
         <main className="flex-1 px-8 py-6 overflow-auto">{children}</main>
       </div>
     </div>

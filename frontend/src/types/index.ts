@@ -10,6 +10,12 @@ export interface User {
   onboarding_skipped_at?: string | null;
   onboarding_role?: OnboardingRole | null;
   onboarding_metadata_json?: Record<string, unknown> | null;
+  billing_plan?: string;
+  subscription_status?: string;
+  trial_ends_at?: string | null;
+  billing_period_start?: string | null;
+  billing_period_end?: string | null;
+  platforms_allowed?: number;
   created_at: string;
   updated_at: string;
 }
@@ -637,6 +643,18 @@ export interface DeveloperUsage {
     hour_resets_at: string;
     day_resets_at: string;
   };
+}
+
+export interface BillingStatus {
+  plan_tier: string;
+  subscription_status: string;
+  trial_ends_at: string | null;
+  billing_period_start: string | null;
+  billing_period_end: string | null;
+  platforms_allowed: number;
+  platforms_connected: number;
+  stripe_publishable_key: string;
+  billing_enabled: boolean;
 }
 
 export type ContentQueueStatus = "draft" | "rendering" | "ready" | "approved" | "rejected" | "posted";

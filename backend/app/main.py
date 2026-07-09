@@ -8,8 +8,26 @@ from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from sqlalchemy import select
 
-from app.api.routes import auth, carousels, clips, content_queue, developer, editor, exports, health, onboarding, social, storage, v1, videos, workflows
+from app.api.routes import (
+    auth,
+    billing,
+    carousels,
+    clips,
+    content_queue,
+    developer,
+    editor,
+    exports,
+    health,
+    onboarding,
+    social,
+    storage,
+    stripe_webhooks,
+    v1,
+    videos,
+    workflows,
+)
 from app.api.v1_auth import V1Error
+from app.billing.stripe_client import validate_billing_config
 from app.config import settings
 from app.database import SessionLocal, engine
 
@@ -55,6 +73,8 @@ async def seed_admin_user():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_billing_config()
+
     logger.info("Running database migrations...")
     try:
         await run_migrations()
@@ -126,5 +146,7 @@ app.include_router(editor.router, prefix="/api")
 app.include_router(onboarding.router, prefix="/api")
 app.include_router(developer.router, prefix="/api")
 app.include_router(v1.router, prefix="/api/v1")
+app.include_router(billing.router, prefix="/api")
+app.include_router(stripe_webhooks.router, prefix="/api")
 
 app.include_router(content_queue.router, prefix="/api")

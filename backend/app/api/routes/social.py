@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.billing.enforcement import enforce_platform_limit
 from app.config import settings
 from app.database import get_db
 from app.models.clip import Clip, ClipStatus
@@ -488,6 +489,7 @@ async def list_connected_accounts(
 async def start_connect(
     platform: SocialPlatform,
     body: ConnectStartRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     adapter = get_adapter(platform)
@@ -499,6 +501,8 @@ async def start_connect(
             setup_details.get("missing_fields", []),
         )
         raise HTTPException(status_code=400, detail=setup_message or "Provider is not configured")
+
+    await enforce_platform_limit(db=db, user=current_user, platform=platform)
 
     return_to = _safe_return_path(body.return_to)
     state, nonce = _make_state_token(current_user.id, platform, return_to)
@@ -616,6 +620,17 @@ async def oauth_callback(
         )
         return RedirectResponse(
             f"{target_base}?status=error&platform={platform.value}&message=internal_callback_error"
+        )
+
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user:
+        return RedirectResponse(f"{target_base}?status=error&platform={platform.value}&message=invalid_state")
+
+    try:
+        await enforce_platform_limit(db=db, user=user, platform=platform)
+    except HTTPException:
+        return RedirectResponse(
+            f"{target_base}?status=error&platform={platform.value}&message=platform_limit_reached"
         )
 
     upserted_count = 0

@@ -53,6 +53,10 @@ def _is_email_verified(value: object) -> bool:
     return normalized in {"true", "1", "yes"}
 
 
+def _new_user_trial_ends_at() -> datetime:
+    return datetime.utcnow() + timedelta(days=7)
+
+
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
@@ -90,6 +94,7 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     user = User(
         email=email,
         password_hash=pwd_context.hash(password),
+        trial_ends_at=_new_user_trial_ends_at(),
     )
     db.add(user)
     await db.commit()
@@ -179,6 +184,7 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
         user = User(
             email=email,
             password_hash=pwd_context.hash(secrets.token_urlsafe(48)),
+            trial_ends_at=_new_user_trial_ends_at(),
         )
         db.add(user)
         await db.commit()

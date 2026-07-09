@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { signOut } from "next-auth/react";
 
 import { Button } from "@/components/ui/Button";
@@ -205,7 +206,13 @@ export function SettingsPanel() {
 
       <Card>
         <h3 className="text-base font-semibold text-[var(--app-text)]">Plan & Usage</h3>
-        <p className="mt-1 text-xs text-[var(--app-muted)]">Billing management coming soon.</p>
+        <p className="mt-1 text-xs text-[var(--app-muted)]">
+          Manage your subscription on the{" "}
+          <Link href="/billing" className="font-semibold text-[#1D3FD0] hover:text-[#1633B8]">
+            Billing page
+          </Link>
+          .
+        </p>
         <div className="mt-4 grid gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3 text-sm text-[var(--app-text)] sm:grid-cols-2">
           <p>
             <span className="font-semibold">Current Tier:</span> {user.tier}
