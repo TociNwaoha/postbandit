@@ -6,7 +6,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select
+
+from app.observability import init_sentry
+
+init_sentry()
 
 from app.api.routes import (
     auth,
@@ -26,6 +32,7 @@ from app.api.routes import (
     videos,
     workflows,
 )
+from app.api.rate_limiter import limiter
 from app.api.v1_auth import V1Error
 from app.billing.stripe_client import validate_billing_config
 from app.config import settings
@@ -107,6 +114,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.exception_handler(Exception)

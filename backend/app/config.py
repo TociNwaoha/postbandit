@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
     api_rate_limit_redis_db: int = 3
+    auth_rate_limit_redis_db: int = 2
 
     # Auth
     nextauth_secret: str = "changeme"
@@ -98,6 +99,9 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     log_level: str = "INFO"
+    sentry_dsn: str = ""
+    backup_dir: str = "/opt/clipbandit/backups"
+    backup_retention_days: int = 14
     max_upload_size_mb: int = 5000
     max_concurrent_jobs: int = 2
     youtube_import_max_playlist_items: int = 50

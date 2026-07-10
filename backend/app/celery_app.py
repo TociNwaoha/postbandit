@@ -2,6 +2,9 @@ from celery import Celery
 from celery.schedules import crontab
 
 from app.config import settings
+from app.observability import init_sentry
+
+init_sentry()
 
 celery_app = Celery(
     "clipbandit",
@@ -16,6 +19,7 @@ celery_app = Celery(
         "app.worker.tasks.score",
         "app.worker.tasks.render",
         "app.worker.tasks.editor_render",
+        "app.worker.tasks.backup",
         "app.worker.tasks.publish",
         "app.worker.tasks.social_workflows",
         "app.worker.tasks.content_generation",
@@ -63,6 +67,10 @@ beat_schedule["continue-official-source-workflows"] = {
     "task": "app.worker.tasks.social_workflows.continue_source_workflow_after_video_ready",
     "schedule": 60.0,
 }
+beat_schedule["backup-database-daily"] = {
+    "task": "tasks.backup_database",
+    "schedule": crontab(hour=4, minute=0),
+}
 
 celery_app.conf.update(
     task_serializer="json",
@@ -80,6 +88,8 @@ celery_app.conf.update(
         "app.worker.tasks.score.*": {"queue": "score"},
         "app.worker.tasks.render.*": {"queue": "render"},
         "app.worker.tasks.editor_render.*": {"queue": "render"},
+        "app.worker.tasks.backup.*": {"queue": "ingest"},
+        "tasks.backup_database": {"queue": "ingest"},
         "app.worker.tasks.publish.*": {"queue": "publish"},
         "app.worker.tasks.social_workflows.*": {"queue": "ingest"},
         "app.worker.tasks.content_generation.*": {"queue": "ingest"},
