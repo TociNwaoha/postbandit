@@ -110,6 +110,9 @@ const workspaceNavItems = [
       </svg>
     ),
   },
+];
+
+const utilityNavItems = [
   {
     label: "Billing",
     href: "/billing",
@@ -277,6 +280,33 @@ export function Sidebar() {
           </div>
         </div>
       </nav>
+
+      <div className="border-t border-[var(--app-border)] px-3 py-3">
+        <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--app-subtle)]">
+          Account
+        </p>
+        <div className="space-y-0.5">
+          {utilityNavItems.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  ${isActive
+                    ? "bg-[rgba(29,63,208,0.1)] text-[var(--app-primary)]"
+                    : "text-[var(--app-muted)] hover:text-[var(--app-text)] hover:bg-[#F4F8FF]"
+                  }
+                `}
+              >
+                <span className={isActive ? "text-[var(--app-primary)]" : "text-[var(--app-subtle)]"}>{item.icon}</span>
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="border-t border-[var(--app-border)] px-3 py-4">
         <div className="mb-2 flex items-center gap-3 px-2">
