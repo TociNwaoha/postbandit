@@ -23,6 +23,7 @@ from app.models.social_workflow_run import SocialWorkflowRun
 from app.models.social_workflow_source_post import SocialWorkflowSourcePost
 from app.models.api_key import ApiKey
 from app.models.processed_stripe_event import ProcessedStripeEvent
+from app.models.post_analytics import PostAnalytics
 
 __all__ = [
     "User",
@@ -50,4 +51,5 @@ __all__ = [
     "SocialWorkflowSourcePost",
     "ApiKey",
     "ProcessedStripeEvent",
+    "PostAnalytics",
 ]

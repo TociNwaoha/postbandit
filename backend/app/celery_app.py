@@ -22,6 +22,7 @@ celery_app = Celery(
         "app.worker.tasks.backup",
         "app.worker.tasks.publish",
         "app.worker.tasks.social_workflows",
+        "app.worker.tasks.analytics",
         "app.worker.tasks.content_generation",
     ],
 )
@@ -71,6 +72,10 @@ beat_schedule["backup-database-daily"] = {
     "task": "tasks.backup_database",
     "schedule": crontab(hour=4, minute=0),
 }
+beat_schedule["refresh-post-analytics"] = {
+    "task": "app.worker.tasks.analytics.refresh_post_analytics",
+    "schedule": 21600.0,
+}
 
 celery_app.conf.update(
     task_serializer="json",
@@ -92,6 +97,7 @@ celery_app.conf.update(
         "tasks.backup_database": {"queue": "ingest"},
         "app.worker.tasks.publish.*": {"queue": "publish"},
         "app.worker.tasks.social_workflows.*": {"queue": "ingest"},
+        "app.worker.tasks.analytics.*": {"queue": "ingest"},
         "app.worker.tasks.content_generation.*": {"queue": "ingest"},
         "generate_daily_content": {"queue": "ingest"},
     },

@@ -442,6 +442,8 @@ export interface ConnectedAccount {
   username_or_channel_name: string | null;
   destination_type: string;
   token_expires_at: string | null;
+  token_expired: boolean;
+  last_token_refresh: string | null;
   scopes: string[] | null;
   metadata_json: Record<string, unknown>;
   created_at: string;
@@ -674,3 +676,61 @@ export interface ContentQueueItem {
 }
 
 export * from "./editor";
+
+export interface PostAnalyticsSummary {
+  total_posts: number;
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  total_reach: number;
+  total_impressions: number;
+  posts_with_errors: number;
+  top_platform: string | null;
+}
+
+export interface PostAnalyticsTimeseriesPoint {
+  date: string;
+  platform: SocialPlatform;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+}
+
+export interface PostAnalyticsTopPerformer {
+  publish_job_id: string;
+  platform: SocialPlatform;
+  title: string;
+  external_post_url: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+  fetch_error: string | null;
+}
+
+export interface PostAnalyticsSnapshot {
+  publish_job_id: string;
+  platform: SocialPlatform;
+  title: string;
+  caption: string | null;
+  external_post_id: string | null;
+  external_post_url: string | null;
+  fetched_at: string | null;
+  published_at: string | null;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+  fetch_error: string | null;
+  raw_response: Record<string, unknown> | null;
+}

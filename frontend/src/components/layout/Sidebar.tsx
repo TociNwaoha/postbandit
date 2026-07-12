@@ -32,6 +32,17 @@ const workspaceNavItems = [
     ),
   },
   {
+    label: "Analytics",
+    href: "/dashboard/analytics",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 19V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M4 19H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M8 16L11 11L14 13L18 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     label: "Carousels",
     href: "/carousels",
     icon: (
@@ -202,7 +213,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-3">
         <div className="space-y-0.5">
           {workspaceNavItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
             return (
               <Link
                 key={item.href}

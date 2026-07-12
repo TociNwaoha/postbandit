@@ -111,6 +111,11 @@ export function ConnectionsPanel() {
     return grouped;
   }, [accounts]);
 
+  const expiredAccounts = useMemo(
+    () => accounts.filter((account) => account.token_expired),
+    [accounts]
+  );
+
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -190,16 +195,31 @@ export function ConnectionsPanel() {
                   {accountTypeLabel ? (
                     <p className="truncate text-[11px] text-[var(--app-subtle)]">{accountTypeLabel}</p>
                   ) : null}
+                  {account.token_expired ? (
+                    <p className="mt-1 text-[11px] font-semibold text-red-700">Needs reconnection</p>
+                  ) : null}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => void disconnectAccount(account.id)}
-                  disabled={disconnectingAccountId === account.id}
-                  className="rounded-md border border-[var(--app-border)] px-2.5 py-1 text-[11px] text-[var(--app-text)] hover:bg-white disabled:opacity-50"
-                >
-                  {disconnectingAccountId === account.id ? "Disconnecting..." : "Disconnect"}
-                </button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {account.token_expired ? (
+                    <button
+                      type="button"
+                      onClick={() => void connectPlatform(account.platform)}
+                      disabled={connectingPlatform === account.platform}
+                      className="rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {connectingPlatform === account.platform ? "Opening..." : "Reconnect"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void disconnectAccount(account.id)}
+                    disabled={disconnectingAccountId === account.id}
+                    className="rounded-md border border-[var(--app-border)] px-2.5 py-1 text-[11px] text-[var(--app-text)] hover:bg-white disabled:opacity-50"
+                  >
+                    {disconnectingAccountId === account.id ? "Disconnecting..." : "Disconnect"}
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -237,6 +257,23 @@ export function ConnectionsPanel() {
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+      ) : null}
+      {expiredAccounts.length ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>
+              {expiredAccounts.length} connected account{expiredAccounts.length === 1 ? "" : "s"} need reconnection before analytics or publishing can continue reliably.
+            </p>
+            <button
+              type="button"
+              onClick={() => void connectPlatform(expiredAccounts[0].platform)}
+              disabled={connectingPlatform === expiredAccounts[0].platform}
+              className="rounded-md bg-red-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              Reconnect {getPlatformBrandMeta(expiredAccounts[0].platform).displayName}
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {loading ? (

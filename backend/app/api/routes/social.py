@@ -476,6 +476,8 @@ async def list_connected_accounts(
             username_or_channel_name=account.username_or_channel_name,
             destination_type=_destination_type_for_account(account),
             token_expires_at=account.token_expires_at,
+            token_expired=bool(account.token_expired),
+            last_token_refresh=account.last_token_refresh,
             scopes=account.scopes,
             metadata_json=account.metadata_json or {},
             created_at=account.created_at,
@@ -655,6 +657,8 @@ async def oauth_callback(
             existing.access_token_encrypted = access_token_encrypted
             existing.refresh_token_encrypted = refresh_token_encrypted
             existing.token_expires_at = oauth_payload.token_expires_at
+            existing.token_expired = False
+            existing.last_token_refresh = datetime.now(timezone.utc)
             existing.scopes = oauth_payload.scopes
             existing.metadata_json = oauth_payload.metadata_json
         else:
@@ -668,6 +672,8 @@ async def oauth_callback(
                     access_token_encrypted=access_token_encrypted,
                     refresh_token_encrypted=refresh_token_encrypted,
                     token_expires_at=oauth_payload.token_expires_at,
+                    token_expired=False,
+                    last_token_refresh=datetime.now(timezone.utc),
                     scopes=oauth_payload.scopes,
                     metadata_json=oauth_payload.metadata_json,
                 )

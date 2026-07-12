@@ -15,6 +15,7 @@ from app.observability import init_sentry
 init_sentry()
 
 from app.api.routes import (
+    analytics,
     auth,
     billing,
     carousels,
@@ -152,6 +153,7 @@ app.include_router(carousels.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(social.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
 app.include_router(onboarding.router, prefix="/api")
 app.include_router(developer.router, prefix="/api")
