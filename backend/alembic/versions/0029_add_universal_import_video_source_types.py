@@ -1,7 +1,7 @@
 """add universal import video source types
 
-Revision ID: 0029_add_universal_import_video_source_types
-Revises: 0028_add_post_analytics
+Revision ID: 0029
+Revises: 0028
 Create Date: 2026-07-11 00:00:00.000000
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0029_add_universal_import_video_source_types"
-down_revision = "0028_add_post_analytics"
+revision = "0029"
+down_revision = "0028"
 branch_labels = None
 depends_on = None
 
