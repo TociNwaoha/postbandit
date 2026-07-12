@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ def should_enqueue_editor_preview(
         # Treat those as stale so we generate a deterministic editor-safe proxy.
         if key == storage_key:
             return True
-        return not r2_client.file_exists(key)
+        return not object_storage_client.file_exists(key)
     if status == EDITOR_PREVIEW_STATUS_FAILED:
         return True
     return True
@@ -170,7 +170,7 @@ def resolve_editor_preview_download_key(
         return None
     if key == storage_key:
         return None
-    if not r2_client.file_exists(key):
+    if not object_storage_client.file_exists(key):
         return None
     return key
 
@@ -330,7 +330,7 @@ def generate_editor_preview_proxy(*, video_id: str, source_key: str) -> EditorPr
     output_path = workspace.path / "editor_preview_720sdr.mp4"
 
     try:
-        r2_client.download_file(source_key, str(source_path))
+        object_storage_client.download_file(source_key, str(source_path))
         heartbeat_workspace(workspace)
 
         stream = _probe_video_stream(source_path)
@@ -354,7 +354,7 @@ def generate_editor_preview_proxy(*, video_id: str, source_key: str) -> EditorPr
             raise EditorPreviewError(f"ffmpeg preview proxy failed: {stderr[-800:]}")
 
         preview_key = build_editor_preview_key(video_id)
-        r2_client.upload_file(str(output_path), preview_key)
+        object_storage_client.upload_file(str(output_path), preview_key)
         heartbeat_workspace(workspace)
 
         finalize_workspace(

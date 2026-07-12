@@ -14,7 +14,7 @@ from app.config import settings
 from app.models.clip import Clip
 from app.models.editor_project import EditorProject
 from app.models.video import Video
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 
 logger = logging.getLogger(__name__)
@@ -241,7 +241,7 @@ def should_enqueue_project_preview(
     if meta.status == PROJECT_PREVIEW_STATUS_PENDING:
         return False
     if meta.status == PROJECT_PREVIEW_STATUS_READY:
-        return not r2_client.file_exists(preview_key)
+        return not object_storage_client.file_exists(preview_key)
     if meta.status == PROJECT_PREVIEW_STATUS_FAILED:
         return False
     return True
@@ -404,7 +404,7 @@ def generate_project_preview_proxy(
     output_path = workspace.path / "editor_preview_clip_720sdr.mp4"
 
     try:
-        r2_client.download_file(source_key, str(source_path))
+        object_storage_client.download_file(source_key, str(source_path))
         heartbeat_workspace(workspace)
 
         stream = _probe_video_stream(source_path)
@@ -426,7 +426,7 @@ def generate_project_preview_proxy(
             raise ProjectPreviewError(f"ffmpeg project preview failed: {stderr[-800:]}")
 
         preview_key = build_project_preview_key(user_id=user_id, project_id=project_id)
-        r2_client.upload_file(str(output_path), preview_key)
+        object_storage_client.upload_file(str(output_path), preview_key)
         heartbeat_workspace(workspace)
 
         source_profile = _source_profile(stream)

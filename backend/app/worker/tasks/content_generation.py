@@ -27,7 +27,12 @@ def pick_topic_for_niche(niche: str) -> str:
 async def _run_generation() -> None:
     async with SessionLocal() as db:
         rows = (
-            await db.execute(select(BrandProfile).where(BrandProfile.post_frequency > 0))
+            await db.execute(
+                select(BrandProfile).where(
+                    BrandProfile.ai_cmo_enabled.is_(True),
+                    BrandProfile.post_frequency > 0,
+                )
+            )
         ).scalars().all()
 
         for brand in rows:

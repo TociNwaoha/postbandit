@@ -52,7 +52,7 @@ from app.schemas.youtube_import import (
     VideoManualUploadConfirmResponse,
     VideoManualUploadUrlResponse,
 )
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.editor_preview import (
     mark_editor_preview_failed,
     mark_editor_preview_pending,
@@ -74,6 +74,7 @@ from app.services.youtube import (
     is_retryable_import_state,
     is_non_retryable_blocked_error_code,
     is_youtube_source,
+    normalize_import_url,
     normalize_youtube_input,
     transition_import_state,
     YT_BOT_VERIFICATION,
@@ -313,7 +314,7 @@ async def _finalize_manual_upload_transition(
     reason_code: str = "manual_upload_confirmed",
     actor: str = "api",
 ) -> None:
-    if not storage_key or not r2_client.file_exists(storage_key):
+    if not storage_key or not object_storage_client.file_exists(storage_key):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file not found in storage")
 
     video.storage_key = storage_key
@@ -445,7 +446,7 @@ async def create_upload_url(
     storage_key = f"uploads/{video.id}/original{ext}"
     video.storage_key = storage_key
 
-    signed = r2_client.get_presigned_upload_url(storage_key, expiry=900)
+    signed = object_storage_client.get_presigned_upload_url(storage_key, expiry=900)
     return VideoUploadUrlResponse(
         video_id=video.id,
         upload_url=signed["url"],
@@ -474,7 +475,7 @@ async def confirm_upload(
             video.status.value,
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video is not in queued state")
-    if not video.storage_key or not r2_client.file_exists(video.storage_key):
+    if not video.storage_key or not object_storage_client.file_exists(video.storage_key):
         logger.warning(
             "[upload_confirm_failed] video_id=%s reason=uploaded_file_missing storage_key=%s",
             video.id,
@@ -504,7 +505,7 @@ async def import_youtube(
     raw_url = body.url.strip()
     clip_profile = _resolve_clip_profile(body.clip_profile)
     try:
-        normalized = normalize_youtube_input(raw_url)
+        normalized = normalize_import_url(raw_url)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -561,7 +562,20 @@ async def import_youtube(
             message="Playlist import started",
         )
 
-    blocked_hint = await get_blocked_source_hint(normalized.normalized_video_id)
+    is_youtube_single_import = normalized.source_type in {"youtube", "youtube_single"}
+    try:
+        import_source_type = VideoSourceType.youtube_single if is_youtube_single_import else VideoSourceType(normalized.source_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported import platform",
+        ) from exc
+
+    blocked_hint = (
+        await get_blocked_source_hint(normalized.normalized_video_id)
+        if is_youtube_single_import
+        else None
+    )
     if blocked_hint and is_non_retryable_blocked_error_code(blocked_hint.error_code):
         logger.info(
             "[youtube_blocked_cache_hit] user_id=%s source_video_id=%s error_code=%s",
@@ -640,14 +654,14 @@ async def import_youtube(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                "YouTube import capacity is currently limited. "
+                "URL import capacity is currently limited. "
                 "Please retry shortly or upload a file directly."
             ),
         )
 
     video = Video(
         user_id=current_user.id,
-        source_type=VideoSourceType.youtube_single,
+        source_type=import_source_type,
         source_url=normalized.normalized_url,
         source_video_id=normalized.normalized_video_id,
         source_playlist_id=normalized.normalized_playlist_id,
@@ -663,8 +677,8 @@ async def import_youtube(
         db,
         video,
         actor="api",
-        reason_code="youtube_import_created",
-        metadata={"source_url": normalized.normalized_url},
+        reason_code="url_import_created",
+        metadata={"source_url": normalized.normalized_url, "source_type": normalized.source_type},
     )
     await db.commit()
     await db.refresh(video)
@@ -805,7 +819,7 @@ async def list_videos(
 
     for video_id, thumbnail_key in thumbnail_keys_by_video_id.items():
         try:
-            thumbnail_urls_by_video_id[video_id] = r2_client.get_presigned_download_url(thumbnail_key)
+            thumbnail_urls_by_video_id[video_id] = object_storage_client.get_presigned_download_url(thumbnail_key)
         except Exception as exc:
             logger.warning(
                 "[videos] failed to generate dashboard thumbnail URL for video_id=%s key=%s: %s",
@@ -1058,7 +1072,7 @@ async def manual_upload_url(
         )
     await db.commit()
 
-    signed = r2_client.get_presigned_upload_url(storage_key, expiry=900)
+    signed = object_storage_client.get_presigned_upload_url(storage_key, expiry=900)
     return VideoManualUploadUrlResponse(
         video_id=video.id,
         upload_url=signed["url"],
@@ -1137,7 +1151,7 @@ async def create_local_helper_session(
 
     ttl_seconds = max(60, int(settings.youtube_local_helper_ttl_minutes) * 60)
     upload_key = f"uploads/{video.id}/local-helper-{secrets.token_hex(6)}.mp4"
-    signed = r2_client.get_presigned_upload_url(upload_key, expiry=ttl_seconds)
+    signed = object_storage_client.get_presigned_upload_url(upload_key, expiry=ttl_seconds)
 
     try:
         helper_session = await create_local_helper_token_session(
@@ -1245,7 +1259,7 @@ async def get_video(
     source_download_url: str | None = None
     if video.storage_key:
         try:
-            source_download_url = r2_client.get_presigned_download_url(video.storage_key)
+            source_download_url = object_storage_client.get_presigned_download_url(video.storage_key)
         except Exception as exc:
             logger.warning("[videos] failed to generate source download URL for video_id=%s: %s", video.id, exc)
 
@@ -1259,7 +1273,7 @@ async def get_video(
     )
     if preview_key:
         try:
-            editor_preview_download_url = r2_client.get_presigned_download_url(preview_key)
+            editor_preview_download_url = object_storage_client.get_presigned_download_url(preview_key)
             if preview_status != "ready":
                 preview_status = "ready"
         except Exception as exc:
@@ -1321,7 +1335,7 @@ async def get_video_transcript(
 
     transcript_key = f"transcripts/{video.id}/transcript.json"
     try:
-        transcript_text = r2_client.read_text_file(transcript_key)
+        transcript_text = object_storage_client.read_text_file(transcript_key)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript file not found")
     except Exception:
@@ -1424,7 +1438,7 @@ async def delete_video(
 
     for key in storage_keys:
         try:
-            r2_client.delete_file(key)
+            object_storage_client.delete_file(key)
         except Exception as exc:
             logger.warning("Best-effort delete failed for %s: %s", key, exc)
 

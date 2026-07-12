@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,7 @@ class BrandProfile(Base):
     tone: Mapped[str] = mapped_column(String(50), nullable=False)
     use_phrases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     avoid_phrases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    ai_cmo_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     post_frequency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     preferred_platforms: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

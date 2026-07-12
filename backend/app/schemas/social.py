@@ -41,6 +41,8 @@ class ConnectedAccountResponse(BaseModel):
     username_or_channel_name: str | None
     destination_type: str
     token_expires_at: datetime | None
+    token_expired: bool = False
+    last_token_refresh: datetime | None = None
     scopes: list[str] | None
     metadata_json: dict
     created_at: datetime

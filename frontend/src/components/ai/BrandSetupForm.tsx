@@ -64,6 +64,7 @@ export function BrandSetupForm() {
   const [tone, setTone] = useState<(typeof TONES)[number]>("professional");
   const [usePhrases, setUsePhrases] = useState<string[]>([]);
   const [avoidPhrases, setAvoidPhrases] = useState<string[]>([]);
+  const [aiCmoEnabled, setAiCmoEnabled] = useState(true);
   const [postFrequency, setPostFrequency] = useState(1);
   const [preferredPlatforms, setPreferredPlatforms] = useState<string[]>([]);
 
@@ -82,6 +83,7 @@ export function BrandSetupForm() {
         setTone((TONES.includes(profile.tone as (typeof TONES)[number]) ? profile.tone : "professional") as (typeof TONES)[number]);
         setUsePhrases(profile.use_phrases || []);
         setAvoidPhrases(profile.avoid_phrases || []);
+        setAiCmoEnabled(profile.ai_cmo_enabled ?? true);
         setPostFrequency(Math.max(0, Math.min(5, profile.post_frequency || 1)));
         setPreferredPlatforms(profile.preferred_platforms || []);
       } catch (err) {
@@ -104,25 +106,50 @@ export function BrandSetupForm() {
     );
   };
 
+  const saveProfile = async (nextAiCmoEnabled = aiCmoEnabled) => {
+    const profile = await api.post<BrandProfile>("/api/brand-profile", {
+      display_name: displayName,
+      handle,
+      niche,
+      target_audience: targetAudience,
+      tone,
+      use_phrases: usePhrases,
+      avoid_phrases: avoidPhrases,
+      ai_cmo_enabled: nextAiCmoEnabled,
+      post_frequency: postFrequency,
+      preferred_platforms: preferredPlatforms,
+    });
+    setAiCmoEnabled(profile.ai_cmo_enabled);
+    window.dispatchEvent(
+      new CustomEvent("ai-cmo-status-changed", {
+        detail: { enabled: profile.ai_cmo_enabled },
+      })
+    );
+    return profile;
+  };
+
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      await api.post<BrandProfile>("/api/brand-profile", {
-        display_name: displayName,
-        handle,
-        niche,
-        target_audience: targetAudience,
-        tone,
-        use_phrases: usePhrases,
-        avoid_phrases: avoidPhrases,
-        post_frequency: postFrequency,
-        preferred_platforms: preferredPlatforms,
-      });
+      await saveProfile();
       router.push("/content-queue?saved=1");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save brand profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onToggleAiCmo = async () => {
+    const nextEnabled = !aiCmoEnabled;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveProfile(nextEnabled);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update AI CMO status.");
     } finally {
       setSaving(false);
     }
@@ -133,7 +160,9 @@ export function BrandSetupForm() {
       <form className="space-y-5" onSubmit={onSubmit}>
         <div>
           <h2 className="text-lg font-semibold text-[var(--app-text)]">Brand Setup</h2>
-          <p className="mt-1 text-sm text-[var(--app-subtle)]">Configure how Bandit LM writes carousel drafts for your account.</p>
+          <p className="mt-1 text-sm text-[var(--app-subtle)]">
+            Configure how PostBandit AI CMO writes carousel drafts for your account. When AI CMO is on, PostBandit creates posts every day on your behalf; you only need to review and approve them.
+          </p>
         </div>
         {error ? <p className="text-sm text-red-700">{error}</p> : null}
         {loading ? <p className="text-sm text-[var(--app-subtle)]">Loading brand profile...</p> : null}
@@ -163,7 +192,22 @@ export function BrandSetupForm() {
             ))}
           </div>
         </div>
-        <Button type="submit" loading={saving}>Save Brand Profile</Button>
+        <div className="flex flex-col gap-3 border-t border-[var(--app-border)] pt-4 sm:flex-row sm:items-center">
+          <Button type="submit" loading={saving}>Save Brand Profile</Button>
+          <Button
+            type="button"
+            variant={aiCmoEnabled ? "danger" : "secondary"}
+            loading={saving}
+            onClick={onToggleAiCmo}
+          >
+            {aiCmoEnabled ? "Turn Off AI CMO" : "Turn On AI CMO"}
+          </Button>
+          <span className="text-xs text-[var(--app-subtle)]">
+            {aiCmoEnabled
+              ? "AI CMO is on and can create daily carousel drafts."
+              : "AI CMO is off and daily carousel creation is paused."}
+          </span>
+        </div>
       </form>
     </Card>
   );

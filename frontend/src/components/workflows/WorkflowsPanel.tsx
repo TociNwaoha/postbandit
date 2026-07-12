@@ -9,7 +9,7 @@ import {
   ConnectedAccount,
   Export,
   SocialPlatform,
-  SocialWorkflow,
+  LegacySocialWorkflow,
   WorkflowCopyMode,
   WorkflowRunList,
   WorkflowSourceCapability,
@@ -38,7 +38,7 @@ function defaultPrivacy(platform: SocialPlatform) {
 export function WorkflowsPanel() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [capabilities, setCapabilities] = useState<WorkflowSourceCapability[]>([]);
-  const [workflows, setWorkflows] = useState<SocialWorkflow[]>([]);
+  const [workflows, setWorkflows] = useState<LegacySocialWorkflow[]>([]);
   const [exports, setExports] = useState<Export[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [runs, setRuns] = useState<WorkflowRunList>({ items: [], total: 0 });
@@ -64,7 +64,7 @@ export function WorkflowsPanel() {
       const [accountRows, capabilityRows, workflowRows, exportRows] = await Promise.all([
         api.get<ConnectedAccount[]>("/api/social/accounts"),
         api.get<WorkflowSourceCapability[]>("/api/social/workflows/capabilities"),
-        api.get<SocialWorkflow[]>("/api/social/workflows"),
+        api.get<LegacySocialWorkflow[]>("/api/social/workflows"),
         api.get<Export[]>("/api/exports"),
       ]);
       setAccounts(accountRows);
@@ -114,7 +114,7 @@ export function WorkflowsPanel() {
           privacy: defaultPrivacy(account.platform),
         };
       });
-      const created = await api.post<SocialWorkflow>("/api/social/workflows", {
+      const created = await api.post<LegacySocialWorkflow>("/api/social/workflows", {
         name,
         source_account_id: sourceAccountId,
         copy_mode: copyMode,
@@ -132,21 +132,21 @@ export function WorkflowsPanel() {
     }
   };
 
-  const toggleWorkflow = async (workflow: SocialWorkflow) => {
-    const updated = await api.patch<SocialWorkflow>(`/api/social/workflows/${workflow.id}`, {
+  const toggleWorkflow = async (workflow: LegacySocialWorkflow) => {
+    const updated = await api.patch<LegacySocialWorkflow>(`/api/social/workflows/${workflow.id}`, {
       enabled: !workflow.enabled,
     });
     setWorkflows((current) => current.map((item) => (item.id === updated.id ? updated : item)));
   };
 
-  const deleteWorkflow = async (workflow: SocialWorkflow) => {
+  const deleteWorkflow = async (workflow: LegacySocialWorkflow) => {
     if (!window.confirm(`Delete "${workflow.name}" and its run history?`)) return;
     await api.delete(`/api/social/workflows/${workflow.id}`);
     setWorkflows((current) => current.filter((item) => item.id !== workflow.id));
     if (selectedWorkflowId === workflow.id) setSelectedWorkflowId(null);
   };
 
-  const pollNow = async (workflow: SocialWorkflow) => {
+  const pollNow = async (workflow: LegacySocialWorkflow) => {
     await api.post(`/api/social/workflows/${workflow.id}/poll-now`, {});
     setMessage("Source check queued. Refresh history in a few seconds.");
   };

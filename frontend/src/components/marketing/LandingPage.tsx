@@ -667,10 +667,13 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
 
           <div className="flex items-center gap-6 text-sm text-[rgba(255,255,255,0.46)]">
             <Link href="/privacy" className="transition hover:text-[rgba(255,255,255,0.84)]">
-              Privacy
+              Privacy Policy
             </Link>
             <Link href="/terms" className="transition hover:text-[rgba(255,255,255,0.84)]">
-              Terms
+              Terms of Service
+            </Link>
+            <Link href="/refunds" className="transition hover:text-[rgba(255,255,255,0.84)]">
+              Refund Policy
             </Link>
             <a href="#" className="transition hover:text-[rgba(255,255,255,0.84)]">
               Support
@@ -682,8 +685,6 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
       </footer>
 
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
         .marketing-display {
           font-family: "Bricolage Grotesque", Inter, sans-serif;
         }

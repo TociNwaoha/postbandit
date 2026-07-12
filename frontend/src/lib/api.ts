@@ -4,12 +4,20 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const PROXY_PREFIX = "/api/backend";
 
 class ApiError extends Error {
+  public detail?: unknown;
+  public code?: string;
+
   constructor(
     public status: number,
-    message: string
+    message: string,
+    detail?: unknown
   ) {
     super(message);
     this.name = "ApiError";
+    this.detail = detail;
+    if (detail && typeof detail === "object" && "error" in detail) {
+      this.code = String((detail as { error?: unknown }).error || "");
+    }
   }
 }
 
@@ -69,7 +77,12 @@ async function apiFetch<T>(
       window.location.href = "/login";
     }
 
-    throw new ApiError(res.status, detail);
+    const message =
+      detail && typeof detail === "object" && "message" in detail
+        ? String((detail as { message?: unknown }).message || "Request failed")
+        : String(detail || "Request failed");
+
+    throw new ApiError(res.status, message, detail);
   }
 
   if (res.status === 204) {

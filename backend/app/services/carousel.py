@@ -14,7 +14,7 @@ import httpx
 
 from app.config import settings
 from app.schemas.carousel import CarouselConfig
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 logger = logging.getLogger(__name__)
 
@@ -396,8 +396,8 @@ def render_config(
         slide_keys: list[str] = []
         for idx, slide_path in enumerate(slide_paths, start=1):
             key = f"carousels/{user_id}/{workspace_id}/slides/{slide_path.name}"
-            r2_client.upload_file(str(slide_path), key)
-            url = r2_client.get_presigned_download_url(key)
+            object_storage_client.upload_file(str(slide_path), key)
+            url = object_storage_client.get_presigned_download_url(key)
             slide_keys.append(key)
             slides.append({"index": idx, "key": key, "url": url})
 
@@ -407,8 +407,8 @@ def render_config(
                 archive.write(slide_path, arcname=slide_path.name)
 
         zip_key = f"carousels/{user_id}/{workspace_id}/carousel.zip"
-        r2_client.upload_file(str(zip_path), zip_key)
-        zip_url = r2_client.get_presigned_download_url(zip_key)
+        object_storage_client.upload_file(str(zip_path), zip_key)
+        zip_url = object_storage_client.get_presigned_download_url(zip_key)
 
         return {
             "workspace_id": workspace_id,

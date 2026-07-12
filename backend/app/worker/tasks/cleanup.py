@@ -17,7 +17,7 @@ from app.models.publish_job import PublishJob, PublishStatus
 from app.models.video import Video, VideoSourceType, VideoStatus
 from app.models.clip import Clip
 from app.models.editor_project import EditorProject, EditorProjectStatus
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.workspace import (
     WORKSPACE_ROOTS,
     is_workspace_lease_active,
@@ -331,7 +331,7 @@ def sweep_stale_queued_uploads_impl(*, dry_run: bool) -> dict:
                 continue
 
             eligible += 1
-            storage_exists = bool(video.storage_key and r2_client.file_exists(video.storage_key))
+            storage_exists = bool(video.storage_key and object_storage_client.file_exists(video.storage_key))
 
             if dry_run:
                 continue
@@ -476,7 +476,7 @@ def sweep_failed_imports_impl(*, dry_run: bool) -> dict:
                 storage_keys = _collect_video_storage_keys(db, video=video)
                 for key in storage_keys:
                     try:
-                        deleted_ok = r2_client.delete_file(key)
+                        deleted_ok = object_storage_client.delete_file(key)
                         if not deleted_ok:
                             storage_delete_failures += 1
                     except Exception as exc:
@@ -597,7 +597,7 @@ def sweep_raw_source_retention_impl(*, dry_run: bool) -> dict:
 
             deleted_ok = False
             try:
-                deleted_ok = r2_client.delete_file(video.storage_key)
+                deleted_ok = object_storage_client.delete_file(video.storage_key)
             except Exception as exc:
                 storage_delete_failures += 1
                 logger.warning(

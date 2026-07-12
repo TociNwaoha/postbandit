@@ -15,7 +15,7 @@ from app.models.export import CaptionColorVariant, CaptionFormat, Export, Export
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.clip_overlay_rendering import render_highlighted_text_layer
 from app.services.rendering import (
     build_subtitle_cues,
@@ -105,7 +105,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
 
             source_path = tmp_dir / "source.mp4"
             logger.info("[render] source media resolution start export_id=%s key=%s", export.id, video.storage_key)
-            r2_client.download_file(video.storage_key, str(source_path))
+            object_storage_client.download_file(video.storage_key, str(source_path))
             logger.info("[render] source media resolved export_id=%s path=%s", export.id, source_path)
 
             if not has_video_stream(str(source_path)):
@@ -183,7 +183,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                     "image/webp": ".webp",
                 }.get(overlay_asset.mime_type, ".png")
                 overlay_image_path = tmp_dir / f"overlay-image{extension}"
-                r2_client.download_file(overlay_asset.storage_key, str(overlay_image_path))
+                object_storage_client.download_file(overlay_asset.storage_key, str(overlay_image_path))
 
             overlay_text_layer_path: Path | None = None
             if export.overlay_text_config:
@@ -233,7 +233,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                 str(export.id),
                 _enum_value(export.aspect_ratio),
             )
-            r2_client.upload_file(str(output_path), output_key)
+            object_storage_client.upload_file(str(output_path), output_key)
             logger.info("[render] output upload complete export_id=%s storage_key=%s", export.id, output_key)
 
             export.storage_key = output_key
@@ -243,7 +243,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
 
             if export.caption_format == CaptionFormat.srt and srt_local_path:
                 srt_key = export_srt_key(str(export.user_id), str(clip.id), str(export.id))
-                r2_client.upload_file(str(srt_local_path), srt_key)
+                object_storage_client.upload_file(str(srt_local_path), srt_key)
                 export.srt_key = srt_key
                 logger.info("[render] srt sidecar upload complete export_id=%s srt_key=%s", export.id, srt_key)
 

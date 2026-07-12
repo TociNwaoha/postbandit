@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { WorkflowsPanel } from "@/components/workflows/WorkflowsPanel";
+import { SocialWorkflowsPanel } from "@/components/workflows/SocialWorkflowsPanel";
 import { authOptions } from "@/lib/auth";
 
 export default async function WorkflowsPage() {
@@ -11,7 +11,7 @@ export default async function WorkflowsPage() {
 
   return (
     <DashboardLayout title="Workflows">
-      <WorkflowsPanel />
+      <SocialWorkflowsPanel />
     </DashboardLayout>
   );
 }

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
+    api_rate_limit_redis_db: int = 3
+    auth_rate_limit_redis_db: int = 2
 
     # Auth
     nextauth_secret: str = "changeme"
@@ -32,14 +34,23 @@ class Settings(BaseSettings):
     # Public URLs
     backend_public_url: str = "http://localhost:8000"
     frontend_public_url: str = "http://localhost:3001"
+    frontend_url: str = "http://localhost:3001"
 
-    # Cloudflare R2
-    r2_account_id: str = "placeholder"
-    r2_access_key_id: str = "placeholder"
-    r2_secret_access_key: str = "placeholder"
-    r2_bucket_name: str = "clipbandit"
-    r2_endpoint_url: str = "https://placeholder.r2.cloudflarestorage.com"
-    r2_public_url: str = "placeholder"
+    # Stripe Billing
+    stripe_billing_enabled: bool = False
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_creator_price_id: str = ""
+    stripe_pro_price_id: str = ""
+    stripe_elite_price_id: str = ""
+
+    # Backblaze B2 (S3-compatible API)
+    b2_key_id: str = "placeholder"
+    b2_application_key: str = "placeholder"
+    b2_bucket_name: str = "placeholder"
+    b2_endpoint_url: str = "https://placeholder.backblazeb2.com"
+    b2_region: str = "placeholder"
 
     # Anthropic (legacy)
     anthropic_api_key: str = "placeholder"
@@ -88,6 +99,9 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     log_level: str = "INFO"
+    sentry_dsn: str = ""
+    backup_dir: str = "/opt/clipbandit/backups"
+    backup_retention_days: int = 14
     max_upload_size_mb: int = 5000
     max_concurrent_jobs: int = 2
     youtube_import_max_playlist_items: int = 50

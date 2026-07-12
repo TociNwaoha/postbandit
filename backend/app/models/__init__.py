@@ -18,7 +18,12 @@ from app.models.editor_asset import EditorAsset
 from app.models.editor_render import EditorRender
 from app.models.user_storage_usage import UserStorageUsage
 from app.models.clip_overlay_asset import ClipOverlayAsset
-from app.models.social_workflow import SocialWorkflow, SocialWorkflowRun
+from app.models.social_workflow import SocialWorkflow
+from app.models.social_workflow_run import SocialWorkflowRun
+from app.models.social_workflow_source_post import SocialWorkflowSourcePost
+from app.models.api_key import ApiKey
+from app.models.processed_stripe_event import ProcessedStripeEvent
+from app.models.post_analytics import PostAnalytics
 
 __all__ = [
     "User",
@@ -43,4 +48,8 @@ __all__ = [
     "ClipOverlayAsset",
     "SocialWorkflow",
     "SocialWorkflowRun",
+    "SocialWorkflowSourcePost",
+    "ApiKey",
+    "ProcessedStripeEvent",
+    "PostAnalytics",
 ]

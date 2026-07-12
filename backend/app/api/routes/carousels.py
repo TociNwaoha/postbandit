@@ -19,7 +19,7 @@ from app.schemas.carousel import (
     CarouselTemplateResponse,
 )
 from app.services.carousel import CarouselError, generate_config, list_templates, render_config
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -86,9 +86,9 @@ def _with_signed_urls(row: CarouselExport) -> CarouselExportResponse:
     preview_url = None
     try:
         if row.zip_key:
-            zip_url = r2_client.get_presigned_download_url(row.zip_key)
+            zip_url = object_storage_client.get_presigned_download_url(row.zip_key)
         if row.preview_key:
-            preview_url = r2_client.get_presigned_download_url(row.preview_key)
+            preview_url = object_storage_client.get_presigned_download_url(row.preview_key)
     except Exception as exc:
         logger.warning("[carousels] failed to generate signed urls export_id=%s error=%s", row.id, exc)
 
@@ -185,7 +185,7 @@ async def delete_carousel_export(
     storage_delete_failures = 0
     for key in storage_keys:
         try:
-            deleted = r2_client.delete_file(key)
+            deleted = object_storage_client.delete_file(key)
             if not deleted:
                 storage_delete_failures += 1
                 logger.warning("[carousels] storage key missing during delete export_id=%s key=%s", row.id, key)

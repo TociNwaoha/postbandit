@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const inter = Inter({ subsets: ["latin"] });
 const APP_TITLE = "PostBandit";
 const APP_DESCRIPTION = "AI-powered video clipping and social publishing for creators";
 const APP_ICON = "/icon.png";
@@ -46,7 +44,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} bg-[#0F172A] text-white antialiased`}>
+      <body className="bg-[#0F172A] text-white antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

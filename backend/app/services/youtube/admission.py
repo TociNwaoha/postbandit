@@ -11,7 +11,7 @@ from app.config import settings
 from app.models.job import Job, JobStatus
 from app.models.video import Video, VideoImportState, VideoSourceType
 from app.services.youtube import ACTIVE_IMPORT_STATES
-from app.services.r2 import LOCAL_STORAGE_ROOT
+from app.services.object_storage import LOCAL_STORAGE_ROOT
 
 
 @dataclass(frozen=True)

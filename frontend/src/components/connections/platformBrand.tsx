@@ -3,9 +3,10 @@ import { ReactNode } from "react";
 import { SocialPlatform } from "@/types";
 
 export interface PlatformBrandMeta {
-  platform: SocialPlatform | "unknown";
+  platform: SocialPlatform | "twitch" | "unknown";
   displayName: string;
   buttonLabel: string;
+  analyticsColor: string;
   baseClassName: string;
   disabledClassName: string;
   badgeClassName: string;
@@ -19,6 +20,7 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "x",
     displayName: "X",
     buttonLabel: "Login with X",
+    analyticsColor: "#111111",
     baseClassName: "bg-[#111111] text-white hover:bg-[#222222]",
     disabledClassName: "bg-[#2B2B2B] text-white/70",
     badgeClassName: "bg-[#111111] text-white",
@@ -32,6 +34,7 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "linkedin",
     displayName: "LinkedIn",
     buttonLabel: "Login with LinkedIn",
+    analyticsColor: "#0A66C2",
     baseClassName: "bg-[#0A66C2] text-white hover:bg-[#084d93]",
     disabledClassName: "bg-[#5E9ED4] text-white/80",
     badgeClassName: "bg-[#0A66C2] text-white",
@@ -45,6 +48,7 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "facebook",
     displayName: "Facebook",
     buttonLabel: "Login with Facebook",
+    analyticsColor: "#1877F2",
     baseClassName: "bg-[#1877F2] text-white hover:bg-[#1664cc]",
     disabledClassName: "bg-[#6FA8FF] text-white/80",
     badgeClassName: "bg-[#1877F2] text-white",
@@ -58,6 +62,7 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "tiktok",
     displayName: "TikTok",
     buttonLabel: "Login with TikTok",
+    analyticsColor: "#00F2EA",
     baseClassName: "bg-[#101010] text-white hover:bg-[#242424]",
     disabledClassName: "bg-[#3B3B3B] text-white/80",
     badgeClassName: "bg-[#101010] text-white",
@@ -71,6 +76,7 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "instagram",
     displayName: "Instagram",
     buttonLabel: "Login with Instagram",
+    analyticsColor: "#C13584",
     baseClassName:
       "bg-[linear-gradient(90deg,#405DE6_0%,#5851DB_25%,#C13584_55%,#E1306C_75%,#FD1D1D_100%)] text-white hover:brightness-110",
     disabledClassName: "bg-[#B5549A] text-white/80",
@@ -88,6 +94,7 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "threads",
     displayName: "Threads",
     buttonLabel: "Login with Threads",
+    analyticsColor: "#111111",
     baseClassName: "bg-[#0D0D0D] text-white hover:bg-[#1e1e1e]",
     disabledClassName: "bg-[#3A3A3A] text-white/80",
     badgeClassName: "bg-[#0D0D0D] text-white",
@@ -101,12 +108,31 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
     platform: "youtube",
     displayName: "YouTube",
     buttonLabel: "Login with YouTube",
+    analyticsColor: "#FF0000",
     baseClassName: "bg-[#FF0000] text-white hover:bg-[#d50000]",
     disabledClassName: "bg-[#FF7A7A] text-white/80",
     badgeClassName: "bg-[#FF0000] text-white",
     icon: (
       <svg className={iconClassName} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M23.5 6.2a3.01 3.01 0 0 0-2.12-2.13C19.52 3.5 12 3.5 12 3.5s-7.52 0-9.38.57A3.01 3.01 0 0 0 .5 6.2 31.7 31.7 0 0 0 0 12a31.7 31.7 0 0 0 .5 5.8 3.01 3.01 0 0 0 2.12 2.13c1.86.57 9.38.57 9.38.57s7.52 0 9.38-.57a3.01 3.01 0 0 0 2.12-2.13A31.7 31.7 0 0 0 24 12a31.7 31.7 0 0 0-.5-5.8ZM9.6 15.64V8.36L15.84 12 9.6 15.64Z" />
+      </svg>
+    ),
+  },
+};
+
+
+const extraPlatformBrandMap: Record<string, PlatformBrandMeta> = {
+  twitch: {
+    platform: "twitch",
+    displayName: "Twitch",
+    buttonLabel: "Login with Twitch",
+    analyticsColor: "#9146FF",
+    baseClassName: "bg-[#9146FF] text-white hover:bg-[#772CE8]",
+    disabledClassName: "bg-[#B894FF] text-white/80",
+    badgeClassName: "bg-[#9146FF] text-white",
+    icon: (
+      <svg className={iconClassName} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M4.2 3 3 6.2v13.1h4.5V21h2.5l1.7-1.7h3.7L21 13.7V3H4.2Zm15 9.8-3.2 3.2h-4.3L10 17.7V16H6.3V4.8h12.9v8Zm-3.3-5.4h-1.8v5.2h1.8V7.4Zm-5 0H9.1v5.2h1.8V7.4Z" />
       </svg>
     ),
   },
@@ -121,6 +147,7 @@ const fallbackMeta = (platform: string): PlatformBrandMeta => {
     platform: "unknown",
     displayName,
     buttonLabel: `Login with ${displayName}`,
+    analyticsColor: "#1D3FD0",
     baseClassName: "bg-[var(--app-primary)] text-white hover:bg-[var(--app-primary-hover)]",
     disabledClassName: "bg-[#6B83DC] text-white/80",
     badgeClassName: "bg-[var(--app-primary)] text-white",
@@ -134,6 +161,6 @@ const fallbackMeta = (platform: string): PlatformBrandMeta => {
 };
 
 export function getPlatformBrandMeta(platform: string): PlatformBrandMeta {
-  const known = platformBrandMap[platform as SocialPlatform];
+  const known = platformBrandMap[platform as SocialPlatform] || extraPlatformBrandMap[platform];
   return known || fallbackMeta(platform);
 }

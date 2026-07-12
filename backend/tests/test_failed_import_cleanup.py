@@ -47,7 +47,7 @@ def test_failed_import_cleanup_deletes_eligible_rows(monkeypatch):
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: False)
     monkeypatch.setattr(cleanup, "_load_video_for_cleanup", lambda db, video_id: video)
     monkeypatch.setattr(cleanup, "_collect_video_storage_keys", lambda db, video: {"k1", "k2"})
-    monkeypatch.setattr(cleanup.r2_client, "delete_file", lambda key: deleted_keys.append(key) or True)
+    monkeypatch.setattr(cleanup.object_storage_client, "delete_file", lambda key: deleted_keys.append(key) or True)
 
     result = cleanup.sweep_failed_imports_impl(dry_run=False)
 
@@ -72,7 +72,7 @@ def test_failed_import_cleanup_skips_when_active_job(monkeypatch):
     monkeypatch.setattr(cleanup, "SyncSessionLocal", session_factory)
     monkeypatch.setattr(cleanup, "_list_failed_import_video_ids", lambda db, cutoff: [video_id])
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: True)
-    monkeypatch.setattr(cleanup.r2_client, "delete_file", lambda key: delete_calls.append(key) or True)
+    monkeypatch.setattr(cleanup.object_storage_client, "delete_file", lambda key: delete_calls.append(key) or True)
 
     result = cleanup.sweep_failed_imports_impl(dry_run=False)
 
@@ -97,7 +97,7 @@ def test_failed_import_cleanup_respects_dry_run(monkeypatch):
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: False)
     monkeypatch.setattr(cleanup, "_load_video_for_cleanup", lambda db, video_id: video)
     monkeypatch.setattr(cleanup, "_collect_video_storage_keys", lambda db, video: {"k1", "k2"})
-    monkeypatch.setattr(cleanup.r2_client, "delete_file", lambda key: delete_calls.append(key) or True)
+    monkeypatch.setattr(cleanup.object_storage_client, "delete_file", lambda key: delete_calls.append(key) or True)
 
     result = cleanup.sweep_failed_imports_impl(dry_run=True)
 
@@ -127,7 +127,7 @@ def test_failed_import_cleanup_counts_failures(monkeypatch):
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: False)
     monkeypatch.setattr(cleanup, "_load_video_for_cleanup", lambda db, video_id: video)
     monkeypatch.setattr(cleanup, "_collect_video_storage_keys", lambda db, video: {"k1"})
-    monkeypatch.setattr(cleanup.r2_client, "delete_file", fail_delete)
+    monkeypatch.setattr(cleanup.object_storage_client, "delete_file", fail_delete)
     monkeypatch.setattr(session, "delete", fail_db_delete)
 
     result = cleanup.sweep_failed_imports_impl(dry_run=False)
@@ -156,7 +156,7 @@ def test_stale_queued_cleanup_marks_missing_uploads_error(monkeypatch):
     monkeypatch.setattr(cleanup, "_list_stale_queued_upload_video_ids", lambda db, cutoff: [video_id])
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: False)
     monkeypatch.setattr(cleanup, "_load_video_for_cleanup", lambda db, video_id: video)
-    monkeypatch.setattr(cleanup.r2_client, "file_exists", lambda key: False)
+    monkeypatch.setattr(cleanup.object_storage_client, "file_exists", lambda key: False)
     monkeypatch.setattr(cleanup, "_enqueue_recovery_transcribe_job", lambda db, video: True)
 
     result = cleanup.sweep_stale_queued_uploads_impl(dry_run=False)
@@ -187,7 +187,7 @@ def test_stale_queued_cleanup_recovers_when_file_exists(monkeypatch):
     monkeypatch.setattr(cleanup, "_list_stale_queued_upload_video_ids", lambda db, cutoff: [video_id])
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: False)
     monkeypatch.setattr(cleanup, "_load_video_for_cleanup", lambda db, video_id: video)
-    monkeypatch.setattr(cleanup.r2_client, "file_exists", lambda key: True)
+    monkeypatch.setattr(cleanup.object_storage_client, "file_exists", lambda key: True)
     monkeypatch.setattr(cleanup, "_enqueue_recovery_transcribe_job", lambda db, video: enqueued.append(video.id) or True)
 
     result = cleanup.sweep_stale_queued_uploads_impl(dry_run=False)
@@ -218,7 +218,7 @@ def test_stale_queued_cleanup_respects_dry_run(monkeypatch):
     monkeypatch.setattr(cleanup, "_list_stale_queued_upload_video_ids", lambda db, cutoff: [video_id])
     monkeypatch.setattr(cleanup, "_has_active_jobs", lambda db, video_id: False)
     monkeypatch.setattr(cleanup, "_load_video_for_cleanup", lambda db, video_id: video)
-    monkeypatch.setattr(cleanup.r2_client, "file_exists", lambda key: False)
+    monkeypatch.setattr(cleanup.object_storage_client, "file_exists", lambda key: False)
     monkeypatch.setattr(cleanup, "_enqueue_recovery_transcribe_job", lambda db, video: True)
 
     result = cleanup.sweep_stale_queued_uploads_impl(dry_run=True)

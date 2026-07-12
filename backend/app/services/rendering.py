@@ -655,7 +655,7 @@ def _caption_layout(
     font_size = int(round(font_size * scale))
 
     if caption_vertical_position is not None:
-        position_pct = min(90.0, max(5.0, float(caption_vertical_position)))
+        position_pct = min(98.0, max(0.0, float(caption_vertical_position)))
         margin_v = int(round(target_height * (position_pct / 100.0)))
     else:
         margin_v = default_margin_v

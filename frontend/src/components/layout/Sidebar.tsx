@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+
+import { ApiError, api } from "@/lib/api";
+import { BrandProfile } from "@/types";
 
 const workspaceNavItems = [
   {
@@ -24,6 +28,17 @@ const workspaceNavItems = [
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="2" y="2" width="20" height="20" rx="3" stroke="currentColor" strokeWidth="2"/>
         <path d="M10 8L16 12L10 16V8Z" fill="currentColor"/>
+      </svg>
+    ),
+  },
+  {
+    label: "Analytics",
+    href: "/dashboard/analytics",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 19V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M4 19H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M8 16L11 11L14 13L18 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -77,9 +92,32 @@ const workspaceNavItems = [
     href: "/workflows",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M5 7H13C16.3137 7 19 9.68629 19 13V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M16 14L19 17L22 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="5" cy="7" r="3" stroke="currentColor" strokeWidth="2" />
+        <path d="M5 7H15C17.2091 7 19 8.79086 19 11V11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 3L5 7L9 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M19 17H9C6.79086 17 5 15.2091 5 13V13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M15 13L19 17L15 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    label: "Developers",
+    href: "/developers",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 8L4 12L8 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M16 8L20 12L16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M14 5L10 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    label: "Billing",
+    href: "/billing",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
+        <path d="M3 9H21" stroke="currentColor" strokeWidth="2" />
+        <path d="M7 15H11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -127,6 +165,39 @@ export function Sidebar() {
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
   const initials = userEmail.slice(0, 2).toUpperCase();
+  const [aiCmoEnabled, setAiCmoEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    let active = true;
+
+    const loadAiCmoStatus = async () => {
+      try {
+        const profile = await api.get<BrandProfile>("/api/brand-profile");
+        if (active) setAiCmoEnabled(profile.ai_cmo_enabled ?? true);
+      } catch (err) {
+        if (active) {
+          setAiCmoEnabled(false);
+          if (!(err instanceof ApiError && err.status === 404)) {
+            // Non-blocking: sidebar still renders with the safe "off" indicator.
+            console.warn("[sidebar] failed to load AI CMO status", err);
+          }
+        }
+      }
+    };
+
+    const onStatusChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean }>).detail;
+      if (typeof detail?.enabled === "boolean") setAiCmoEnabled(detail.enabled);
+    };
+
+    void loadAiCmoStatus();
+    window.addEventListener("ai-cmo-status-changed", onStatusChanged);
+    return () => {
+      active = false;
+      window.removeEventListener("ai-cmo-status-changed", onStatusChanged);
+    };
+  }, [session?.user]);
 
   return (
     <aside className="flex min-h-screen w-60 flex-col border-r border-[var(--app-border)] bg-white">
@@ -142,7 +213,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-3">
         <div className="space-y-0.5">
           {workspaceNavItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
             return (
               <Link
                 key={item.href}
@@ -162,7 +233,27 @@ export function Sidebar() {
           })}
         </div>
         <div className="pt-2">
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-subtle)]">AI CMO</p>
+          <div className="flex items-center gap-2 px-3 pb-1.5">
+            <span
+              className={`relative flex h-3 w-3 items-center justify-center rounded-full ${
+                aiCmoEnabled ? "bg-emerald-500" : "bg-red-500"
+              }`}
+              aria-label={aiCmoEnabled ? "AI CMO is on" : "AI CMO is off"}
+              title={aiCmoEnabled ? "AI CMO is on" : "AI CMO is off"}
+            >
+              <span
+                className={`absolute h-6 w-6 rounded-full blur-sm ${
+                  aiCmoEnabled ? "bg-emerald-400/35" : "bg-red-500/35"
+                }`}
+              />
+              <span
+                className={`absolute h-10 w-10 rounded-full blur-md ${
+                  aiCmoEnabled ? "bg-emerald-400/10" : "bg-red-500/10"
+                }`}
+              />
+            </span>
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--app-muted)]">AI CMO</p>
+          </div>
           <div className="space-y-0.5">
             {aiCmoNavItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");

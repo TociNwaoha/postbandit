@@ -17,7 +17,7 @@ from app.models.publish_job import PublishJob, PublishStatus
 from app.models.user import User
 from app.models.video import Video
 from app.schemas.export import ExportCreate, ExportResponse, PublicExportShareResponse
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _resolve_caption_color_variant(
 def _normalize_caption_vertical_position(value: float | None) -> float | None:
     if value is None:
         return None
-    return round(min(90.0, max(5.0, float(value))), 2)
+    return round(min(98.0, max(0.0, float(value))), 2)
 
 
 def _normalize_caption_scale(value: float | None) -> float:
@@ -65,9 +65,9 @@ def _derived_download_url(storage_key: str | None) -> str | None:
     if not storage_key:
         return None
     try:
-        if not r2_client.file_exists(storage_key):
+        if not object_storage_client.file_exists(storage_key):
             return None
-        return r2_client.get_presigned_download_url(storage_key)
+        return object_storage_client.get_presigned_download_url(storage_key)
     except Exception as exc:
         logger.warning("[exports] failed to derive download URL for key=%s: %s", storage_key, exc)
         return None
@@ -77,7 +77,7 @@ def _clip_thumbnail_url(clip: Clip | None) -> str | None:
     if not clip or not clip.thumbnail_key:
         return None
     try:
-        return r2_client.get_presigned_download_url(clip.thumbnail_key)
+        return object_storage_client.get_presigned_download_url(clip.thumbnail_key)
     except Exception as exc:
         logger.warning("[exports] failed to derive thumbnail URL for clip_id=%s: %s", clip.id, exc)
         return None
@@ -282,7 +282,7 @@ async def delete_export(
     storage_delete_failures = 0
     for key in storage_keys:
         try:
-            deleted = r2_client.delete_file(key)
+            deleted = object_storage_client.delete_file(key)
             if not deleted:
                 storage_delete_failures += 1
                 logger.warning("[exports] storage key missing during delete export_id=%s key=%s", export.id, key)
@@ -396,7 +396,7 @@ async def create_export(
             )
         )
         overlay_asset = asset_result.scalar_one_or_none()
-        if not overlay_asset or not r2_client.file_exists(overlay_asset.storage_key):
+        if not overlay_asset or not object_storage_client.file_exists(overlay_asset.storage_key):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Overlay image is unavailable",

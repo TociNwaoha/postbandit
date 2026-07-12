@@ -15,7 +15,7 @@ from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, get_video_duration, get_video_resolution
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
 from app.services.transcription import get_model_with_metadata, transcribe_audio
@@ -166,6 +166,11 @@ def transcribe_job(self, video_id: str):
                 VideoSourceType.youtube,
                 VideoSourceType.youtube_single,
                 VideoSourceType.youtube_playlist,
+                VideoSourceType.instagram,
+                VideoSourceType.facebook,
+                VideoSourceType.tiktok,
+                VideoSourceType.x,
+                VideoSourceType.twitch,
             }:
                 transition_import_state(
                     db,
@@ -177,7 +182,7 @@ def transcribe_job(self, video_id: str):
                     strict=False,
                 )
             perf.start("file_read_source_locate", storage_key=video.storage_key)
-            r2_client.download_file(video.storage_key, str(video_path))
+            object_storage_client.download_file(video.storage_key, str(video_path))
             perf.end("file_read_source_locate")
             logger.info(f"Video downloaded to {video_path}")
 
@@ -268,7 +273,7 @@ def transcribe_job(self, video_id: str):
             transcript_path = tmp_dir / "transcript.json"
             transcript_path.write_text(json.dumps(transcript_payload, indent=2), encoding="utf-8")
             perf.start("transcript_storage_save", transcript_key=transcript_key)
-            r2_client.upload_file(str(transcript_path), transcript_key)
+            object_storage_client.upload_file(str(transcript_path), transcript_key)
             perf.end("transcript_storage_save", transcript_key=transcript_key)
             logger.info(f"Transcript saved to storage: {transcript_key}")
 
@@ -330,6 +335,11 @@ def transcribe_job(self, video_id: str):
                     VideoSourceType.youtube,
                     VideoSourceType.youtube_single,
                     VideoSourceType.youtube_playlist,
+                    VideoSourceType.instagram,
+                    VideoSourceType.facebook,
+                    VideoSourceType.tiktok,
+                    VideoSourceType.x,
+                    VideoSourceType.twitch,
                 }:
                     transition_import_state(
                         db,

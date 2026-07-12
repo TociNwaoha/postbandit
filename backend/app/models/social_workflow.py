@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,7 +10,20 @@ from app.database import Base
 from app.models.connected_account import SocialPlatform
 
 
+class SocialWorkflowStatus(str, enum.Enum):
+    active = "active"
+    paused = "paused"
+
+
+class SocialWorkflowCopyMode(str, enum.Enum):
+    reuse_source = "reuse_source"
+    platform_ai = "platform_ai"
+    both = "both"
+
+
 class WorkflowCopyMode(str, enum.Enum):
+    # Legacy names retained for main-branch workflow helpers/tests that are no
+    # longer the primary workflow path after the official-source workflow work.
     ai_platform = "ai_platform"
     reuse_source = "reuse_source"
 
@@ -33,9 +46,6 @@ class SocialWorkflow(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    source_account_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("connected_accounts.id", ondelete="SET NULL"), nullable=True, index=True
-    )
     source_platform: Mapped[SocialPlatform] = mapped_column(
         SAEnum(
             SocialPlatform,
@@ -46,19 +56,32 @@ class SocialWorkflow(Base):
         nullable=False,
         index=True,
     )
-    copy_mode: Mapped[WorkflowCopyMode] = mapped_column(
+    source_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connected_accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[SocialWorkflowStatus] = mapped_column(
         SAEnum(
-            WorkflowCopyMode,
-            name="workflow_copy_mode",
+            SocialWorkflowStatus,
+            name="social_workflow_status",
             values_callable=lambda enum_cls: [member.value for member in enum_cls],
         ),
-        default=WorkflowCopyMode.ai_platform,
+        default=SocialWorkflowStatus.active,
+        nullable=False,
+        index=True,
+    )
+    copy_mode: Mapped[SocialWorkflowCopyMode] = mapped_column(
+        SAEnum(
+            SocialWorkflowCopyMode,
+            name="social_workflow_copy_mode",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=SocialWorkflowCopyMode.both,
         nullable=False,
     )
-    destination_configs: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    cursor_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    auto_publish: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    destination_targets_json: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)
+    poll_cursor_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -66,69 +89,13 @@ class SocialWorkflow(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="social_workflows")
-    source_account: Mapped["ConnectedAccount | None"] = relationship("ConnectedAccount")
+    source_account: Mapped["ConnectedAccount | None"] = relationship("ConnectedAccount", foreign_keys=[source_account_id])
+    source_posts: Mapped[list["SocialWorkflowSourcePost"]] = relationship(
+        "SocialWorkflowSourcePost", back_populates="workflow", cascade="all, delete-orphan"
+    )
     runs: Mapped[list["SocialWorkflowRun"]] = relationship(
         "SocialWorkflowRun", back_populates="workflow", cascade="all, delete-orphan"
     )
 
 
-class SocialWorkflowRun(Base):
-    __tablename__ = "social_workflow_runs"
-    __table_args__ = (
-        UniqueConstraint("workflow_id", "source_external_post_id", name="uq_workflow_source_post"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workflow_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("social_workflows.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    source_publish_job_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("publish_jobs.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    source_export_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("exports.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    source_platform: Mapped[SocialPlatform] = mapped_column(
-        SAEnum(
-            SocialPlatform,
-            name="social_platform",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-            create_type=False,
-        ),
-        nullable=False,
-        index=True,
-    )
-    source_external_post_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    source_external_url: Mapped[str | None] = mapped_column(Text)
-    source_title: Mapped[str | None] = mapped_column(String(500))
-    source_description: Mapped[str | None] = mapped_column(Text)
-    source_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    status: Mapped[WorkflowRunStatus] = mapped_column(
-        SAEnum(
-            WorkflowRunStatus,
-            name="workflow_run_status",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-        ),
-        default=WorkflowRunStatus.waiting_asset,
-        nullable=False,
-        index=True,
-    )
-    generated_copy_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    error_message: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
-
-    workflow: Mapped["SocialWorkflow"] = relationship("SocialWorkflow", back_populates="runs")
-    user: Mapped["User"] = relationship("User")
-    source_publish_job: Mapped["PublishJob | None"] = relationship(
-        "PublishJob", foreign_keys=[source_publish_job_id]
-    )
-    source_export: Mapped["Export | None"] = relationship("Export", foreign_keys=[source_export_id])
-    publish_jobs: Mapped[list["PublishJob"]] = relationship(
-        "PublishJob", back_populates="workflow_run", foreign_keys="PublishJob.workflow_run_id"
-    )
+from app.models.social_workflow_run import SocialWorkflowRun  # noqa: E402

@@ -5,7 +5,7 @@ from typing import Iterator
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 router = APIRouter()
 CHUNK_SIZE_BYTES = 1024 * 1024
@@ -64,32 +64,17 @@ async def local_upload(
     key: str = Form(...),
     file: UploadFile = File(...),
 ):
-    if not r2_client.use_local:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Local upload is disabled when R2 is configured",
-        )
-
-    try:
-        r2_client.upload_fileobj(file.file, key, content_type=file.content_type)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    finally:
-        await file.close()
-
-    return {"success": True, "key": key}
+    await file.close()
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Local upload is disabled. Permanent uploads must use Backblaze B2.",
+    )
 
 
 @router.api_route("/storage/local/{key:path}", methods=["GET", "HEAD"])
 async def local_download(key: str, request: Request):
-    if not r2_client.use_local:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found",
-        )
-
     try:
-        file_path = r2_client._safe_local_path(key)
+        file_path = object_storage_client.local_fallback_path(key)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

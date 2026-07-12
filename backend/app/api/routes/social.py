@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.billing.enforcement import enforce_platform_limit
 from app.config import settings
 from app.database import get_db
 from app.models.clip import Clip, ClipStatus
@@ -53,7 +54,7 @@ from app.services.social.oauth_state import (
 from app.services.social import all_adapters, get_adapter
 from app.services.social.base import ProviderNotConfiguredError, ProviderOperationError
 from app.services.social.x import build_pkce_challenge, generate_pkce_verifier
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -475,6 +476,8 @@ async def list_connected_accounts(
             username_or_channel_name=account.username_or_channel_name,
             destination_type=_destination_type_for_account(account),
             token_expires_at=account.token_expires_at,
+            token_expired=bool(account.token_expired),
+            last_token_refresh=account.last_token_refresh,
             scopes=account.scopes,
             metadata_json=account.metadata_json or {},
             created_at=account.created_at,
@@ -488,6 +491,7 @@ async def list_connected_accounts(
 async def start_connect(
     platform: SocialPlatform,
     body: ConnectStartRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     adapter = get_adapter(platform)
@@ -499,6 +503,8 @@ async def start_connect(
             setup_details.get("missing_fields", []),
         )
         raise HTTPException(status_code=400, detail=setup_message or "Provider is not configured")
+
+    await enforce_platform_limit(db=db, user=current_user, platform=platform)
 
     return_to = _safe_return_path(body.return_to)
     state, nonce = _make_state_token(current_user.id, platform, return_to)
@@ -618,6 +624,17 @@ async def oauth_callback(
             f"{target_base}?status=error&platform={platform.value}&message=internal_callback_error"
         )
 
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user:
+        return RedirectResponse(f"{target_base}?status=error&platform={platform.value}&message=invalid_state")
+
+    try:
+        await enforce_platform_limit(db=db, user=user, platform=platform)
+    except HTTPException:
+        return RedirectResponse(
+            f"{target_base}?status=error&platform={platform.value}&message=platform_limit_reached"
+        )
+
     upserted_count = 0
     for oauth_payload in oauth_accounts:
         access_token_encrypted = encrypt_secret(oauth_payload.access_token)
@@ -640,6 +657,8 @@ async def oauth_callback(
             existing.access_token_encrypted = access_token_encrypted
             existing.refresh_token_encrypted = refresh_token_encrypted
             existing.token_expires_at = oauth_payload.token_expires_at
+            existing.token_expired = False
+            existing.last_token_refresh = datetime.now(timezone.utc)
             existing.scopes = oauth_payload.scopes
             existing.metadata_json = oauth_payload.metadata_json
         else:
@@ -653,6 +672,8 @@ async def oauth_callback(
                     access_token_encrypted=access_token_encrypted,
                     refresh_token_encrypted=refresh_token_encrypted,
                     token_expires_at=oauth_payload.token_expires_at,
+                    token_expired=False,
+                    last_token_refresh=datetime.now(timezone.utc),
                     scopes=oauth_payload.scopes,
                     metadata_json=oauth_payload.metadata_json,
                 )
@@ -921,7 +942,7 @@ async def list_publish_calendar(
         thumbnail_url = None
         if clip and clip.thumbnail_key:
             try:
-                thumbnail_url = r2_client.get_presigned_download_url(clip.thumbnail_key)
+                thumbnail_url = object_storage_client.get_presigned_download_url(clip.thumbnail_key)
             except Exception as exc:
                 logger.warning(
                     "[social] calendar thumbnail unavailable job_id=%s error=%s",

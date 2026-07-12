@@ -22,6 +22,11 @@ class VideoSourceType(str, enum.Enum):
     youtube_single = "youtube_single"
     youtube_playlist = "youtube_playlist"
     youtube = "youtube"
+    instagram = "instagram"
+    facebook = "facebook"
+    tiktok = "tiktok"
+    x = "x"
+    twitch = "twitch"
 
 
 class VideoStatus(str, enum.Enum):
@@ -72,7 +77,7 @@ class Video(Base):
         SAEnum(VideoSourceType, name="video_source_type"), nullable=False
     )
     source_url: Mapped[str | None] = mapped_column(Text)
-    source_video_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    source_video_id: Mapped[str | None] = mapped_column(String(128), index=True)
     source_playlist_id: Mapped[str | None] = mapped_column(String(64), index=True)
     source_playlist_title: Mapped[str | None] = mapped_column(String(500))
     playlist_index: Mapped[int | None] = mapped_column(Integer, index=True)

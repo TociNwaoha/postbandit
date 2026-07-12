@@ -13,7 +13,7 @@ const ACTIVE_IMPORT_STATES = new Set([
   "processing",
 ]);
 
-const YOUTUBE_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist"]);
+const URL_IMPORT_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist", "instagram", "facebook", "tiktok", "x", "twitch"]);
 
 export function useVideos() {
   const [videos, setVideos] = useState<VideoListItem[]>([]);
@@ -45,7 +45,7 @@ export function useVideos() {
   const hasActiveVideos = useMemo(
     () =>
       videos.some((video) => {
-        if (YOUTUBE_SOURCE_TYPES.has(video.source_type) && video.import_state) {
+        if (URL_IMPORT_SOURCE_TYPES.has(video.source_type) && video.import_state) {
           return ACTIVE_IMPORT_STATES.has(video.import_state);
         }
         return ACTIVE_STATUSES.has(video.status);

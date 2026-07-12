@@ -51,8 +51,11 @@ class PublishJob(Base):
     connected_account_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connected_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("social_workflow_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    workflow_source_post_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social_workflow_source_posts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     status: Mapped[PublishStatus] = mapped_column(
         SAEnum(
@@ -97,9 +100,7 @@ class PublishJob(Base):
     connected_account: Mapped["ConnectedAccount | None"] = relationship(
         "ConnectedAccount", back_populates="publish_jobs"
     )
-    workflow_run: Mapped["SocialWorkflowRun | None"] = relationship(
-        "SocialWorkflowRun", back_populates="publish_jobs", foreign_keys=[workflow_run_id]
-    )
+    workflow_source_post: Mapped["SocialWorkflowSourcePost | None"] = relationship("SocialWorkflowSourcePost")
     attempts: Mapped[list["PublishAttempt"]] = relationship(
         "PublishAttempt", back_populates="publish_job", cascade="all, delete-orphan"
     )

@@ -30,10 +30,12 @@ Thumbs.db
 # Temp
 /tmp/
 *.log
+celerybeat-schedule*
 
 # Docker volumes (local)
 postgres_data/
 redis_data/
+backups/
 
 # IDE
 .idea/

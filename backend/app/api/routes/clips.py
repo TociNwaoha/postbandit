@@ -32,7 +32,7 @@ from app.services.ai_copy import (
     provider_configured,
 )
 from app.services.editor_quota import enforce_storage_hard_stop
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def _clip_to_response(clip: Clip) -> ClipResponse:
     thumbnail_url: str | None = None
     if clip.thumbnail_key:
         try:
-            thumbnail_url = r2_client.get_presigned_download_url(clip.thumbnail_key)
+            thumbnail_url = object_storage_client.get_presigned_download_url(clip.thumbnail_key)
         except Exception:
             thumbnail_url = None
 
@@ -88,7 +88,7 @@ def _overlay_asset_to_response(asset: ClipOverlayAsset) -> ClipOverlayAssetRespo
         size_bytes=int(asset.size_bytes or 0),
         width=asset.width,
         height=asset.height,
-        download_url=r2_client.get_presigned_download_url(asset.storage_key),
+        download_url=object_storage_client.get_presigned_download_url(asset.storage_key),
         created_at=asset.created_at,
     )
 
@@ -198,7 +198,7 @@ async def upload_clip_overlay_asset(
     mime_type, extension = format_meta
     asset_id = uuid.uuid4()
     key = f"clip-overlays/{current_user.id}/{clip.id}/{asset_id}{extension}"
-    r2_client.upload_fileobj(io.BytesIO(raw), key, content_type=mime_type)
+    object_storage_client.upload_fileobj(io.BytesIO(raw), key, content_type=mime_type)
 
     asset = ClipOverlayAsset(
         id=asset_id,
@@ -262,7 +262,7 @@ async def delete_clip_overlay_asset(
         )
 
     try:
-        r2_client.delete_file(asset.storage_key)
+        object_storage_client.delete_file(asset.storage_key)
     except Exception as exc:
         logger.warning(
             "[clips] overlay storage delete failed user_id=%s asset_id=%s key=%s error=%s",

@@ -42,6 +42,14 @@ def _extract_google_error(response: httpx.Response) -> str:
         err_obj = payload.get("error")
         if isinstance(err_obj, dict):
             detail = err_obj.get("message") or err_obj.get("status") or err_obj.get("code")
+            errors = err_obj.get("errors")
+            reason = None
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                reason = errors[0].get("reason")
+            if reason and detail:
+                return f"{reason}: {detail}"[:200]
+            if reason:
+                return str(reason)[:200]
             if detail:
                 return str(detail)[:200]
 
@@ -331,26 +339,63 @@ class YouTubeAdapter(SocialProviderAdapter):
             "X-Upload-Content-Type": "video/mp4",
         }
 
-        with httpx.Client(timeout=120) as client:
-            init_resp = client.post(
-                YOUTUBE_UPLOAD_URL,
-                params={"uploadType": "resumable", "part": "snippet,status"},
-                headers=headers,
-                json=metadata,
-            )
-            init_resp.raise_for_status()
-            upload_url = init_resp.headers.get("Location")
-            if not upload_url:
-                raise ProviderOperationError("YouTube upload session did not return upload location")
-
-            with open(media_path, "rb") as media_file:
-                upload_resp = client.put(
-                    upload_url,
-                    headers={"Authorization": f"Bearer {token_to_use}", "Content-Type": "video/mp4"},
-                    content=media_file,
+        upload_stage = "session_init"
+        try:
+            with httpx.Client(timeout=120) as client:
+                init_resp = client.post(
+                    YOUTUBE_UPLOAD_URL,
+                    params={"uploadType": "resumable", "part": "snippet,status"},
+                    headers=headers,
+                    json=metadata,
                 )
-                upload_resp.raise_for_status()
-                upload_data = upload_resp.json()
+                init_resp.raise_for_status()
+                upload_url = init_resp.headers.get("Location")
+                if not upload_url:
+                    raise ProviderOperationError("YouTube upload session did not return upload location")
+
+                upload_stage = "media_upload"
+                with open(media_path, "rb") as media_file:
+                    upload_resp = client.put(
+                        upload_url,
+                        headers={"Authorization": f"Bearer {token_to_use}", "Content-Type": "video/mp4"},
+                        content=media_file,
+                    )
+                    upload_resp.raise_for_status()
+                    upload_data = upload_resp.json()
+        except httpx.HTTPStatusError as exc:
+            reason = _extract_google_error(exc.response)
+            logger.warning(
+                "[social] youtube upload failed stage=%s status=%s reason=%s",
+                upload_stage,
+                exc.response.status_code,
+                reason,
+            )
+            return PublishResult(
+                status="failed",
+                error_message=f"YouTube upload failed: {reason}",
+                provider_metadata_json={
+                    "youtube_error": {
+                        "stage": upload_stage,
+                        "http_status": exc.response.status_code,
+                        "reason": reason,
+                    }
+                },
+                updated_access_token=updated_access_token,
+                updated_token_expires_at=updated_token_expires_at,
+            )
+        except httpx.RequestError as exc:
+            logger.warning(
+                "[social] youtube upload network failure stage=%s error=%s",
+                upload_stage,
+                exc.__class__.__name__,
+            )
+            return PublishResult(
+                status="failed",
+                error_message="YouTube upload request failed. Please retry.",
+                provider_metadata_json={"youtube_error": {"stage": upload_stage, "reason": "network_error"}},
+                updated_access_token=updated_access_token,
+                updated_token_expires_at=updated_token_expires_at,
+            )
 
         video_id = upload_data.get("id")
         if not video_id:

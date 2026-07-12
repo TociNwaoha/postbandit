@@ -8,6 +8,16 @@ class UserBase(BaseModel):
     email: EmailStr
     tier: UserTier = UserTier.starter
     videos_used: int = 0
+    onboarding_completed_at: datetime | None = None
+    onboarding_skipped_at: datetime | None = None
+    onboarding_role: str | None = None
+    onboarding_metadata_json: dict | None = None
+    billing_plan: str = "trial"
+    subscription_status: str = "trialing"
+    trial_ends_at: datetime | None = None
+    billing_period_start: datetime | None = None
+    billing_period_end: datetime | None = None
+    platforms_allowed: int = 3
 
 
 class UserCreate(BaseModel):

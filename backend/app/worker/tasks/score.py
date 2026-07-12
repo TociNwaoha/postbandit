@@ -16,7 +16,7 @@ from app.models.transcript import TranscriptSegment
 from app.models.video import ClipProfile, Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, extract_thumbnail
 from app.services.ai_copy import AICopyUnavailableError, generate_clip_copy, provider_configured
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
 from app.services.scoring import (
@@ -213,6 +213,11 @@ def score_job(self, video_id: str):
                 VideoSourceType.youtube,
                 VideoSourceType.youtube_single,
                 VideoSourceType.youtube_playlist,
+                VideoSourceType.instagram,
+                VideoSourceType.facebook,
+                VideoSourceType.tiktok,
+                VideoSourceType.x,
+                VideoSourceType.twitch,
             }:
                 transition_import_state(
                     db,
@@ -248,7 +253,7 @@ def score_job(self, video_id: str):
             raise FileNotFoundError(f"Video storage key missing for {video_id}")
 
         logger.info("[score] loading media source for video_id=%s", video_id)
-        r2_client.download_file(storage_key, str(local_video_path))
+        object_storage_client.download_file(storage_key, str(local_video_path))
         if workspace:
             heartbeat_workspace(workspace)
         logger.info("[score] media source ready at %s", local_video_path)
@@ -345,7 +350,7 @@ def score_job(self, video_id: str):
                 for timestamp in timestamps:
                     try:
                         extract_thumbnail(str(local_video_path), str(thumb_local_path), timestamp)
-                        r2_client.upload_file(str(thumb_local_path), thumb_storage_key)
+                        object_storage_client.upload_file(str(thumb_local_path), thumb_storage_key)
                         clip.thumbnail_key = thumb_storage_key
                         thumbnail_success += 1
                         thumb_error = None
@@ -378,6 +383,11 @@ def score_job(self, video_id: str):
                 VideoSourceType.youtube,
                 VideoSourceType.youtube_single,
                 VideoSourceType.youtube_playlist,
+                VideoSourceType.instagram,
+                VideoSourceType.facebook,
+                VideoSourceType.tiktok,
+                VideoSourceType.x,
+                VideoSourceType.twitch,
             }:
                 transition_import_state(
                     db,
@@ -504,6 +514,11 @@ def score_job(self, video_id: str):
                             VideoSourceType.youtube,
                             VideoSourceType.youtube_single,
                             VideoSourceType.youtube_playlist,
+                            VideoSourceType.instagram,
+                            VideoSourceType.facebook,
+                            VideoSourceType.tiktok,
+                            VideoSourceType.x,
+                            VideoSourceType.twitch,
                         }:
                             transition_import_state(
                                 db,

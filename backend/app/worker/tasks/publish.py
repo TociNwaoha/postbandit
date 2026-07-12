@@ -13,8 +13,9 @@ from app.models.export import Export, ExportStatus
 from app.models.publish_attempt import PublishAttempt
 from app.models.publish_job import PublishJob, PublishMode, PublishStatus
 from app.services.crypto import decrypt_secret, encrypt_secret, encryption_available
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.social.registry import get_adapter
+from app.services.social.security import sanitize_sensitive_text
 from app.services.social.types import PublishPayload
 
 logger = logging.getLogger(__name__)
@@ -189,8 +190,8 @@ def execute_publish_job(self, publish_job_id: str):
                     }
 
             media_path = tmp_dir / "export.mp4"
-            r2_client.download_file(export.storage_key, str(media_path))
-            media_url = r2_client.get_presigned_download_url(export.storage_key, expiry=3600)
+            object_storage_client.download_file(export.storage_key, str(media_path))
+            media_url = object_storage_client.get_presigned_download_url(export.storage_key, expiry=3600)
             media_url_for_publish = media_url if capabilities.supports_video_upload else None
 
             access_token = decrypt_secret(account.access_token_encrypted)
@@ -267,10 +268,11 @@ def execute_publish_job(self, publish_job_id: str):
                 "external_post_id": publish_job.external_post_id,
             }
         except Exception as exc:
-            logger.exception("[publish] failed publish_job_id=%s error=%s", publish_job_id, exc)
+            error_message = sanitize_sensitive_text(exc)
+            logger.exception("[publish] failed publish_job_id=%s error=%s", publish_job_id, error_message)
             publish_job.status = PublishStatus.failed
-            publish_job.error_message = str(exc)[:500]
-            attempt.error_message = str(exc)[:500]
+            publish_job.error_message = error_message
+            attempt.error_message = error_message
             attempt.finished_at = datetime.now(timezone.utc)
             db.commit()
             if publish_job.workflow_run_id:

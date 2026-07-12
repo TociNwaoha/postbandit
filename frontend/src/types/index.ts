@@ -1,15 +1,41 @@
 export type UserTier = "starter" | "creator" | "agency";
+export type OnboardingRole = "creator" | "founder" | "agency" | "team";
 
 export interface User {
   id: string;
   email: string;
   tier: UserTier;
   videos_used: number;
+  onboarding_completed_at?: string | null;
+  onboarding_skipped_at?: string | null;
+  onboarding_role?: OnboardingRole | null;
+  onboarding_metadata_json?: Record<string, unknown> | null;
+  billing_plan?: string;
+  subscription_status?: string;
+  trial_ends_at?: string | null;
+  billing_period_start?: string | null;
+  billing_period_end?: string | null;
+  platforms_allowed?: number;
   created_at: string;
   updated_at: string;
 }
 
-export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist";
+export interface OnboardingStatus {
+  completed_at: string | null;
+  skipped_at: string | null;
+  role: OnboardingRole | null;
+  tier: UserTier;
+  metadata: Record<string, unknown>;
+  should_onboard: boolean;
+}
+
+export interface OnboardingProfilePatch {
+  role?: OnboardingRole | null;
+  tier?: UserTier | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram" | "facebook" | "tiktok" | "x" | "twitch";
 export type ClipProfile = "viral" | "sermon";
 export type VideoStatus =
   | "queued"
@@ -416,6 +442,8 @@ export interface ConnectedAccount {
   username_or_channel_name: string | null;
   destination_type: string;
   token_expires_at: string | null;
+  token_expired: boolean;
+  last_token_refresh: string | null;
   scopes: string[] | null;
   metadata_json: Record<string, unknown>;
   created_at: string;
@@ -500,7 +528,7 @@ export type WorkflowRunStatus =
   | "failed"
   | "skipped";
 
-export interface SocialWorkflow {
+export interface LegacySocialWorkflow {
   id: string;
   user_id: string;
   name: string;
@@ -566,6 +594,77 @@ export interface FullVideoExportResponse {
   reused_existing_export: boolean;
 }
 
+export type SocialWorkflowStatus = "active" | "paused";
+export type SocialWorkflowCopyMode = "reuse_source" | "platform_ai" | "both";
+export type SocialWorkflowImportMode = "manual_select" | "start_now" | "last_n";
+export type SocialWorkflowRunStatus =
+  | "detected"
+  | "importing"
+  | "imported_processing"
+  | "ready_to_publish"
+  | "publishing"
+  | "completed"
+  | "original_required"
+  | "import_failed"
+  | "partial_failed";
+export type SocialWorkflowSourceStatus = SocialWorkflowRunStatus;
+
+export interface SocialWorkflowRun {
+  id: string;
+  user_id: string;
+  workflow_id: string;
+  status: SocialWorkflowRunStatus;
+  publish_job_ids_json: string[];
+  destination_results_json: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SocialWorkflowSourcePost {
+  id: string;
+  user_id: string;
+  workflow_id: string;
+  source_account_id: string | null;
+  source_platform: SocialPlatform;
+  external_post_id: string;
+  permalink: string | null;
+  caption_snapshot: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  status: SocialWorkflowSourceStatus;
+  video_id: string | null;
+  export_id: string | null;
+  workflow_run_id: string | null;
+  error_message: string | null;
+  raw_metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  workflow_run?: SocialWorkflowRun | null;
+  publish_jobs?: SocialPublishJob[];
+}
+
+export interface SocialWorkflow {
+  id: string;
+  user_id: string;
+  name: string;
+  source_platform: SocialPlatform;
+  source_account_id: string | null;
+  status: SocialWorkflowStatus;
+  copy_mode: SocialWorkflowCopyMode;
+  auto_publish: boolean;
+  destination_targets_json: Array<Record<string, unknown>>;
+  poll_cursor_json: Record<string, unknown>;
+  last_polled_at: string | null;
+  last_error: string | null;
+  source_account_status?: "connected" | "needs_reconnection" | "poll_error";
+  source_account_action?: string | null;
+  source_account_message?: string | null;
+  created_at: string;
+  updated_at: string;
+  source_posts: SocialWorkflowSourcePost[];
+}
+
 
 export interface BrandProfile {
   id: string;
@@ -577,10 +676,51 @@ export interface BrandProfile {
   tone: string;
   use_phrases: string[];
   avoid_phrases: string[];
+  ai_cmo_enabled: boolean;
   post_frequency: number;
   preferred_platforms: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface DeveloperApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface DeveloperUsage {
+  plan: string;
+  limits: {
+    per_hour: number;
+    per_day: number;
+  };
+  usage: {
+    this_hour: number;
+    today: number;
+    hour_percent: number;
+    day_percent: number;
+    warning: boolean;
+  };
+  reset: {
+    hour_resets_at: string;
+    day_resets_at: string;
+  };
+}
+
+export interface BillingStatus {
+  plan_tier: string;
+  subscription_status: string;
+  trial_ends_at: string | null;
+  billing_period_start: string | null;
+  billing_period_end: string | null;
+  platforms_allowed: number;
+  platforms_connected: number;
+  stripe_publishable_key: string;
+  billing_enabled: boolean;
 }
 
 export type ContentQueueStatus = "draft" | "rendering" | "ready" | "approved" | "rejected" | "posted";
@@ -600,3 +740,61 @@ export interface ContentQueueItem {
 }
 
 export * from "./editor";
+
+export interface PostAnalyticsSummary {
+  total_posts: number;
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  total_reach: number;
+  total_impressions: number;
+  posts_with_errors: number;
+  top_platform: string | null;
+}
+
+export interface PostAnalyticsTimeseriesPoint {
+  date: string;
+  platform: SocialPlatform;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+}
+
+export interface PostAnalyticsTopPerformer {
+  publish_job_id: string;
+  platform: SocialPlatform;
+  title: string;
+  external_post_url: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+  fetch_error: string | null;
+}
+
+export interface PostAnalyticsSnapshot {
+  publish_job_id: string;
+  platform: SocialPlatform;
+  title: string;
+  caption: string | null;
+  external_post_id: string | null;
+  external_post_url: string | null;
+  fetched_at: string | null;
+  published_at: string | null;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+  fetch_error: string | null;
+  raw_response: Record<string, unknown> | null;
+}

@@ -25,7 +25,7 @@ from app.models.export import (
 from app.models.video import Video
 from app.schemas.editor import EditorProjectSchemaV1
 from app.services.editor_rendering import build_editor_ffmpeg_command, run_editor_render
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 from app.services.storage import export_video_key
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 
@@ -91,7 +91,7 @@ def render_editor_project(self, editor_render_id: str):
             if not video.storage_key:
                 raise EditorRenderError("Source media is unavailable for this project")
 
-            r2_client.download_file(video.storage_key, str(source_path))
+            object_storage_client.download_file(video.storage_key, str(source_path))
             heartbeat_workspace(workspace)
 
             project_payload = EditorProjectSchemaV1.model_validate(project.project_json)
@@ -119,11 +119,11 @@ def render_editor_project(self, editor_render_id: str):
                 ).scalars().first()
                 if not asset:
                     continue
-                if not r2_client.file_exists(asset.storage_key):
+                if not object_storage_client.file_exists(asset.storage_key):
                     continue
                 ext = Path(asset.original_filename or "asset.png").suffix or ".png"
                 local_path = asset_dir / f"{asset.id}{ext}"
-                r2_client.download_file(asset.storage_key, str(local_path))
+                object_storage_client.download_file(asset.storage_key, str(local_path))
                 image_inputs.append((overlay, str(local_path), input_offset))
 
             cmd = build_editor_ffmpeg_command(
@@ -162,7 +162,7 @@ def render_editor_project(self, editor_render_id: str):
                 str(export.id),
                 project.aspect_ratio.value,
             )
-            r2_client.upload_file(str(output_path), output_key)
+            object_storage_client.upload_file(str(output_path), output_key)
 
             editor_render.output_storage_key = output_key
             editor_render.output_size_bytes = int(output_size)

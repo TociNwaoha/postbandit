@@ -49,7 +49,7 @@ from app.services.editor_project_preview import (
     should_enqueue_project_preview,
 )
 from app.services.editor_quota import enforce_storage_hard_stop, refresh_user_storage_usage, to_usage_response
-from app.services.r2 import r2_client
+from app.services.object_storage import object_storage_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -62,9 +62,9 @@ def _asset_download_url(storage_key: str | None) -> str | None:
     if not storage_key:
         return None
     try:
-        if not r2_client.file_exists(storage_key):
+        if not object_storage_client.file_exists(storage_key):
             return None
-        return r2_client.get_presigned_download_url(storage_key)
+        return object_storage_client.get_presigned_download_url(storage_key)
     except Exception:
         return None
 
@@ -132,8 +132,8 @@ async def _project_response(db: AsyncSession, project: EditorProject) -> EditorP
     preview_download_url = None
     if preview_meta.status == "ready" and preview_meta.key:
         try:
-            if r2_client.file_exists(preview_meta.key):
-                preview_download_url = r2_client.get_presigned_download_url(preview_meta.key)
+            if object_storage_client.file_exists(preview_meta.key):
+                preview_download_url = object_storage_client.get_presigned_download_url(preview_meta.key)
         except Exception:
             preview_download_url = None
 
@@ -455,7 +455,7 @@ async def upload_project_asset(
     asset_id = uuid.uuid4()
     ext = Path(file.filename or "asset.png").suffix or ".png"
     key = f"editor/{current_user.id}/{project.id}/assets/{asset_id}{ext}"
-    r2_client.upload_fileobj(io.BytesIO(raw), key, content_type=file.content_type)
+    object_storage_client.upload_fileobj(io.BytesIO(raw), key, content_type=file.content_type)
 
     asset = EditorAsset(
         id=asset_id,
@@ -495,7 +495,7 @@ async def delete_project_asset(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Editor asset not found")
 
     try:
-        r2_client.delete_file(asset.storage_key)
+        object_storage_client.delete_file(asset.storage_key)
     except Exception as exc:
         logger.warning("[editor] failed to delete asset key=%s error=%s", asset.storage_key, exc)
 

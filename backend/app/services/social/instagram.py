@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 
 from app.config import settings
-from app.models.connected_account import SocialPlatform
+from app.models.connected_account import ConnectedAccount, SocialPlatform
+from app.services.crypto import decrypt_secret, encrypt_secret
 from app.services.social.base import ProviderOperationError, SocialProviderAdapter, utcnow
 from app.services.social.meta import (
     GraphRequestError,
@@ -34,6 +35,7 @@ INSTAGRAM_ACCOUNT_FIELDS_FALLBACK = "id,username"
 
 IG_CONTAINER_POLL_SECONDS = 4
 IG_CONTAINER_MAX_WAIT_SECONDS = 180
+IG_TOKEN_REFRESH_WINDOW = timedelta(days=7)
 
 
 def _graph_base() -> str:
@@ -46,6 +48,86 @@ def _auth_url() -> str:
 
 def _token_url() -> str:
     return "https://api.instagram.com/oauth/access_token"
+
+
+def _long_lived_token_url() -> str:
+    return "https://graph.instagram.com/access_token"
+
+
+def _refresh_token_url() -> str:
+    return "https://graph.instagram.com/refresh_access_token"
+
+
+def _expiry_from_payload(payload: dict) -> datetime | None:
+    expires_in = payload.get("expires_in")
+    if isinstance(expires_in, (int, float)):
+        return utcnow() + timedelta(seconds=int(expires_in))
+    return None
+
+
+def _token_needs_refresh(token_expires_at) -> bool:
+    if token_expires_at is None:
+        return True
+    if token_expires_at.tzinfo is None:
+        token_expires_at = token_expires_at.replace(tzinfo=utcnow().tzinfo)
+    return token_expires_at <= utcnow() + IG_TOKEN_REFRESH_WINDOW
+
+
+def _exchange_long_lived_token(client: httpx.Client, *, access_token: str, client_secret: str) -> tuple[str, datetime | None]:
+    payload = graph_get(
+        client,
+        url=_long_lived_token_url(),
+        params={
+            "grant_type": "ig_exchange_token",
+            "client_secret": client_secret,
+            "access_token": access_token,
+        },
+    )
+    token = str(payload.get("access_token") or "").strip()
+    if not token:
+        raise GraphRequestError("Instagram long-lived token response missing access token")
+    return token, _expiry_from_payload(payload)
+
+
+def _refresh_long_lived_token(client: httpx.Client, *, access_token: str) -> tuple[str, datetime | None]:
+    payload = graph_get(
+        client,
+        url=_refresh_token_url(),
+        params={
+            "grant_type": "ig_refresh_token",
+            "access_token": access_token,
+        },
+    )
+    token = str(payload.get("access_token") or "").strip()
+    if not token:
+        raise GraphRequestError("Instagram refresh response missing access token")
+    return token, _expiry_from_payload(payload)
+
+
+def ensure_instagram_account_token(account: ConnectedAccount) -> str:
+    access_token = decrypt_secret(account.access_token_encrypted)
+    if not _token_needs_refresh(account.token_expires_at):
+        return access_token
+
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            refreshed_token, refreshed_expires_at = _refresh_long_lived_token(client, access_token=access_token)
+    except GraphRequestError as exc:
+        raise ProviderOperationError(f"Instagram source account must be reconnected: {exc}") from exc
+
+    account.access_token_encrypted = encrypt_secret(refreshed_token)
+    if refreshed_expires_at:
+        account.token_expires_at = refreshed_expires_at
+    metadata = dict(account.metadata_json or {})
+    metadata.update(
+        {
+            "token_kind": "long_lived",
+            "token_refreshed_at": utcnow().isoformat(),
+            "token_expires_at": account.token_expires_at.isoformat() if account.token_expires_at else None,
+        }
+    )
+    account.metadata_json = metadata
+    return refreshed_token
 
 
 def _extract_scopes(token_data: dict) -> list[str]:
@@ -212,6 +294,19 @@ class InstagramAdapter(SocialProviderAdapter):
                     token_expires_at = utcnow() + timedelta(seconds=int(expires_in))
 
                 try:
+                    access_token, long_lived_expires_at = _exchange_long_lived_token(
+                        client,
+                        access_token=access_token,
+                        client_secret=creds.client_secret,
+                    )
+                    if long_lived_expires_at:
+                        token_expires_at = long_lived_expires_at
+                except GraphRequestError as exc:
+                    raise ProviderOperationError(
+                        f"Instagram OAuth completed, but long-lived token exchange failed: {exc}"
+                    ) from exc
+
+                try:
                     profile = graph_get(
                         client,
                         url=f"{_graph_base()}/me",
@@ -256,6 +351,13 @@ class InstagramAdapter(SocialProviderAdapter):
                 "profile_picture_url": profile.get("profile_picture_url"),
             },
             source=profile_source,
+        )
+        metadata.update(
+            {
+                "token_kind": "long_lived",
+                "token_exchanged_at": utcnow().isoformat(),
+                "token_expires_at": token_expires_at.isoformat() if token_expires_at else None,
+            }
         )
 
         accounts = [
@@ -324,13 +426,24 @@ class InstagramAdapter(SocialProviderAdapter):
         if not caption:
             caption = (payload.title or "Published via PostBandit").strip()
 
+        active_token = access_token
+        updated_access_token = None
+        updated_token_expires_at = None
+
         try:
             with httpx.Client(timeout=120) as client:
+                if _token_needs_refresh(token_expires_at):
+                    active_token, updated_token_expires_at = _refresh_long_lived_token(
+                        client,
+                        access_token=access_token,
+                    )
+                    updated_access_token = active_token if active_token != access_token else None
+
                 creation = graph_post(
                     client,
                     url=f"{_graph_base()}/{ig_user_id}/media",
                     data={
-                        "access_token": access_token,
+                        "access_token": active_token,
                         "media_type": "REELS",
                         "video_url": media_url,
                         "caption": caption[:2200],
@@ -347,7 +460,7 @@ class InstagramAdapter(SocialProviderAdapter):
                         url=f"{_graph_base()}/{creation_id}",
                         params={
                             "fields": "id,status_code,status,error_message",
-                            "access_token": access_token,
+                            "access_token": active_token,
                         },
                     )
                     status_code = str(status_payload.get("status_code") or status_payload.get("status") or "").upper()
@@ -366,7 +479,7 @@ class InstagramAdapter(SocialProviderAdapter):
                     client,
                     url=f"{_graph_base()}/{ig_user_id}/media_publish",
                     data={
-                        "access_token": access_token,
+                        "access_token": active_token,
                         "creation_id": creation_id,
                     },
                 )
@@ -374,9 +487,19 @@ class InstagramAdapter(SocialProviderAdapter):
                 if not media_id:
                     raise ProviderOperationError("Instagram publish completed without media id")
 
-                permalink = _resolve_permalink(client, access_token=access_token, media_id=media_id)
+                permalink = _resolve_permalink(client, access_token=active_token, media_id=media_id)
         except GraphRequestError as exc:
             reason = str(exc).lower()
+            if any(key in reason for key in ("session has expired", "access token", "oauth", "code 190")):
+                return PublishResult(
+                    status="waiting_user_action",
+                    error_message=f"Reconnect Instagram before publishing: {exc}",
+                    provider_metadata_json={
+                        "stage": "publish_reel",
+                        "reason": "reconnect_required",
+                        "action": "reconnect_instagram",
+                    },
+                )
             if any(key in reason for key in ("permission", "authorized", "professional", "review")):
                 return PublishResult(
                     status="waiting_user_action",
@@ -407,4 +530,6 @@ class InstagramAdapter(SocialProviderAdapter):
                 "container_id": creation_id,
                 "instagram_publish_response": publish_data,
             },
+            updated_access_token=updated_access_token,
+            updated_token_expires_at=updated_token_expires_at,
         )

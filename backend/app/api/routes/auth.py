@@ -1,7 +1,7 @@
 import secrets
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from passlib.context import CryptContext
@@ -25,6 +25,7 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.api.deps import get_current_user
+from app.api.rate_limiter import limiter
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -53,7 +54,10 @@ def _is_email_verified(value: object) -> bool:
     return normalized in {"true", "1", "yes"}
 
 
-@router.post("/auth/login", response_model=TokenResponse)
+def _new_user_trial_ends_at() -> datetime:
+    return datetime.utcnow() + timedelta(days=7)
+
+
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
@@ -68,7 +72,12 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
 
 
-@router.post("/auth/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/auth/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
+async def login_endpoint(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    return await login(body=body, db=db)
+
+
 async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     password = body.password or ""
@@ -90,6 +99,7 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     user = User(
         email=email,
         password_hash=pwd_context.hash(password),
+        trial_ends_at=_new_user_trial_ends_at(),
     )
     db.add(user)
     await db.commit()
@@ -99,6 +109,12 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
         message="Account created successfully",
         user=UserResponse.model_validate(user),
     )
+
+
+@router.post("/auth/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
+async def signup_endpoint(request: Request, body: SignupRequest, db: AsyncSession = Depends(get_db)):
+    return await signup(body=body, db=db)
 
 
 @router.post("/auth/google/login", response_model=TokenResponse)
@@ -179,6 +195,7 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
         user = User(
             email=email,
             password_hash=pwd_context.hash(secrets.token_urlsafe(48)),
+            trial_ends_at=_new_user_trial_ends_at(),
         )
         db.add(user)
         await db.commit()

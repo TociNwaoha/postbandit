@@ -78,7 +78,7 @@ async def test_delete_video_export_success(monkeypatch):
 
     from app.api.routes import exports as exports_route
 
-    monkeypatch.setattr(exports_route.r2_client, "delete_file", lambda key: deleted_keys.append(key) or True)
+    monkeypatch.setattr(exports_route.object_storage_client, "delete_file", lambda key: deleted_keys.append(key) or True)
 
     response = await delete_export(export_id=export.id, db=db, current_user=user)
 
@@ -126,7 +126,7 @@ async def test_delete_video_export_storage_failures_are_non_blocking(monkeypatch
     def _delete_file(_key: str):
         raise RuntimeError("storage down")
 
-    monkeypatch.setattr(exports_route.r2_client, "delete_file", _delete_file)
+    monkeypatch.setattr(exports_route.object_storage_client, "delete_file", _delete_file)
 
     response = await delete_export(export_id=export.id, db=db, current_user=user)
 
@@ -144,7 +144,7 @@ async def test_delete_carousel_export_success(monkeypatch):
 
     from app.api.routes import carousels as carousels_route
 
-    monkeypatch.setattr(carousels_route.r2_client, "delete_file", lambda key: deleted_keys.append(key) or True)
+    monkeypatch.setattr(carousels_route.object_storage_client, "delete_file", lambda key: deleted_keys.append(key) or True)
 
     response = await delete_carousel_export(export_id=row.id, db=db, current_user=user)
 
