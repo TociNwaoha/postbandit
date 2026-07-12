@@ -35,7 +35,7 @@ const statusStyles: Record<string, string> = {
   failed_terminal: "bg-red-500/20 text-red-700",
 };
 
-const YOUTUBE_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist"]);
+const URL_IMPORT_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist", "instagram", "facebook", "tiktok", "x", "twitch"]);
 const BLOCKED_IMPORT_STATES = new Set([
   "blocked",
   "replacement_upload_required",
@@ -89,14 +89,14 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
     if (!transcript) return "";
     return transcript.full_text || "";
   }, [transcript]);
-  const isYoutubeSource = YOUTUBE_SOURCE_TYPES.has(video.source_type);
-  const effectiveImportState = isYoutubeSource ? video.import_state : null;
+  const isUrlImportSource = URL_IMPORT_SOURCE_TYPES.has(video.source_type);
+  const effectiveImportState = isUrlImportSource ? video.import_state : null;
   const displayStateKey =
-    isYoutubeSource && effectiveImportState && effectiveImportState !== "processing"
+    isUrlImportSource && effectiveImportState && effectiveImportState !== "processing"
       ? effectiveImportState
       : video.status;
   const displayStateLabel =
-    isYoutubeSource && effectiveImportState && effectiveImportState !== "processing"
+    isUrlImportSource && effectiveImportState && effectiveImportState !== "processing"
       ? importStateLabel(effectiveImportState)
       : video.status.charAt(0).toUpperCase() + video.status.slice(1);
   const isBlockedImport =
@@ -170,7 +170,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
           <p>
             <span className="text-[var(--app-subtle)]">Resolution:</span> {video.resolution || "Unknown"}
           </p>
-          {video.source_type.startsWith("youtube") ? (
+          {isUrlImportSource ? (
             <p>
               <span className="text-[var(--app-subtle)]">Import mode:</span>{" "}
               {video.import_mode === "embed_only"

@@ -43,12 +43,29 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-function isYoutubeUrl(value: string): boolean {
+function isSupportedImportUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
     if (!["http:", "https:"].includes(parsed.protocol)) return false;
     const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    return host === "youtube.com" || host === "youtu.be" || host.endsWith(".youtube.com");
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (host === "youtube.com" || host === "youtu.be" || host.endsWith(".youtube.com")) return true;
+    if (host === "instagram.com" || host.endsWith(".instagram.com")) {
+      return parts.length >= 2 && ["reel", "p", "tv"].includes(parts[0]);
+    }
+    if (host === "tiktok.com" || host === "vm.tiktok.com" || host.endsWith(".tiktok.com")) {
+      return (parts.length >= 3 && parts[0].startsWith("@") && parts[1] === "video") || (parts.length >= 2 && parts[0] === "t") || (host === "vm.tiktok.com" && parts.length >= 1);
+    }
+    if (host === "facebook.com" || host.endsWith(".facebook.com") || host === "fb.watch") {
+      return Boolean(parsed.searchParams.get("v")) || parts.includes("videos") || (parts[0] === "share" && parts[1] === "v") || (host === "fb.watch" && parts.length >= 1);
+    }
+    if (host === "x.com" || host === "twitter.com" || host.endsWith(".twitter.com")) {
+      return parts.length >= 3 && parts[1] === "status";
+    }
+    if (host === "twitch.tv" || host.endsWith(".twitch.tv") || host === "clips.twitch.tv") {
+      return (parts.length >= 2 && parts[0] === "videos") || (parts.length >= 3 && parts[1] === "clip") || (host === "clips.twitch.tv" && parts.length >= 1);
+    }
+    return false;
   } catch {
     return false;
   }
@@ -136,7 +153,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const busy = uploading || importing || confirmingUpload;
 
-  const youtubeValid = useMemo(() => youtubeUrl.trim() === "" || isYoutubeUrl(youtubeUrl.trim()), [youtubeUrl]);
+  const youtubeValid = useMemo(() => youtubeUrl.trim() === "" || isSupportedImportUrl(youtubeUrl.trim()), [youtubeUrl]);
 
   if (!isOpen) return null;
 
@@ -253,8 +270,8 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
   const importYoutube = async () => {
     if (importing) return;
     const normalized = youtubeUrl.trim();
-    if (!isYoutubeUrl(normalized)) {
-      setError("Please enter a valid YouTube URL (youtube.com or youtu.be)");
+    if (!isSupportedImportUrl(normalized)) {
+      setError("Please enter a public video URL from YouTube, Instagram, TikTok, Facebook, X, or Twitch");
       return;
     }
 
@@ -287,7 +304,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
         }, 2000);
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to start YouTube import";
+      const message = err instanceof ApiError ? err.message : "Failed to start import";
       setError(message);
     } finally {
       setImporting(false);
@@ -343,7 +360,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
                 setRecoveryMessage(null);
               }}
             >
-              YouTube URL
+              URL Import
             </button>
           </div>
         </div>
@@ -452,19 +469,19 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
             </div>
           ) : (
             <div>
-              <label className="mb-2 block text-sm text-[var(--app-muted)]">YouTube video or playlist URL</label>
+              <label className="mb-2 block text-sm text-[var(--app-muted)]">Video URL</label>
               <input
                 type="text"
                 value={youtubeUrl}
                 onChange={(event) => setYoutubeUrl(event.target.value)}
-                placeholder="Paste watch, youtu.be, shorts, or playlist URL..."
+                placeholder="Paste a video URL from YouTube, TikTok, Instagram, and more..."
                 disabled={importing}
                 className="w-full rounded-lg border border-[var(--app-border)] bg-white/70 px-4 py-3 text-sm text-[var(--app-text)]
                            placeholder:text-[var(--app-subtle)] focus:border-[#1D3FD0] focus:outline-none"
               />
-              {!youtubeValid && <p className="mt-2 text-xs text-red-700">Only youtube.com or youtu.be links are allowed</p>}
+              {!youtubeValid && <p className="mt-2 text-xs text-red-700">Paste a public video URL from YouTube, Instagram, TikTok, Facebook, X, or Twitch.</p>}
               <p className="mt-2 text-xs text-[var(--app-muted)]">
-                Some videos may be blocked on server runtime. In those cases, you can keep embed metadata or upload manually.
+                Supports YouTube, Instagram, TikTok, Facebook, X, and Twitch. Public content only; private, login-gated, and live content cannot be imported.
               </p>
               <div className="mt-5 flex justify-end">
                 <Button onClick={importYoutube} disabled={!youtubeUrl.trim()} loading={importing} className="min-w-28">

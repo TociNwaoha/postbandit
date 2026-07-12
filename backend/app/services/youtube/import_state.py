@@ -6,6 +6,17 @@ from typing import Any
 from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
 from app.models.video_import_state_event import VideoImportStateEvent
 
+URL_IMPORT_SOURCE_TYPES = {
+    VideoSourceType.youtube,
+    VideoSourceType.youtube_single,
+    VideoSourceType.youtube_playlist,
+    VideoSourceType.instagram,
+    VideoSourceType.facebook,
+    VideoSourceType.tiktok,
+    VideoSourceType.x,
+    VideoSourceType.twitch,
+}
+
 ACTIVE_IMPORT_STATES = {
     VideoImportState.queued,
     VideoImportState.metadata_extracting,
@@ -108,8 +119,12 @@ def is_youtube_source(source_type: VideoSourceType) -> bool:
     }
 
 
+def _is_import_state_source(source_type: VideoSourceType) -> bool:
+    return source_type in URL_IMPORT_SOURCE_TYPES
+
+
 def default_import_state_for_video(video: Video) -> VideoImportState:
-    if not is_youtube_source(video.source_type):
+    if not _is_import_state_source(video.source_type):
         return VideoImportState.not_applicable
     return VideoImportState.queued
 
@@ -155,7 +170,7 @@ def sync_import_state_from_video_status(
     actor: str = "system",
     metadata: dict[str, Any] | None = None,
 ) -> VideoImportState | None:
-    if not is_youtube_source(video.source_type):
+    if not _is_import_state_source(video.source_type):
         return None
     next_state = _resolve_terminal_from_video_status(video)
     if next_state is None:
@@ -185,9 +200,9 @@ def transition_import_state(
 ) -> bool:
     from_state = video.import_state
 
-    if not is_youtube_source(video.source_type):
+    if not _is_import_state_source(video.source_type):
         if to_state != VideoImportState.not_applicable:
-            raise ValueError(f"Non-YouTube video cannot transition to {to_state.value}")
+            raise ValueError(f"Non URL-import video cannot transition to {to_state.value}")
     if from_state == to_state:
         if not allow_noop:
             return False

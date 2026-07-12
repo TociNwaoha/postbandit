@@ -74,6 +74,7 @@ from app.services.youtube import (
     is_retryable_import_state,
     is_non_retryable_blocked_error_code,
     is_youtube_source,
+    normalize_import_url,
     normalize_youtube_input,
     transition_import_state,
     YT_BOT_VERIFICATION,
@@ -504,7 +505,7 @@ async def import_youtube(
     raw_url = body.url.strip()
     clip_profile = _resolve_clip_profile(body.clip_profile)
     try:
-        normalized = normalize_youtube_input(raw_url)
+        normalized = normalize_import_url(raw_url)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -561,7 +562,20 @@ async def import_youtube(
             message="Playlist import started",
         )
 
-    blocked_hint = await get_blocked_source_hint(normalized.normalized_video_id)
+    is_youtube_single_import = normalized.source_type in {"youtube", "youtube_single"}
+    try:
+        import_source_type = VideoSourceType.youtube_single if is_youtube_single_import else VideoSourceType(normalized.source_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported import platform",
+        ) from exc
+
+    blocked_hint = (
+        await get_blocked_source_hint(normalized.normalized_video_id)
+        if is_youtube_single_import
+        else None
+    )
     if blocked_hint and is_non_retryable_blocked_error_code(blocked_hint.error_code):
         logger.info(
             "[youtube_blocked_cache_hit] user_id=%s source_video_id=%s error_code=%s",
@@ -640,14 +654,14 @@ async def import_youtube(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                "YouTube import capacity is currently limited. "
+                "URL import capacity is currently limited. "
                 "Please retry shortly or upload a file directly."
             ),
         )
 
     video = Video(
         user_id=current_user.id,
-        source_type=VideoSourceType.youtube_single,
+        source_type=import_source_type,
         source_url=normalized.normalized_url,
         source_video_id=normalized.normalized_video_id,
         source_playlist_id=normalized.normalized_playlist_id,
@@ -663,8 +677,8 @@ async def import_youtube(
         db,
         video,
         actor="api",
-        reason_code="youtube_import_created",
-        metadata={"source_url": normalized.normalized_url},
+        reason_code="url_import_created",
+        metadata={"source_url": normalized.normalized_url, "source_type": normalized.source_type},
     )
     await db.commit()
     await db.refresh(video)

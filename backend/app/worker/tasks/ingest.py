@@ -16,8 +16,10 @@ from app.models.video import Video, VideoImportMode, VideoImportState, VideoSour
 from app.models.youtube_playlist_import import YoutubePlaylistImport
 from app.services.object_storage import object_storage_client
 from app.services.youtube import (
+    classify_platform_yt_dlp_error,
     classify_yt_dlp_error,
     embed_url_for_video_id,
+    extract_import_video_metadata,
     extract_single_video_metadata,
     is_non_retryable_blocked_error_code,
     normalize_youtube_input,
@@ -29,6 +31,22 @@ from app.services.workspace import finalize_workspace, heartbeat_workspace, star
 from app.worker.tasks.transcribe import transcribe_job
 
 logger = logging.getLogger(__name__)
+
+INGEST_SOURCE_TYPES = {
+    VideoSourceType.youtube,
+    VideoSourceType.youtube_single,
+    VideoSourceType.youtube_playlist,
+    VideoSourceType.instagram,
+    VideoSourceType.facebook,
+    VideoSourceType.tiktok,
+    VideoSourceType.x,
+    VideoSourceType.twitch,
+}
+YOUTUBE_SOURCE_TYPES = {
+    VideoSourceType.youtube,
+    VideoSourceType.youtube_single,
+    VideoSourceType.youtube_playlist,
+}
 
 
 def _latest_ingest_job(db, video_uuid: uuid.UUID) -> Job | None:
@@ -106,12 +124,12 @@ def _mark_video_and_job_failed(video_uuid: uuid.UUID, message: str, code: str | 
             video.error_message = message[:500]
             video.error_code = code
             video.debug_error_message = (debug or message)[:2000]
-            if video.source_type in {
-                VideoSourceType.youtube,
-                VideoSourceType.youtube_single,
-                VideoSourceType.youtube_playlist,
-            }:
-                target_state = VideoImportState.failed_retryable if code in {"YT_RATE_LIMITED", "YT_UNKNOWN_FAILURE"} else VideoImportState.failed_terminal
+            if video.source_type in INGEST_SOURCE_TYPES:
+                target_state = (
+                    VideoImportState.failed_retryable
+                    if code and (code.endswith("RATE_LIMITED") or code.endswith("UNKNOWN_FAILURE"))
+                    else VideoImportState.failed_terminal
+                )
                 transition_import_state(
                     db,
                     video,
@@ -138,6 +156,7 @@ def _mark_video_and_job_failed(video_uuid: uuid.UUID, message: str, code: str | 
 def ingest_job(self, video_id: str):
     tmp_dir = Path(f"/tmp/{video_id}")
     workspace = None
+    download_source_type: VideoSourceType | None = None
 
     try:
         video_uuid = uuid.UUID(video_id)
@@ -151,16 +170,13 @@ def ingest_job(self, video_id: str):
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
             if not video:
                 raise ValueError(f"Video not found: {video_id}")
-            if video.source_type not in {
-                VideoSourceType.youtube,
-                VideoSourceType.youtube_single,
-                VideoSourceType.youtube_playlist,
-            }:
-                raise ValueError("Ingest task only supports YouTube source videos")
+            if video.source_type not in INGEST_SOURCE_TYPES:
+                raise ValueError("Ingest task only supports URL-import source videos")
             if not video.source_url:
                 raise ValueError("Video source URL is missing")
 
             parent_id = video.import_parent_id
+            download_source_type = video.source_type
 
             workspace = start_workspace(
                 job_type="ingest",
@@ -189,7 +205,17 @@ def ingest_job(self, video_id: str):
 
             source_url = video.source_url
 
-        metadata = extract_single_video_metadata(source_url, timeout_seconds=settings.ytdlp_timeout_seconds)
+        if download_source_type in YOUTUBE_SOURCE_TYPES:
+            metadata = extract_single_video_metadata(source_url, timeout_seconds=settings.ytdlp_timeout_seconds)
+            metadata_key = "youtube"
+        else:
+            platform_key = download_source_type.value if download_source_type else "url_import"
+            metadata = extract_import_video_metadata(
+                source_url,
+                timeout_seconds=settings.ytdlp_timeout_seconds,
+                platform=platform_key,
+            )
+            metadata_key = platform_key
 
         with SyncSessionLocal() as db:
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
@@ -199,11 +225,11 @@ def ingest_job(self, video_id: str):
             video.source_video_id = video.source_video_id or metadata.video_id
             video.title = metadata.title or video.title
             video.duration_sec = metadata.duration_sec or video.duration_sec
-            video.embed_url = metadata.embed_url
+            video.embed_url = metadata.embed_url or video.embed_url
             video.thumbnail_url = metadata.thumbnail_url or video.thumbnail_url
             video.external_metadata_json = {
                 **(video.external_metadata_json or {}),
-                "youtube": {
+                metadata_key: {
                     "video_id": metadata.video_id,
                     "title": metadata.title,
                     "channel": metadata.channel,
@@ -226,8 +252,9 @@ def ingest_job(self, video_id: str):
             db.commit()
 
         logger.info(
-            "[ingest] decision=downloadable video_id=%s source_video_id=%s",
+            "[ingest] decision=downloadable video_id=%s source_type=%s source_video_id=%s",
             video_id,
+            download_source_type.value if download_source_type else "unknown",
             metadata.video_id,
         )
         with SyncSessionLocal() as db:
@@ -331,10 +358,17 @@ def ingest_job(self, video_id: str):
         return {"video_id": video_id, "status": "transcribing"}
 
     except DownloadError as exc:
-        classification = classify_yt_dlp_error(exc)
+        if download_source_type in YOUTUBE_SOURCE_TYPES:
+            classification = classify_yt_dlp_error(exc)
+        else:
+            classification = classify_platform_yt_dlp_error(
+                exc,
+                platform=download_source_type.value if download_source_type else "url_import",
+            )
         logger.info(
-            "[youtube_blocked_code_distribution] video_id=%s code=%s fallback=%s",
+            "[url_import_blocked_code_distribution] video_id=%s source_type=%s code=%s fallback=%s",
             video_id,
+            download_source_type.value if download_source_type else "unknown",
             classification.code,
             classification.fallback_action,
         )
@@ -397,9 +431,9 @@ def ingest_job(self, video_id: str):
                         allow_noop=True,
                         strict=False,
                     )
-                if not video.embed_url and video.source_video_id:
+                if video.source_type in YOUTUBE_SOURCE_TYPES and not video.embed_url and video.source_video_id:
                     video.embed_url = embed_url_for_video_id(video.source_video_id)
-                if not video.source_video_id and video.source_url:
+                if video.source_type in YOUTUBE_SOURCE_TYPES and not video.source_video_id and video.source_url:
                     try:
                         normalized = normalize_youtube_input(video.source_url)
                         video.source_video_id = normalized.normalized_video_id
@@ -407,7 +441,11 @@ def ingest_job(self, video_id: str):
                             video.embed_url = embed_url_for_video_id(normalized.normalized_video_id)
                     except Exception:
                         pass
-                if is_non_retryable_blocked_error_code(classification.code) and video.source_video_id:
+                if (
+                    video.source_type in YOUTUBE_SOURCE_TYPES
+                    and is_non_retryable_blocked_error_code(classification.code)
+                    and video.source_video_id
+                ):
                     set_blocked_source_hint_sync(
                         source_video_id=video.source_video_id,
                         error_code=classification.code,

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { BlockedImportActions } from "@/components/videos/BlockedImportActions";
+import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -36,6 +37,7 @@ const statusStyles: Record<string, string> = {
 };
 
 const YOUTUBE_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist"]);
+const URL_IMPORT_SOURCE_TYPES = new Set(["youtube", "youtube_single", "youtube_playlist", "instagram", "facebook", "tiktok", "x", "twitch"]);
 const BLOCKED_IMPORT_STATES = new Set([
   "blocked",
   "replacement_upload_required",
@@ -88,7 +90,7 @@ function importStateLabel(state: string): string {
 }
 
 function displayStateKey(video: VideoListItem): string {
-  if (!YOUTUBE_SOURCE_TYPES.has(video.source_type) || !video.import_state) {
+  if (!URL_IMPORT_SOURCE_TYPES.has(video.source_type) || !video.import_state) {
     return video.status;
   }
   if (video.import_state === "processing") {
@@ -98,13 +100,19 @@ function displayStateKey(video: VideoListItem): string {
 }
 
 function displayStateLabel(video: VideoListItem): string {
-  if (!YOUTUBE_SOURCE_TYPES.has(video.source_type) || !video.import_state) {
+  if (!URL_IMPORT_SOURCE_TYPES.has(video.source_type) || !video.import_state) {
     return statusLabel(video.status);
   }
   if (video.import_state === "processing") {
     return statusLabel(video.status);
   }
   return importStateLabel(video.import_state);
+}
+
+function sourcePlatformKey(video: VideoListItem): string | null {
+  if (YOUTUBE_SOURCE_TYPES.has(video.source_type)) return "youtube";
+  if (["instagram", "facebook", "tiktok", "x", "twitch"].includes(video.source_type)) return video.source_type;
+  return null;
 }
 
 export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: VideoListProps) {
@@ -202,6 +210,8 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
         const showThumbnail = Boolean(thumbnailUrl && !failedThumbnailUrls[thumbnailUrl]);
         const stateKey = displayStateKey(video);
         const stateLabel = displayStateLabel(video);
+        const platformKey = sourcePlatformKey(video);
+        const platformMeta = platformKey ? getPlatformBrandMeta(platformKey) : null;
         const showBlockedActions =
           Boolean(video.is_download_blocked) || Boolean(video.import_state && BLOCKED_IMPORT_STATES.has(video.import_state));
         const showErrorText =
@@ -237,6 +247,15 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[stateKey] || statusStyles.queued}`}>
                     {stateLabel}
                   </span>
+                  {platformMeta ? (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${platformMeta.badgeClassName}`}
+                      title={`Imported from ${platformMeta.displayName}`}
+                    >
+                      <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{platformMeta.icon}</span>
+                      {platformMeta.displayName}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[var(--app-muted)]">
                   {formatDuration(video.duration_sec) && <span>{formatDuration(video.duration_sec)}</span>}

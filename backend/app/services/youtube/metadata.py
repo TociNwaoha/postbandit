@@ -30,7 +30,7 @@ class YouTubeVideoMetadata:
     duration_sec: int | None
     thumbnail_url: str | None
     watch_url: str
-    embed_url: str
+    embed_url: str | None
     raw: dict[str, Any]
 
 
@@ -83,7 +83,13 @@ def _select_thumbnail(info: dict[str, Any]) -> str | None:
     return None
 
 
-def metadata_from_yt_info(info: dict[str, Any], fallback_video_id: str | None = None) -> YouTubeVideoMetadata | None:
+def metadata_from_yt_info(
+    info: dict[str, Any],
+    fallback_video_id: str | None = None,
+    *,
+    platform: str = "youtube",
+    source_url: str | None = None,
+) -> YouTubeVideoMetadata | None:
     video_id = info.get("id") or fallback_video_id
     if not isinstance(video_id, str) or not video_id:
         return None
@@ -91,10 +97,21 @@ def metadata_from_yt_info(info: dict[str, Any], fallback_video_id: str | None = 
     duration = info.get("duration")
     duration_sec = int(duration) if isinstance(duration, (int, float)) else None
     title = info.get("title") if isinstance(info.get("title"), str) else None
-    channel = info.get("channel") if isinstance(info.get("channel"), str) else None
+    channel = (
+        info.get("channel")
+        if isinstance(info.get("channel"), str)
+        else info.get("uploader")
+        if isinstance(info.get("uploader"), str)
+        else None
+    )
     thumbnail_url = _select_thumbnail(info)
-    watch_url = watch_url_for_video_id(video_id)
-    embed_url = embed_url_for_video_id(video_id)
+    if platform == "youtube":
+        watch_url = watch_url_for_video_id(video_id)
+        embed_url = embed_url_for_video_id(video_id)
+    else:
+        webpage_url = info.get("webpage_url") if isinstance(info.get("webpage_url"), str) else None
+        watch_url = webpage_url or source_url or ""
+        embed_url = None
 
     return YouTubeVideoMetadata(
         video_id=video_id,
@@ -109,12 +126,16 @@ def metadata_from_yt_info(info: dict[str, Any], fallback_video_id: str | None = 
 
 
 def extract_single_video_metadata(url: str, timeout_seconds: int) -> YouTubeVideoMetadata:
+    return extract_import_video_metadata(url, timeout_seconds=timeout_seconds, platform="youtube")
+
+
+def extract_import_video_metadata(url: str, timeout_seconds: int, platform: str) -> YouTubeVideoMetadata:
     opts = ytdlp_common_options(timeout_seconds=timeout_seconds, noplaylist=True)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
-    meta = metadata_from_yt_info(info)
+    meta = metadata_from_yt_info(info, platform=platform, source_url=url)
     if not meta:
-        raise ValueError("Could not parse YouTube metadata from extractor response.")
+        raise ValueError(f"Could not parse {platform.title()} metadata from extractor response.")
     return meta
 
 

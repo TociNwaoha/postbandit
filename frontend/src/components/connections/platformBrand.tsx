@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 import { SocialPlatform } from "@/types";
 
 export interface PlatformBrandMeta {
-  platform: SocialPlatform | "unknown";
+  platform: SocialPlatform | "twitch" | "unknown";
   displayName: string;
   buttonLabel: string;
   analyticsColor: string;
@@ -120,6 +120,24 @@ const platformBrandMap: Record<SocialPlatform, PlatformBrandMeta> = {
   },
 };
 
+
+const extraPlatformBrandMap: Record<string, PlatformBrandMeta> = {
+  twitch: {
+    platform: "twitch",
+    displayName: "Twitch",
+    buttonLabel: "Login with Twitch",
+    analyticsColor: "#9146FF",
+    baseClassName: "bg-[#9146FF] text-white hover:bg-[#772CE8]",
+    disabledClassName: "bg-[#B894FF] text-white/80",
+    badgeClassName: "bg-[#9146FF] text-white",
+    icon: (
+      <svg className={iconClassName} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M4.2 3 3 6.2v13.1h4.5V21h2.5l1.7-1.7h3.7L21 13.7V3H4.2Zm15 9.8-3.2 3.2h-4.3L10 17.7V16H6.3V4.8h12.9v8Zm-3.3-5.4h-1.8v5.2h1.8V7.4Zm-5 0H9.1v5.2h1.8V7.4Z" />
+      </svg>
+    ),
+  },
+};
+
 const fallbackMeta = (platform: string): PlatformBrandMeta => {
   const normalized = platform.trim().replace(/_/g, " ");
   const displayName = normalized
@@ -143,6 +161,6 @@ const fallbackMeta = (platform: string): PlatformBrandMeta => {
 };
 
 export function getPlatformBrandMeta(platform: string): PlatformBrandMeta {
-  const known = platformBrandMap[platform as SocialPlatform];
+  const known = platformBrandMap[platform as SocialPlatform] || extraPlatformBrandMap[platform];
   return known || fallbackMeta(platform);
 }

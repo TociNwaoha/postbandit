@@ -166,6 +166,11 @@ def transcribe_job(self, video_id: str):
                 VideoSourceType.youtube,
                 VideoSourceType.youtube_single,
                 VideoSourceType.youtube_playlist,
+                VideoSourceType.instagram,
+                VideoSourceType.facebook,
+                VideoSourceType.tiktok,
+                VideoSourceType.x,
+                VideoSourceType.twitch,
             }:
                 transition_import_state(
                     db,
@@ -330,6 +335,11 @@ def transcribe_job(self, video_id: str):
                     VideoSourceType.youtube,
                     VideoSourceType.youtube_single,
                     VideoSourceType.youtube_playlist,
+                    VideoSourceType.instagram,
+                    VideoSourceType.facebook,
+                    VideoSourceType.tiktok,
+                    VideoSourceType.x,
+                    VideoSourceType.twitch,
                 }:
                     transition_import_state(
                         db,

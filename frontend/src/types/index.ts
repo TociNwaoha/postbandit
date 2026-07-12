@@ -35,7 +35,7 @@ export interface OnboardingProfilePatch {
   metadata?: Record<string, unknown> | null;
 }
 
-export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram" | "facebook";
+export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram" | "facebook" | "tiktok" | "x" | "twitch";
 export type ClipProfile = "viral" | "sermon";
 export type VideoStatus =
   | "queued"
