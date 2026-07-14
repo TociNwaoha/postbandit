@@ -40,6 +40,7 @@ from app.config import settings
 from app.database import SessionLocal, engine
 
 logging.basicConfig(level=settings.log_level)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

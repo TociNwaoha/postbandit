@@ -55,7 +55,7 @@ def _thumbnail_url_for_clip(clip: Clip | None) -> str | None:
     if not clip or not clip.thumbnail_key:
         return None
     try:
-        return object_storage_client.get_presigned_download_url(clip.thumbnail_key)
+        return object_storage_client.get_thumbnail_url(clip.thumbnail_key)
     except Exception:
         return None
 

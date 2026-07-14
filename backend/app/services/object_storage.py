@@ -14,6 +14,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 LOCAL_STORAGE_ROOT = Path("/tmp/clipbandit-storage")
+THUMBNAIL_DIR = Path(os.environ.get("THUMBNAIL_DIR", "/data/thumbnails"))
 
 
 def _local_api_base_url() -> str:
@@ -30,6 +31,7 @@ class ObjectStorageClient:
         self._client = None
         self.bucket_name = settings.b2_bucket_name
         LOCAL_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+        THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
         self._init_client()
 
     def _is_placeholder(self, value: str | None) -> bool:
@@ -93,6 +95,17 @@ class ObjectStorageClient:
         target = (LOCAL_STORAGE_ROOT / clean_key).resolve()
         if target != root and root not in target.parents:
             raise ValueError("Invalid storage key path")
+        return target
+
+    def local_thumbnail_path(self, key: str) -> Path:
+        clean_key = key.lstrip("/")
+        if not clean_key:
+            raise ValueError("Storage key cannot be empty")
+
+        root = THUMBNAIL_DIR.resolve()
+        target = (THUMBNAIL_DIR / clean_key).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError("Invalid thumbnail key path")
         return target
 
     def _local_file_exists(self, key: str) -> bool:
@@ -174,6 +187,24 @@ class ObjectStorageClient:
 
         raise FileNotFoundError(f"Storage key not found: {key}")
 
+    def save_thumbnail_locally(self, source_path: str, thumbnail_key: str) -> str:
+        destination = self.local_thumbnail_path(thumbnail_key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination)
+        return str(destination)
+
+    def get_thumbnail_url(self, thumbnail_key: str | None) -> str | None:
+        if not thumbnail_key:
+            return None
+        try:
+            local_path = self.local_thumbnail_path(thumbnail_key)
+        except ValueError:
+            return None
+        if not local_path.exists() or not local_path.is_file():
+            return None
+        encoded_key = quote(thumbnail_key.lstrip("/"), safe="/")
+        return f"/thumbnails/{encoded_key}"
+
     def download_file(self, key: str, destination_path: str) -> str:
         destination = Path(destination_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +259,14 @@ class ObjectStorageClient:
             local_path.unlink(missing_ok=True)
             self._cleanup_empty_parents(local_path.parent)
             deleted = True
+        try:
+            thumbnail_path = self.local_thumbnail_path(key)
+        except ValueError:
+            return deleted
+        if thumbnail_path.exists():
+            thumbnail_path.unlink(missing_ok=True)
+            self._cleanup_empty_parents(thumbnail_path.parent, root=THUMBNAIL_DIR)
+            deleted = True
         return deleted
 
     def delete_local_fallback_file(self, key: str) -> bool:
@@ -265,8 +304,8 @@ class ObjectStorageClient:
             return True
         return False
 
-    def _cleanup_empty_parents(self, start: Path):
-        root = LOCAL_STORAGE_ROOT.resolve()
+    def _cleanup_empty_parents(self, start: Path, *, root: Path = LOCAL_STORAGE_ROOT):
+        root = root.resolve()
         current = start.resolve()
         while current != root:
             if any(current.iterdir()):

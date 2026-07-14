@@ -173,7 +173,8 @@ def _resolve_permalink(client: httpx.Client, *, access_token: str, media_id: str
     details = graph_get(
         client,
         url=f"{_graph_base()}/{media_id}",
-        params={"fields": "id,permalink,shortcode", "access_token": access_token},
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"fields": "id,permalink,shortcode"},
     )
     permalink = details.get("permalink")
     if isinstance(permalink, str) and permalink.startswith("http"):
@@ -310,9 +311,9 @@ class InstagramAdapter(SocialProviderAdapter):
                     profile = graph_get(
                         client,
                         url=f"{_graph_base()}/me",
+                        headers={"Authorization": f"Bearer {access_token}"},
                         params={
                             "fields": INSTAGRAM_ACCOUNT_FIELDS,
-                            "access_token": access_token,
                         },
                     )
                 except GraphRequestError:
@@ -320,9 +321,9 @@ class InstagramAdapter(SocialProviderAdapter):
                     profile = graph_get(
                         client,
                         url=f"{_graph_base()}/me",
+                        headers={"Authorization": f"Bearer {access_token}"},
                         params={
                             "fields": INSTAGRAM_ACCOUNT_FIELDS_FALLBACK,
-                            "access_token": access_token,
                         },
                     )
         except GraphRequestError as exc:
@@ -442,8 +443,8 @@ class InstagramAdapter(SocialProviderAdapter):
                 creation = graph_post(
                     client,
                     url=f"{_graph_base()}/{ig_user_id}/media",
+                    headers={"Authorization": f"Bearer {active_token}"},
                     data={
-                        "access_token": active_token,
                         "media_type": "REELS",
                         "video_url": media_url,
                         "caption": caption[:2200],
@@ -458,9 +459,9 @@ class InstagramAdapter(SocialProviderAdapter):
                     status_payload = graph_get(
                         client,
                         url=f"{_graph_base()}/{creation_id}",
+                        headers={"Authorization": f"Bearer {active_token}"},
                         params={
                             "fields": "id,status_code,status,error_message",
-                            "access_token": active_token,
                         },
                     )
                     status_code = str(status_payload.get("status_code") or status_payload.get("status") or "").upper()
@@ -478,8 +479,8 @@ class InstagramAdapter(SocialProviderAdapter):
                 publish_data = graph_post(
                     client,
                     url=f"{_graph_base()}/{ig_user_id}/media_publish",
+                    headers={"Authorization": f"Bearer {active_token}"},
                     data={
-                        "access_token": active_token,
                         "creation_id": creation_id,
                     },
                 )

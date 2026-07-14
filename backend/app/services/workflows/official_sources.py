@@ -94,11 +94,14 @@ def _iter_instagram_media(access_token: str) -> list[OfficialSourceMedia]:
     params = {
         "fields": INSTAGRAM_MEDIA_FIELDS,
         "limit": str(MAX_SOURCE_POSTS_PER_POLL),
-        "access_token": access_token,
     }
     try:
         with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(INSTAGRAM_MEDIA_URL, params=params)
+            response = client.get(
+                INSTAGRAM_MEDIA_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+                params=params,
+            )
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
@@ -425,10 +428,14 @@ def _raw_instagram_media_url(raw_metadata: dict, access_token: str) -> str | Non
     media_id = str(raw_metadata.get("id") or "").strip()
     if not media_id:
         return None
-    params = {"fields": "id,media_type,media_url", "access_token": access_token}
+    params = {"fields": "id,media_type,media_url"}
     try:
         with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(f"https://graph.instagram.com/{media_id}", params=params)
+            response = client.get(
+                f"https://graph.instagram.com/{media_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params=params,
+            )
             response.raise_for_status()
             payload = response.json()
     except Exception as exc:
@@ -938,7 +945,7 @@ def _ensure_workflow_clip_thumbnail(source_post: SocialWorkflowSourcePost, video
             seen.add(timestamp)
             try:
                 extract_thumbnail(str(source_path), str(thumb_path), timestamp)
-                object_storage_client.upload_file(str(thumb_path), thumb_storage_key)
+                object_storage_client.save_thumbnail_locally(str(thumb_path), thumb_storage_key)
                 clip.thumbnail_key = thumb_storage_key
                 logger.info(
                     "[workflows] generated source clip thumbnail source_post_id=%s video_id=%s clip_id=%s key=%s",

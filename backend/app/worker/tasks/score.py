@@ -350,7 +350,7 @@ def score_job(self, video_id: str):
                 for timestamp in timestamps:
                     try:
                         extract_thumbnail(str(local_video_path), str(thumb_local_path), timestamp)
-                        object_storage_client.upload_file(str(thumb_local_path), thumb_storage_key)
+                        object_storage_client.save_thumbnail_locally(str(thumb_local_path), thumb_storage_key)
                         clip.thumbnail_key = thumb_storage_key
                         thumbnail_success += 1
                         thumb_error = None

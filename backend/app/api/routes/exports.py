@@ -77,7 +77,7 @@ def _clip_thumbnail_url(clip: Clip | None) -> str | None:
     if not clip or not clip.thumbnail_key:
         return None
     try:
-        return object_storage_client.get_presigned_download_url(clip.thumbnail_key)
+        return object_storage_client.get_thumbnail_url(clip.thumbnail_key)
     except Exception as exc:
         logger.warning("[exports] failed to derive thumbnail URL for clip_id=%s: %s", clip.id, exc)
         return None

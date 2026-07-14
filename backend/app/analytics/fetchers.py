@@ -246,12 +246,12 @@ def fetch_instagram_metrics(account: ConnectedAccount, external_post_id: str, db
         db=db,
         method="GET",
         url=f"https://graph.instagram.com/v18.0/{external_post_id}/insights",
+        headers={"Authorization": "Bearer {token}"},
         params={
             "metric": (
                 "views,reach,likes,comments,saved,shares,total_interactions,"
                 "ig_reels_video_view_total_time,ig_reels_avg_watch_time"
             ),
-            "access_token": "{token}",
         },
     )
     if early:

@@ -1,3 +1,5 @@
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
 
@@ -5,6 +7,7 @@ from app.config import settings
 from app.observability import init_sentry
 
 init_sentry()
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 celery_app = Celery(
     "clipbandit",

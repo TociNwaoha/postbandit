@@ -156,10 +156,10 @@ def _youtube_posts(client: httpx.Client, account: ConnectedAccount, token: str) 
 def _instagram_posts(client: httpx.Client, account: ConnectedAccount, token: str) -> list[DetectedPost]:
     response = client.get(
         "https://graph.instagram.com/me/media",
+        headers={"Authorization": f"Bearer {token}"},
         params={
             "fields": "id,caption,media_type,permalink,timestamp",
             "limit": 10,
-            "access_token": token,
         },
     )
     response.raise_for_status()

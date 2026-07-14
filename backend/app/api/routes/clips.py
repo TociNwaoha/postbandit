@@ -50,7 +50,7 @@ def _clip_to_response(clip: Clip) -> ClipResponse:
     thumbnail_url: str | None = None
     if clip.thumbnail_key:
         try:
-            thumbnail_url = object_storage_client.get_presigned_download_url(clip.thumbnail_key)
+            thumbnail_url = object_storage_client.get_thumbnail_url(clip.thumbnail_key)
         except Exception:
             thumbnail_url = None
 

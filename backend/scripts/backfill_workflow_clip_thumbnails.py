@@ -71,7 +71,7 @@ def _generate_thumbnail(clip: Clip, video: Video, dry_run: bool) -> str | None:
         for timestamp in _timestamps(clip):
             try:
                 extract_thumbnail(str(source_path), str(thumb_path), timestamp)
-                object_storage_client.upload_file(str(thumb_path), key)
+                object_storage_client.save_thumbnail_locally(str(thumb_path), key)
                 return key
             except Exception as exc:
                 last_error = exc

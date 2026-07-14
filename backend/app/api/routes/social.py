@@ -942,7 +942,7 @@ async def list_publish_calendar(
         thumbnail_url = None
         if clip and clip.thumbnail_key:
             try:
-                thumbnail_url = object_storage_client.get_presigned_download_url(clip.thumbnail_key)
+                thumbnail_url = object_storage_client.get_thumbnail_url(clip.thumbnail_key)
             except Exception as exc:
                 logger.warning(
                     "[social] calendar thumbnail unavailable job_id=%s error=%s",

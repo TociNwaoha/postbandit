@@ -819,7 +819,9 @@ async def list_videos(
 
     for video_id, thumbnail_key in thumbnail_keys_by_video_id.items():
         try:
-            thumbnail_urls_by_video_id[video_id] = object_storage_client.get_presigned_download_url(thumbnail_key)
+            thumbnail_url = object_storage_client.get_thumbnail_url(thumbnail_key)
+            if thumbnail_url:
+                thumbnail_urls_by_video_id[video_id] = thumbnail_url
         except Exception as exc:
             logger.warning(
                 "[videos] failed to generate dashboard thumbnail URL for video_id=%s key=%s: %s",
