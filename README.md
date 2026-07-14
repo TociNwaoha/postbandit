@@ -1,273 +1,161 @@
 # PostBandit
 
-PostBandit takes long-form videos (podcasts, sermons, YouTube videos) and automatically generates short viral clips with captions. Built for churches and solo creators who want OpusClip-quality output at a fraction of the cost.
+[![Python](https://img.shields.io/badge/Python_3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js_14-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL_15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
+[![Celery](https://img.shields.io/badge/Celery-37814A?style=flat-square&logo=celery&logoColor=white)](https://docs.celeryq.dev)
+[![Stripe](https://img.shields.io/badge/Stripe-008CDD?style=flat-square&logo=stripe&logoColor=white)](https://stripe.com)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 
-## Prerequisites
+**AI-native video-to-social platform.** Import any video, generate short-form clips with AI, burn in captions, write platform-specific copy, and schedule to 6 social platforms — with a public API and MCP integration for agent-driven automation.
 
-- Docker & Docker Compose
-- Node.js 18+
+🔗 **Live at [postbandit.com](https://postbandit.com)**
+
+---
+
+## Architecture
+
+![PostBandit system architecture](./docs/architecture.svg)
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS, Recharts |
+| Backend | FastAPI (Python 3.11), Pydantic v2 |
+| Task queue | Celery 5 + Redis, Celery Beat for scheduled tasks |
+| Database | PostgreSQL 15 |
+| Video | FFmpeg, faster-whisper (CPU, int8, medium model), yt-dlp |
+| AI | Claude Haiku (platform-aware copy generation) |
+| Billing | Stripe (subscriptions, webhooks, customer portal) |
+| Storage | Backblaze B2 offsite DB backups (S3-compatible via boto3) |
+| Observability | Sentry (backend + frontend), `/health` endpoint |
+| Infrastructure | Docker Compose, Nginx, Contabo VPS (8 vCPU / 24 GB RAM) |
+
+---
+
+## Features
+
+**Content pipeline**
+- Import from YouTube, Instagram, TikTok, Facebook, X, Twitch via yt-dlp
+- Word-level transcription (faster-whisper) → AI clip scoring and detection
+- FFmpeg caption burn-in: split-line (default), word-by-word karaoke, subtitle blocks
+- Aspect ratio presets: 9:16 vertical, 16:9 horizontal, 1:1 square
+
+**Publishing**
+- Connect 6 platforms: YouTube, TikTok, Instagram, X, Facebook, Threads
+- Per-platform scheduling — same clip to TikTok Monday, Instagram Wednesday
+- Platform-aware AI copy: X (280 chars), Instagram (2200 + hashtag blocks), YouTube (keyword-rich description + tags), TikTok (trending CTAs), Facebook, Threads
+- Content calendar with platform color coding, reschedule drawer, publish status tracking
+
+**Analytics**
+- Post performance pull-back from each platform: views, likes, comments, shares, reach
+- Instagram analytics via `graph.instagram.com` (Login API — incompatible with Facebook Graph endpoint)
+- 7/30/90-day date range filter, top performers list, Recharts views-over-time chart
+
+**Developer platform**
+- Public REST API v1 with API key auth (`pb_live_` prefix, SHA-256 hashed at rest, never stored plaintext)
+- Redis sliding window rate limiting per user per plan (Creator: 200/hr, Pro: 1000/hr)
+- MCP server integration (in progress — enables Claude to run full content workflows autonomously)
+
+**Infrastructure**
+- Stripe billing: 7-day trial (card required upfront), Creator $18/mo, Pro $49/mo, Elite $250/mo
+- Idempotent Stripe webhook handling (`processed_stripe_events` dedup table)
+- Automated daily PostgreSQL backups → Backblaze B2 (offsite)
+- Fernet encryption at rest for all OAuth tokens
+- SlowAPI rate limiting on auth endpoints
+
+---
+
+## Engineering notes
+
+The decisions worth knowing about.
+
+**Per-platform `publish_jobs` schema**
+
+One row per platform per clip rather than one row with a `platforms[]` array. This enables independent scheduling, copy, status tracking, retry logic, and analytics per destination. A failed TikTok post doesn't block or affect the Instagram job for the same clip. The schema change is what makes the content calendar, per-platform analytics, and independent retries possible — it's not a delivery detail, it's the core architectural decision.
+
+**Celery race condition**
+
+The scheduled publishing task uses `SELECT FOR UPDATE SKIP LOCKED` combined with `countdown=1` on the downstream task. `SKIP LOCKED` lets competing workers skip rows already claimed by another worker rather than blocking. `countdown=1` ensures the publish task fires after the DB transaction commits rather than before, eliminating a class of subtle duplicate-dispatch bugs in high-concurrency conditions.
+
+**OAuth token encryption**
+
+All OAuth tokens for connected social platforms are encrypted at rest using Fernet symmetric encryption. Tokens are decrypted in memory only at the moment of platform API calls and are never logged or included in error messages. The encryption key lives exclusively in environment variables and is never present in application code or version control.
+
+**API key auth as a parallel dependency**
+
+API key authentication is implemented as a separate FastAPI dependency (`get_current_user_or_api_key`) applied only to `/api/v1/` routes. The original `get_current_user` dependency used by the dashboard is never modified — API key auth is purely additive. Rate limits are enforced per-user rather than per-key, so generating multiple API keys doesn't multiply the effective rate limit.
+
+**Instagram API endpoint distinction**
+
+Instagram Login API tokens are incompatible with `graph.facebook.com`. They require `graph.instagram.com`. This is significantly underdocumented by Meta and required targeted debugging to identify. Additionally, the `impressions` metric is unsupported for Reels media type — `views` is the correct metric for video content on Instagram.
+
+**Backblaze B2 with boto3**
+
+B2's S3-compatible API requires two non-obvious configurations: `signature_version="s3v4"` must be set explicitly in the boto3 config (the default AWS behavior doesn't apply), and the region must be a real region string like `us-west-004` rather than the `"auto"` shorthand that works with AWS S3. Both are silent failures without the fix — no error is raised, requests simply don't authenticate.
+
+---
+
+## Screenshots
+
+<!-- Add dashboard, calendar, analytics, and publish flow screenshots here -->
+
+| Dashboard | Content calendar |
+|---|---|
+| *coming soon* | *coming soon* |
+
+| Analytics | Publish flow |
+|---|---|
+| *coming soon* | *coming soon* |
+
+---
+
+## Local development
+
+### Prerequisites
+
+- Docker + Docker Compose
 - Python 3.11+
+- Node.js 18+
 
-## Setup
+### Setup
 
 ```bash
-git clone <repo>
+git clone https://github.com/TociNwaoha/clipbandit.git
 cd clipbandit
 cp .env.example .env
-docker-compose up --build
+# Fill in required values — see .env.example for all required keys
+docker compose up -d
 ```
 
-## Deploy Guard
-
-Use this after every VPS deploy to catch runtime URL/env drift before users do:
-
-```bash
-cd /opt/clipbandit
-bash tools/deploy_guard.sh
-```
-
-What it validates:
-
-- `backend`, `frontend`, `worker` are running
-- frontend runtime env values:
-  - `NEXTAUTH_URL`
-  - `NEXT_PUBLIC_API_URL`
-  - `INTERNAL_API_URL`
-- backend health (`/health`)
-- CORS headers for `https://postbandit.com` on `https://api.postbandit.com/api/videos`
-- unauthenticated public API behavior (`/api/videos` returns `401`/`403`)
-
-Optional overrides:
-
-```bash
-APP_DOMAIN=https://postbandit.com \
-API_DOMAIN=https://api.postbandit.com \
-EXPECTED_NEXTAUTH_URL=https://postbandit.com \
-EXPECTED_NEXT_PUBLIC_API_URL=https://api.postbandit.com \
-EXPECTED_INTERNAL_API_URL=http://backend:8000 \
-bash tools/deploy_guard.sh
-```
-
-## Access
+### Services
 
 | Service | URL |
-|---------|-----|
+|---|---|
 | Frontend | http://localhost:3001 |
 | Backend API | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
-| Health Check | http://localhost:8000/health |
+| API docs (Swagger) | http://localhost:8000/docs |
+| Health check | http://localhost:8000/health |
 
-Default login: `admin@clipbandit.com` / `changeme123`
+### Running workers
 
-## Public Entry + Signup
+```bash
+# Celery worker
+docker compose up -d worker
 
-- Root path `/` is the public landing page.
-- Primary CTA routes to `/signup`.
-- `/signup` supports:
-  - Google OAuth signup/signin via NextAuth.
-  - Email/password signup via `POST /api/auth/signup`.
-- Successful email signup redirects to `/login` with a success message.
+# Celery Beat (scheduled tasks)
+docker compose up -d worker-beat
+```
 
-## Google OAuth Login Config
+---
 
-To enable Google sign-in on `/login` and `/signup`:
+## License
 
-- Set `GOOGLE_CLIENT_ID`
-- Set `GOOGLE_CLIENT_SECRET`
+All rights reserved. © 2026 BANDAMONT LLC.
 
-Required Google Console OAuth redirect URIs:
-
-- `https://postbandit.com/api/auth/callback/google`
-- `http://localhost:3001/api/auth/callback/google`
-
-Notes:
-
-- Google login exchanges the Google `id_token` for a backend JWT via `/api/auth/google/login`.
-- New Google users are auto-created as `starter` tier.
-- Existing email/password login stays unchanged.
-
-## Email/Password Signup API
-
-Backend endpoint:
-
-- `POST /api/auth/signup`
-- Request body: `{ "email": "user@example.com", "password": "min-8-chars" }`
-- Responses:
-  - `201` account created
-  - `409` email already exists
-  - `400/422` validation error
-
-## YouTube OAuth Provider Config
-
-To enable real YouTube social connection flow:
-
-- Set `YOUTUBE_CLIENT_ID`
-- Set `YOUTUBE_CLIENT_SECRET`
-- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
-- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
-
-Google Cloud OAuth redirect URI must match:
-
-- `{BACKEND_PUBLIC_URL}/api/social/youtube/callback`
-
-If any required field is missing/invalid, `/api/social/providers` returns YouTube as `provider_not_configured` with missing-field diagnostics.
-
-## YouTube Import (Single + Playlist + Fallback)
-
-Server-side YouTube import supports:
-
-- Single links (`watch`, `youtu.be`, `shorts`)
-- Playlist links (`list=...`)
-
-Import behavior is honest by design:
-
-- Public/easy videos use server download (`yt-dlp`)
-- Blocked videos can still be kept as embed metadata
-- Users can upload replacement media manually when server download is blocked
-- Blocked single-video rows also support a one-time local-helper session (`Use Local Helper`) that runs `yt-dlp` on the user machine and uploads back to the same row
-- Repeated blocked single-video links are short-circuited for 24 hours into recovery mode (no repeated failing server attempt)
-- Retry is disabled for non-retryable blocked codes (`YT_SIGNIN_REQUIRED`, `YT_BOT_VERIFICATION`, `YT_PO_TOKEN_REQUIRED`, `YT_NO_FORMATS`)
-
-Local helper notes:
-
-- Requires local `yt-dlp` and `curl`
-- Helper sessions are one-time and short-lived (default 15 minutes)
-- UI now provides a `Download helper launcher` flow first (no token copy/paste required)
-- CLI copy/paste remains available as a fallback
-- See `docs/local-import-helper.md` for full usage
-
-YouTube import env settings:
-
-- `YOUTUBE_IMPORT_MAX_PLAYLIST_ITEMS` (default `50`)
-- `YOUTUBE_IMPORT_CONCURRENCY` (default `3`)
-- `YTDLP_TIMEOUT_SECONDS` (default `60`)
-- `ENABLE_YOUTUBE_API_METADATA` (default `false`)
-- `YOUTUBE_API_KEY` (optional metadata enrichment only)
-- `YOUTUBE_LOCAL_HELPER_TTL_MINUTES` (default `15`)
-- `YOUTUBE_IMPORT_ADMISSION_MODE` (`off|warn|enforce`, default `warn`)
-- `YOUTUBE_IMPORT_MIN_FREE_DISK_GB` (default `20`)
-- `YOUTUBE_IMPORT_MAX_INGEST_QUEUE_DEPTH` (default `100`)
-- `YOUTUBE_IMPORT_MAX_ACTIVE_PER_USER` (default `3`)
-- `YOUTUBE_IMPORT_MAX_ACTIVE_GLOBAL` (default `12`)
-- `YOUTUBE_IMPORT_RATE_LIMIT_PER_HOUR` (default `25`)
-- `YOUTUBE_HELPER_SESSION_RATE_LIMIT_PER_HOUR` (default `20`)
-- `WORKSPACE_CLEANUP_ENABLED` (default `true`)
-- `WORKSPACE_CLEANUP_DRY_RUN` (default `true`; set `false` to enable deletion)
-- `WORKSPACE_CLEANUP_RETENTION_HOURS` (default `24`)
-- `WORKSPACE_CLEANUP_ORPHAN_GRACE_MINUTES` (default `45`)
-
-## Facebook Pages Provider Config
-
-To enable real Facebook Pages connection + publishing:
-
-- Set `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET`
-  - or use shared fallback `META_APP_ID` and `META_APP_SECRET`
-- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
-- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
-- Optional: set `META_GRAPH_API_VERSION` (default `v21.0`)
-
-Facebook callback URI must match:
-
-- `{BACKEND_PUBLIC_URL}/api/social/facebook/callback`
-
-Notes:
-
-- Facebook integration targets **Pages only** (not personal profiles).
-- One OAuth connection may create multiple connected destinations (one per Page).
-
-## Instagram OAuth Provider Config (`instagram_business_basic`)
-
-To enable real Instagram professional-account connection + publishing:
-
-- Set `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET`
-  - or use shared fallback `META_APP_ID` and `META_APP_SECRET`
-- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
-- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
-- Ensure your Meta app has **Instagram Login** enabled for this provider flow
-
-Instagram callback URI must match:
-
-- `{BACKEND_PUBLIC_URL}/api/social/instagram/callback`
-
-Notes:
-
-- Instagram provider now uses the Instagram Login model directly (not Facebook `/me/accounts` Page discovery).
-- Instagram integration targets **Business/Creator** accounts only.
-- Instagram and Facebook are separate provider paths: Facebook handles Pages; Instagram handles Instagram professional account connect/publish.
-- If OAuth succeeds but no professional Instagram account is returned, PostBandit fails honestly and asks for reconnect with the correct account.
-
-## Threads Provider Config
-
-To enable real Threads connection + publishing:
-
-- Set `THREADS_APP_ID` and `THREADS_APP_SECRET`
-  - or use shared fallback `META_APP_ID` and `META_APP_SECRET`
-- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
-- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
-- Optional: set `THREADS_GRAPH_API_VERSION` (default `v1.0`)
-
-Threads callback URI must match:
-
-- `{BACKEND_PUBLIC_URL}/api/social/threads/callback`
-
-Notes:
-
-- Threads integration is real for connect + text posting.
-- Threads video posting is enabled through the same publish job flow when export media is available.
-- OAuth callback performs short-lived code exchange followed by long-lived token exchange; publish attempts refresh long-lived tokens near expiry.
-- If Threads app permissions/tester/review state block publishing, jobs return honest actionable status (for example `waiting_user_action`) instead of fake success.
-
-## TikTok Provider Config
-
-To enable real TikTok connection + publishing:
-
-- Set `TIKTOK_CLIENT_KEY`
-- Set `TIKTOK_CLIENT_SECRET`
-- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
-- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
-- Optional poll tuning:
-  - `TIKTOK_PUBLISH_POLL_INTERVAL_SECONDS` (default `5`)
-  - `TIKTOK_PUBLISH_POLL_TIMEOUT_SECONDS` (default `720`)
-
-TikTok callback URI must match:
-
-- `{BACKEND_PUBLIC_URL}/api/social/tiktok/callback`
-
-Notes:
-
-- TikTok uses Login Kit for Web OAuth and Content Posting APIs.
-- Provider diagnostics include callback URL, required scopes, mode support, and readiness.
-- Publish flow attempts direct post first; if direct post is blocked and upload scope is available, it falls back to inbox upload.
-- `SEND_TO_USER_INBOX` is treated as `waiting_user_action` (user must complete posting in TikTok).
-- TikTok privacy is required and must match creator options returned by TikTok (`privacy_level_options`).
-
-## X (Twitter) OAuth Provider Config
-
-To enable real X connection + text posting flow:
-
-- Set `X_CLIENT_ID`
-- Set `X_CLIENT_SECRET`
-- Set `SOCIAL_TOKEN_ENCRYPTION_KEY` (required for encrypted token storage)
-- Set `BACKEND_PUBLIC_URL` to your externally reachable backend URL
-
-X developer app callback URI must match:
-
-- `{BACKEND_PUBLIC_URL}/api/social/x/callback`
-
-Notes:
-
-- X posting is text-only in this pass (media/video upload is deferred).
-- If X does not return a usable refresh token, connection/publish fails honestly and requires reconnect.
-
-## 10-Prompt Build Plan
-
-1. **Foundation** — Docker, DB schema, auth, skeleton UI (this prompt)
-2. **Video Ingestion** — Upload endpoint, yt-dlp download, R2 storage
-3. **Transcription** — faster-whisper integration, word-level timestamps
-4. **Clip Scoring** — AI scoring engine, hook/energy detection
-5. **Clip Management** — Clip browser UI, score display, filtering
-6. **Caption Engine** — FFmpeg burn-in, SRT export, caption styles
-7. **Export Pipeline** — Render queue, aspect ratio cropping, download URLs
-8. **Dashboard & Analytics** — Stats, usage tracking, tier limits
-9. **Payments** — Stripe integration, tier upgrades, usage billing
-10. **Production Hardening** — Error handling, monitoring, rate limiting, deploy
+PostBandit is a proprietary commercial product. The source code is shared publicly for portfolio and review purposes only. No license is granted to use, copy, modify, or distribute this code for commercial or non-commercial purposes without explicit written permission from BANDAMONT LLC.

@@ -1,0 +1,101 @@
+<svg width="100%" viewBox="0 0 780 400" xmlns="http://www.w3.org/2000/svg">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  .lbl { font-size: 13px; font-weight: 600; }
+  .sub { font-size: 11px; font-weight: 400; }
+  .sec { font-size: 11px; font-weight: 400; fill: #57606a; letter-spacing: 0.04em; }
+
+  .c-box  { fill: #ddf4ff; stroke: #79c0ff; stroke-width: 1; }
+  .c-txt  { fill: #0550ae; }
+  .wrap   { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; }
+  .n-box  { fill: #fff8c5; stroke: #d4a72c; stroke-width: 1; }
+  .n-txt  { fill: #633c00; }
+  .a-box  { fill: #ddf4ff; stroke: #79c0ff; stroke-width: 1; }
+  .a-txt  { fill: #0550ae; }
+  .w-box  { fill: #ede8ff; stroke: #bc8cff; stroke-width: 1; }
+  .w-txt  { fill: #3d1f7a; }
+  .r-box  { fill: #ffd8d3; stroke: #ff7b72; stroke-width: 1; }
+  .r-txt  { fill: #6e1813; }
+  .g-box  { fill: #d2f4d2; stroke: #56d364; stroke-width: 1; }
+  .g-txt  { fill: #0f481e; }
+  .t-box  { fill: #c8e6f8; stroke: #4ac8e8; stroke-width: 1; }
+  .t-txt  { fill: #093649; }
+  .e-box  { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; }
+  .e-txt  { fill: #24292f; }
+  .line   { stroke: #8c959f; stroke-width: 0.8; fill: none; }
+</style>
+<defs>
+  <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M1 1L7 4L1 7" fill="none" stroke="#8c959f" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<!-- Section labels -->
+<text class="sec" x="94"  y="18" text-anchor="middle">CLIENTS</text>
+<text class="sec" x="358" y="18" text-anchor="middle">POSTBANDIT STACK</text>
+<text class="sec" x="664" y="18" text-anchor="middle">INTEGRATIONS</text>
+
+<!-- LEFT: Client boxes -->
+<rect class="c-box" x="10"  y="28"  width="168" height="44" rx="7"/>
+<text class="lbl c-txt" x="94" y="54" text-anchor="middle" dominant-baseline="central">Web browser</text>
+
+<rect class="c-box" x="10"  y="83"  width="168" height="44" rx="7"/>
+<text class="lbl c-txt" x="94" y="105" text-anchor="middle" dominant-baseline="central">AI agents / MCP</text>
+
+<rect class="c-box" x="10"  y="138" width="168" height="44" rx="7"/>
+<text class="lbl c-txt" x="94" y="160" text-anchor="middle" dominant-baseline="central">API clients</text>
+
+<!-- Arrows: clients → center -->
+<line class="line" x1="178" y1="50"  x2="192" y2="62"  marker-end="url(#ah)"/>
+<line class="line" x1="178" y1="105" x2="192" y2="118" marker-end="url(#ah)"/>
+<line class="line" x1="178" y1="160" x2="192" y2="174" marker-end="url(#ah)"/>
+
+<!-- CENTER: Outer container -->
+<rect class="wrap" x="192" y="28"  width="326" height="350" rx="14"/>
+
+<!-- Inner stack boxes (x=204, w=302) -->
+<rect class="n-box" x="204" y="40"  width="302" height="44" rx="6"/>
+<text class="lbl n-txt" x="355" y="62"  text-anchor="middle" dominant-baseline="central">Nginx</text>
+
+<rect class="a-box" x="204" y="96"  width="302" height="44" rx="6"/>
+<text class="lbl a-txt" x="355" y="118" text-anchor="middle" dominant-baseline="central">Next.js 14 · FastAPI</text>
+
+<rect class="w-box" x="204" y="152" width="302" height="44" rx="6"/>
+<text class="lbl w-txt" x="355" y="174" text-anchor="middle" dominant-baseline="central">Celery workers + Beat</text>
+
+<rect class="r-box" x="204" y="208" width="302" height="44" rx="6"/>
+<text class="lbl r-txt" x="355" y="230" text-anchor="middle" dominant-baseline="central">Redis</text>
+
+<rect class="g-box" x="204" y="264" width="302" height="44" rx="6"/>
+<text class="lbl g-txt" x="355" y="286" text-anchor="middle" dominant-baseline="central">PostgreSQL 15</text>
+
+<rect class="t-box" x="204" y="320" width="302" height="44" rx="6"/>
+<text class="lbl t-txt" x="355" y="342" text-anchor="middle" dominant-baseline="central">FFmpeg · faster-whisper</text>
+
+<!-- Bus: center → right -->
+<line class="line" x1="518" y1="174" x2="536" y2="174" marker-end="url(#ah)"/>
+<line class="line" x1="536" y1="50"  x2="536" y2="310"/>
+<line class="line" x1="536" y1="50"  x2="548" y2="50"/>
+<line class="line" x1="536" y1="112" x2="548" y2="112"/>
+<line class="line" x1="536" y1="186" x2="548" y2="186"/>
+<line class="line" x1="536" y1="250" x2="548" y2="250"/>
+<line class="line" x1="536" y1="310" x2="548" y2="310"/>
+
+<!-- RIGHT: Integration boxes (x=548, w=220) -->
+<rect class="e-box" x="548" y="28"  width="220" height="44" rx="7"/>
+<text class="lbl e-txt" x="658" y="50"  text-anchor="middle" dominant-baseline="central">Stripe</text>
+
+<rect class="e-box" x="548" y="90"  width="220" height="44" rx="7"/>
+<text class="lbl e-txt" x="658" y="112" text-anchor="middle" dominant-baseline="central">Claude Haiku</text>
+
+<rect class="e-box" x="548" y="152" width="220" height="68" rx="7"/>
+<text class="lbl e-txt" x="658" y="173" text-anchor="middle" dominant-baseline="central">6 social platforms</text>
+<text class="sub e-txt" x="658" y="193" text-anchor="middle">YT · TK · IG · X · FB · Threads</text>
+
+<rect class="e-box" x="548" y="228" width="220" height="44" rx="7"/>
+<text class="lbl e-txt" x="658" y="250" text-anchor="middle" dominant-baseline="central">Backblaze B2</text>
+
+<rect class="e-box" x="548" y="288" width="220" height="44" rx="7"/>
+<text class="lbl e-txt" x="658" y="310" text-anchor="middle" dominant-baseline="central">Sentry</text>
+
+</svg>
