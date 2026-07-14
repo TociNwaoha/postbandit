@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from app.celery_app import celery_app
 from app.config import settings
+from app.utils.b2_storage import upload_backup_to_b2
 
 BACKUP_DIR = os.environ.get("BACKUP_DIR", "/opt/clipbandit/backups")
 BACKUP_RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "14"))
@@ -29,12 +30,12 @@ def _database_parts() -> tuple[str, str, str, str, str]:
 @celery_app.task(name="tasks.backup_database")
 def backup_database() -> str:
     """
-    Dumps PostgreSQL to a gzipped SQL file and rotates old local backups.
+    Dumps PostgreSQL to a gzipped SQL file, rotates old local backups, and
+    optionally uploads the dump to Backblaze B2 for offsite recovery.
 
-    Known limitation: backups currently land on the same VPS disk as the DB.
-    This protects against accidental data deletion and software errors, but not
-    full VPS or disk failure. Once B2 backup storage is wired, upload the .sql.gz
-    after creation and verify object size before relying on off-box backups.
+    Local backup remains the source of fast restore. B2 upload is additive and
+    intentionally non-fatal so a temporary B2 issue does not erase the local
+    backup value.
     """
     backup_dir = Path(BACKUP_DIR)
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -90,5 +91,15 @@ def backup_database() -> str:
 
     if removed:
         print(f"[backup_database] Rotated {removed} backup(s) older than {BACKUP_RETENTION_DAYS} days")
+
+    b2_backup_enabled = os.environ.get("B2_BACKUP_ENABLED", "false").lower() == "true"
+    if b2_backup_enabled:
+        try:
+            object_key = upload_backup_to_b2(str(output_path))
+            print(f"[backup_database] Uploaded to B2: {object_key}")
+        except Exception as exc:
+            print(f"[backup_database] WARNING: B2 upload failed: {exc}")
+    else:
+        print("[backup_database] B2_BACKUP_ENABLED=false - skipping offsite upload")
 
     return str(output_path)
