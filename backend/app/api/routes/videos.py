@@ -2,7 +2,8 @@ import json
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from math import ceil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -53,6 +54,7 @@ from app.schemas.youtube_import import (
     VideoManualUploadUrlResponse,
 )
 from app.services.object_storage import object_storage_client
+from app.services.editor_quota import enforce_storage_hard_stop
 from app.services.editor_preview import (
     mark_editor_preview_failed,
     mark_editor_preview_pending,
@@ -343,9 +345,31 @@ async def _finalize_manual_upload_transition(
     await _enqueue_editor_preview_proxy_job(db, video)
 
 
+def _raw_source_expires_at(video: Video) -> datetime | None:
+    if not video.storage_key:
+        return None
+    anchor = video.updated_at or video.created_at
+    if anchor is None:
+        return None
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    retention_days = max(1, int(settings.raw_source_retention_days))
+    return anchor + timedelta(days=retention_days)
+
+
+def _raw_source_days_remaining(expires_at: datetime | None) -> int | None:
+    if expires_at is None:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    seconds_remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    return max(0, int(ceil(seconds_remaining / 86400)))
+
+
 def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListItem:
     import_state = _import_state_for_response(video)
     clip_profile = _clip_profile_for_video(video)
+    raw_source_expires_at = _raw_source_expires_at(video)
     return VideoListItem(
         id=video.id,
         title=video.title,
@@ -369,6 +393,8 @@ def _video_to_list_item(video: Video, thumbnail_url: str | None) -> VideoListIte
         is_download_blocked=video.is_download_blocked,
         error_code=video.error_code,
         error_message=video.error_message,
+        raw_source_expires_at=raw_source_expires_at,
+        raw_source_days_remaining=_raw_source_days_remaining(raw_source_expires_at),
     )
 
 
@@ -381,6 +407,7 @@ def _video_to_response(
 ) -> VideoResponse:
     import_state = _import_state_for_response(video)
     clip_profile = _clip_profile_for_video(video)
+    raw_source_expires_at = _raw_source_expires_at(video)
     return VideoResponse(
         id=video.id,
         user_id=video.user_id,
@@ -410,6 +437,8 @@ def _video_to_response(
         duration_sec=video.duration_sec,
         resolution=video.resolution,
         file_size_bytes=video.file_size_bytes,
+        raw_source_expires_at=raw_source_expires_at,
+        raw_source_days_remaining=_raw_source_days_remaining(raw_source_expires_at),
         status=video.status,
         clip_count=video.clip_count,
         created_at=video.created_at,
@@ -425,6 +454,12 @@ async def create_upload_url(
 ):
     _assert_upload_constraints(body)
     clip_profile = _resolve_clip_profile(body.clip_profile)
+    await enforce_storage_hard_stop(
+        db,
+        current_user.id,
+        incoming_bytes=body.file_size,
+        operation_label="video upload",
+    )
 
     video = Video(
         user_id=current_user.id,
@@ -1050,6 +1085,12 @@ async def manual_upload_url(
     current_user: User = Depends(get_current_user),
 ):
     _assert_upload_constraints(body)
+    await enforce_storage_hard_stop(
+        db,
+        current_user.id,
+        incoming_bytes=body.file_size,
+        operation_label="manual replacement upload",
+    )
 
     result = await db.execute(select(Video).where(Video.id == video_id, Video.user_id == current_user.id))
     video = result.scalar_one_or_none()
@@ -1226,6 +1267,13 @@ async def complete_local_helper_import(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Local helper completion is only supported for single YouTube imports",
+        )
+    if body.size_bytes and body.size_bytes > 0:
+        await enforce_storage_hard_stop(
+            db,
+            user_uuid,
+            incoming_bytes=body.size_bytes,
+            operation_label="local helper upload",
         )
 
     await _finalize_manual_upload_transition(

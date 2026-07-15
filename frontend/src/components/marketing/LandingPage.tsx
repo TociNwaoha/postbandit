@@ -62,7 +62,7 @@ const pricing = [
     items: [
       "5 video imports / month",
       "20 AI clips / month",
-      "Connect up to 3 platforms",
+      "Connect up to 5 platforms",
       "AI captions and hashtags",
     ],
     cta: "Get started",
@@ -76,7 +76,7 @@ const pricing = [
     items: [
       "25 video imports / month",
       "100 AI clips / month",
-      "All 6 platforms connected",
+      "All 10 platforms connected",
       "Scheduling and auto-posting",
       "Priority publishing queue",
     ],
@@ -291,7 +291,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
         <div className="relative mx-auto grid w-full max-w-[1160px] gap-14 px-7 pb-16 md:grid-cols-[56fr_44fr] md:pb-20">
           <div className="sl">
             <p className="inline-flex items-center gap-2 rounded-full border border-[#C7D8F5] bg-white px-3.5 py-1.5 text-[12px] font-semibold text-[#31589F]">
-              Now live - 6 platforms connected
+              Now live - 10 platforms connected
             </p>
 
             <h1 className={`${displayClassName} mt-6 max-w-2xl text-[clamp(40px,5.2vw,66px)] font-extrabold leading-[1.03] tracking-[-2.4px]`}>

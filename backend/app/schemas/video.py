@@ -38,6 +38,8 @@ class VideoResponse(BaseModel):
     duration_sec: int | None
     resolution: str | None
     file_size_bytes: int | None
+    raw_source_expires_at: datetime | None = None
+    raw_source_days_remaining: int | None = None
     status: VideoStatus
     error_message: str | None
     clip_count: int
@@ -154,6 +156,8 @@ class VideoListItem(BaseModel):
     is_download_blocked: bool
     error_code: str | None
     error_message: str | None
+    raw_source_expires_at: datetime | None = None
+    raw_source_days_remaining: int | None = None
 
 
 class VideoStatusResponse(BaseModel):

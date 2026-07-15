@@ -52,6 +52,13 @@ function formatDuration(seconds: number | null): string {
   return `${minutes}m`;
 }
 
+function rawSourceCountdownLabel(daysRemaining?: number | null): string | null {
+  if (daysRemaining === null || daysRemaining === undefined) return null;
+  if (daysRemaining <= 0) return "Raw source deletes today";
+  if (daysRemaining === 1) return "Raw source deletes in 1 day";
+  return `Raw source deletes in ${daysRemaining} days`;
+}
+
 function formatTimeBoundary(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
   const mins = Math.floor(safe / 60);
@@ -106,6 +113,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
   const canGenerateByMedia = Boolean(video.storage_key);
   const generationDisabled = batchLoading || !canGenerateByStatus || !canGenerateByMedia;
   const selectedBatchLabel = batchProfile === "sermon" ? "Long-form Speaking" : "Viral";
+  const rawSourceCountdown = rawSourceCountdownLabel(video.raw_source_days_remaining);
 
   useEffect(() => {
     setBatchProfile(video.clip_profile || "viral");
@@ -170,6 +178,12 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
           <p>
             <span className="text-[var(--app-subtle)]">Resolution:</span> {video.resolution || "Unknown"}
           </p>
+          {rawSourceCountdown ? (
+            <p>
+              <span className="text-[var(--app-subtle)]">Storage:</span>{" "}
+              <span className="font-medium text-amber-700">{rawSourceCountdown}</span>
+            </p>
+          ) : null}
           {isUrlImportSource ? (
             <p>
               <span className="text-[var(--app-subtle)]">Import mode:</span>{" "}

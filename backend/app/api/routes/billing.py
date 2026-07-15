@@ -21,6 +21,7 @@ from app.schemas.billing import (
     BillingStatusResponse,
     BillingUpgradeResponse,
 )
+from app.services.editor_quota import refresh_user_storage_usage, to_usage_response
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -62,6 +63,7 @@ async def billing_status(
         current_user.billing_plan,
         current_user.subscription_status,
     )
+    storage_usage = to_usage_response(await refresh_user_storage_usage(db, current_user.id))
     return BillingStatusResponse(
         plan_tier=current_user.billing_plan,
         subscription_status=current_user.subscription_status,
@@ -70,6 +72,14 @@ async def billing_status(
         billing_period_end=current_user.billing_period_end,
         platforms_allowed=current_user.platforms_allowed,
         platforms_connected=connected,
+        storage_quota_bytes=storage_usage.quota_bytes,
+        storage_hard_stop_bytes=storage_usage.hard_stop_bytes,
+        storage_used_bytes=storage_usage.used_bytes,
+        storage_raw_video_bytes=storage_usage.raw_video_bytes,
+        storage_editor_asset_bytes=storage_usage.editor_asset_bytes,
+        storage_render_output_bytes=storage_usage.render_output_bytes,
+        storage_warning=storage_usage.warning,
+        storage_blocked=storage_usage.blocked,
         stripe_publishable_key=settings.stripe_publishable_key if settings.stripe_billing_enabled else "",
         billing_enabled=settings.stripe_billing_enabled,
     )

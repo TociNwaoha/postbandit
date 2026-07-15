@@ -29,5 +29,13 @@ class BillingStatusResponse(BaseModel):
     billing_period_end: datetime | None
     platforms_allowed: int
     platforms_connected: int
+    storage_quota_bytes: int
+    storage_hard_stop_bytes: int
+    storage_used_bytes: int
+    storage_raw_video_bytes: int
+    storage_editor_asset_bytes: int
+    storage_render_output_bytes: int
+    storage_warning: bool
+    storage_blocked: bool
     stripe_publishable_key: str
     billing_enabled: bool

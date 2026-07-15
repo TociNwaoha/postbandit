@@ -15,22 +15,25 @@ const plans = [
     id: "creator",
     name: "Creator",
     price: "$18/mo",
-    platforms: "3 platforms",
-    points: ["7-day trial", "Connect 3 social platforms", "Hosted Stripe checkout"],
+    platforms: "5 platforms",
+    storage: "5GB storage",
+    points: ["7-day trial", "Connect 5 social platforms", "5GB storage with 6GB hard stop"],
   },
   {
     id: "pro",
     name: "Pro",
     price: "$49/mo",
-    platforms: "6 platforms",
-    points: ["7-day trial", "YouTube, TikTok, Instagram, X, Facebook, Threads", "Best for multi-platform posting"],
+    platforms: "10 platforms",
+    storage: "25GB storage",
+    points: ["7-day trial", "Connect up to 10 platforms", "25GB storage with 30GB hard stop"],
   },
   {
     id: "elite",
     name: "Elite",
     price: "$250/mo",
     platforms: "Every supported platform",
-    points: ["7-day trial", "Full platform access", "Built for high-volume repurposing workflows"],
+    storage: "100GB storage",
+    points: ["7-day trial", "Full platform access", "100GB storage for high-volume workflows"],
   },
 ];
 
@@ -41,6 +44,13 @@ function formatDate(value: string | null) {
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0GB";
+  const gb = bytes / 1024 / 1024 / 1024;
+  if (gb >= 10) return `${Math.round(gb)}GB`;
+  return `${Math.round(gb * 10) / 10}GB`;
 }
 
 export function BillingPage() {
@@ -130,6 +140,30 @@ export function BillingPage() {
                 <p className="mt-1 text-sm text-[var(--app-muted)]">
                   Platforms: {status.platforms_connected} connected / {status.platforms_allowed} allowed
                 </p>
+                <div className="mt-4 max-w-md">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium text-[var(--app-text)]">Storage</span>
+                    <span className={status.storage_blocked ? "font-semibold text-red-700" : "text-[var(--app-muted)]"}>
+                      {formatBytes(status.storage_used_bytes)} / {formatBytes(status.storage_quota_bytes)}
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--app-surface-soft)]">
+                    <div
+                      className={`h-full rounded-full ${
+                        status.storage_blocked ? "bg-red-600" : status.storage_warning ? "bg-amber-500" : "bg-[#1D3FD0]"
+                      }`}
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round((status.storage_used_bytes / Math.max(1, status.storage_quota_bytes)) * 100)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--app-muted)]">
+                    Hard stop: {formatBytes(status.storage_hard_stop_bytes)}. Raw sources, editor assets, and render outputs count toward storage.
+                  </p>
+                </div>
                 <p className="mt-1 text-sm text-[var(--app-muted)]">Trial ends: {formatDate(status.trial_ends_at)}</p>
               </>
             ) : null}
@@ -156,6 +190,7 @@ export function BillingPage() {
                 <div>
                   <h3 className="text-xl font-bold text-[var(--app-text)]">{plan.name}</h3>
                   <p className="mt-1 text-sm text-[var(--app-muted)]">{plan.platforms}</p>
+                  <p className="mt-1 text-sm text-[var(--app-muted)]">{plan.storage}</p>
                 </div>
                 <p className="text-xl font-bold text-[var(--app-text)]">{plan.price}</p>
               </div>

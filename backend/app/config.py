@@ -130,9 +130,7 @@ class Settings(BaseSettings):
     stale_queued_upload_cleanup_retention_hours: int = 2
     stale_queued_upload_cleanup_dry_run: bool = False
     raw_source_retention_enabled: bool = True
-    raw_source_retention_days: int = 30
-    starter_storage_quota_bytes: int = 5 * 1024 * 1024 * 1024
-    starter_storage_hard_stop_bytes: int = 6 * 1024 * 1024 * 1024
+    raw_source_retention_days: int = 45
     editor_max_asset_upload_bytes: int = 25 * 1024 * 1024
     editor_preview_proxy_timeout_seconds: int = 1800
 

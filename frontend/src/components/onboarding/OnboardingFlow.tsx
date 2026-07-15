@@ -86,7 +86,7 @@ const planOptions: PlanOption[] = [
     title: "Starter",
     price: "$9/mo",
     description: "For testing a simple repurposing workflow.",
-    features: ["5 video imports / month", "20 AI clips / month", "Connect up to 3 platforms"],
+    features: ["5 video imports / month", "20 AI clips / month", "Connect up to 5 platforms"],
   },
   {
     id: "creator",

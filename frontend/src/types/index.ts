@@ -94,6 +94,8 @@ export interface Video {
   duration_sec: number | null;
   resolution: string | null;
   file_size_bytes: number | null;
+  raw_source_expires_at?: string | null;
+  raw_source_days_remaining?: number | null;
   status: VideoStatus;
   error_message: string | null;
   clip_count: number;
@@ -125,6 +127,8 @@ export interface VideoListItem {
   is_download_blocked: boolean;
   error_code: string | null;
   error_message: string | null;
+  raw_source_expires_at?: string | null;
+  raw_source_days_remaining?: number | null;
 }
 
 export interface YouTubeImportResponse {
@@ -719,6 +723,14 @@ export interface BillingStatus {
   billing_period_end: string | null;
   platforms_allowed: number;
   platforms_connected: number;
+  storage_quota_bytes: number;
+  storage_hard_stop_bytes: number;
+  storage_used_bytes: number;
+  storage_raw_video_bytes: number;
+  storage_editor_asset_bytes: number;
+  storage_render_output_bytes: number;
+  storage_warning: boolean;
+  storage_blocked: boolean;
   stripe_publishable_key: string;
   billing_enabled: boolean;
 }

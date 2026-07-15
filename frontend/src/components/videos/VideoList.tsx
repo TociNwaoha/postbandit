@@ -109,6 +109,13 @@ function displayStateLabel(video: VideoListItem): string {
   return importStateLabel(video.import_state);
 }
 
+function rawSourceCountdownLabel(daysRemaining?: number | null): string | null {
+  if (daysRemaining === null || daysRemaining === undefined) return null;
+  if (daysRemaining <= 0) return "Source deletes today";
+  if (daysRemaining === 1) return "Source deletes in 1 day";
+  return `Source deletes in ${daysRemaining} days`;
+}
+
 function sourcePlatformKey(video: VideoListItem): string | null {
   if (YOUTUBE_SOURCE_TYPES.has(video.source_type)) return "youtube";
   if (["instagram", "facebook", "tiktok", "x", "twitch"].includes(video.source_type)) return video.source_type;
@@ -212,6 +219,7 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
         const stateLabel = displayStateLabel(video);
         const platformKey = sourcePlatformKey(video);
         const platformMeta = platformKey ? getPlatformBrandMeta(platformKey) : null;
+        const rawSourceCountdown = rawSourceCountdownLabel(video.raw_source_days_remaining);
         const showBlockedActions =
           Boolean(video.is_download_blocked) || Boolean(video.import_state && BLOCKED_IMPORT_STATES.has(video.import_state));
         const showErrorText =
@@ -262,6 +270,11 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                   {video.clip_count > 0 && <span>{video.clip_count} clips</span>}
                   <span>Profile: {video.clip_profile === "sermon" ? "Long-form Speaking" : "Viral"}</span>
                   <span>{formatRelativeTime(video.created_at)}</span>
+                  {rawSourceCountdown ? (
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      {rawSourceCountdown}
+                    </span>
+                  ) : null}
                   {video.source_type === "youtube_playlist" && video.playlist_index !== null ? (
                     <span>Playlist item #{(video.playlist_index || 0) + 1}</span>
                   ) : null}

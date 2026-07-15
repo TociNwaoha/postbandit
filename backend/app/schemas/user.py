@@ -17,7 +17,7 @@ class UserBase(BaseModel):
     trial_ends_at: datetime | None = None
     billing_period_start: datetime | None = None
     billing_period_end: datetime | None = None
-    platforms_allowed: int = 3
+    platforms_allowed: int = 5
 
 
 class UserCreate(BaseModel):
