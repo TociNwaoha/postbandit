@@ -190,10 +190,6 @@ export function AnalyticsDashboard() {
           {expiredAccounts.length} account{expiredAccounts.length === 1 ? "" : "s"} need reconnection. Analytics refresh will resume after reconnecting on the Connections page.
         </div>
       ) : null}
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        Instagram analytics are intentionally paused until Meta approves the required insights permission.
-      </div>
-
       {loading ? (
         <div className="inline-flex items-center gap-2 text-sm text-[var(--app-muted)]">
           <LoadingSpinner size="sm" /> Loading analytics...
