@@ -27,6 +27,7 @@ from app.services.youtube import (
     transition_import_state,
 )
 from app.services.youtube.blocked_source_cache import set_blocked_source_hint_sync
+from app.services.video_thumbnails import ensure_video_thumbnail_from_local_source
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.worker.tasks.transcribe import transcribe_job
 
@@ -311,6 +312,13 @@ def ingest_job(self, video_id: str):
             video.error_message = None
             video.debug_error_message = None
             video.resolution = _resolution_from_info(info) or video.resolution
+            local_thumbnail_url = ensure_video_thumbnail_from_local_source(
+                video,
+                local_video,
+                log_context=f"ingest_{video.source_type.value}",
+            )
+            if local_thumbnail_url:
+                video.thumbnail_url = local_thumbnail_url
             transition_import_state(
                 db,
                 video,

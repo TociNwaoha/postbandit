@@ -16,6 +16,7 @@ from app.models.transcript import TranscriptSegment
 from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, get_video_duration, get_video_resolution
 from app.services.object_storage import object_storage_client
+from app.services.video_thumbnails import ensure_video_thumbnail_from_local_source
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
 from app.services.transcription import get_model_with_metadata, transcribe_audio
@@ -194,6 +195,13 @@ def transcribe_job(self, video_id: str):
                 resolution = get_video_resolution(str(video_path))
                 if resolution:
                     video.resolution = resolution
+            local_thumbnail_url = ensure_video_thumbnail_from_local_source(
+                video,
+                video_path,
+                log_context=f"transcribe_{video.source_type.value}",
+            )
+            if local_thumbnail_url:
+                video.thumbnail_url = local_thumbnail_url
             video.status = VideoStatus.transcribing
             db.commit()
 
