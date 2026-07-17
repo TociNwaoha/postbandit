@@ -85,6 +85,7 @@ from app.services.youtube import (
     YT_SIGNIN_REQUIRED,
 )
 from app.services.youtube.admission import evaluate_youtube_admission
+from app.services.storage import video_thumbnail_key
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1447,6 +1448,7 @@ async def delete_video(
     storage_keys: set[str] = set()
     if video.storage_key:
         storage_keys.add(video.storage_key)
+    storage_keys.add(video_thumbnail_key(str(video.user_id), str(video.id)))
     storage_keys.add(f"transcripts/{video.id}/transcript.json")
 
     clip_result = await db.execute(select(Clip).where(Clip.video_id == video.id))

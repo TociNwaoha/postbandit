@@ -32,7 +32,7 @@ from app.services.object_storage import object_storage_client
 from app.services.social.instagram import ensure_instagram_account_token
 from app.services.social.meta import GraphRequestError, graph_get
 from app.services.social.security import redact_url, sanitize_sensitive_text
-from app.services.storage import clip_thumbnail_key
+from app.services.storage import clip_thumbnail_key, video_thumbnail_key
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,33 @@ def _iter_instagram_media(access_token: str) -> list[OfficialSourceMedia]:
 
 def _youtube_video_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _generate_local_video_thumbnail(
+    *,
+    source_path: Path,
+    user_id: uuid.UUID,
+    video_id: uuid.UUID,
+    platform: SocialPlatform,
+    source_post_id: uuid.UUID,
+) -> str | None:
+    thumb_storage_key = video_thumbnail_key(str(user_id), str(video_id))
+    thumb_path = source_path.parent / "video-thumbnail.jpg"
+    try:
+        extract_thumbnail(str(source_path), str(thumb_path), 1.0)
+        object_storage_client.save_thumbnail_locally(str(thumb_path), thumb_storage_key)
+        thumbnail_url = object_storage_client.get_thumbnail_url(thumb_storage_key)
+        if thumbnail_url:
+            return thumbnail_url
+    except Exception as exc:
+        logger.warning(
+            "[workflows] video thumbnail generation failed platform=%s source_post_id=%s video_id=%s error=%s",
+            platform.value,
+            source_post_id,
+            video_id,
+            exc,
+        )
+    return None
 
 
 def _refresh_youtube_access_token(account: ConnectedAccount) -> str:
@@ -781,6 +808,13 @@ def import_source_post(source_post_id: str) -> dict:
             video_id = uuid.uuid4()
             storage_key = f"videos/{source_post.user_id}/{video_id}/source/{platform.value}.mp4"
             object_storage_client.upload_file(str(tmp_media), storage_key)
+            local_thumbnail_url = _generate_local_video_thumbnail(
+                source_path=tmp_media,
+                user_id=source_post.user_id,
+                video_id=video_id,
+                platform=platform,
+                source_post_id=source_post.id,
+            )
             title = (source_post.caption_snapshot or f"{_platform_title(platform)} source import").replace("\n", " ").strip()[:140]
             video = Video(
                 id=video_id,
@@ -789,7 +823,7 @@ def import_source_post(source_post_id: str) -> dict:
                 source_type=_video_source_type_for_platform(platform),
                 source_url=source_post.permalink,
                 source_video_id=source_post.external_post_id if platform == SocialPlatform.youtube else None,
-                thumbnail_url=source_post.thumbnail_url,
+                thumbnail_url=local_thumbnail_url or source_post.thumbnail_url,
                 import_state=VideoImportState.processing,
                 import_mode=VideoImportMode.server_download,
                 external_metadata_json={

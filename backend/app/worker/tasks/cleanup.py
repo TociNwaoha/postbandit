@@ -18,6 +18,7 @@ from app.models.video import Video, VideoSourceType, VideoStatus
 from app.models.clip import Clip
 from app.models.editor_project import EditorProject, EditorProjectStatus
 from app.services.object_storage import object_storage_client
+from app.services.storage import video_thumbnail_key
 from app.services.workspace import (
     WORKSPACE_ROOTS,
     is_workspace_lease_active,
@@ -419,6 +420,7 @@ def _collect_video_storage_keys(db, *, video: Video) -> set[str]:
     storage_keys: set[str] = set()
     if video.storage_key:
         storage_keys.add(video.storage_key)
+    storage_keys.add(video_thumbnail_key(str(video.user_id), str(video.id)))
     storage_keys.add(f"transcripts/{video.id}/transcript.json")
 
     clip_rows = db.execute(select(Clip.id, Clip.thumbnail_key).where(Clip.video_id == video.id)).all()
