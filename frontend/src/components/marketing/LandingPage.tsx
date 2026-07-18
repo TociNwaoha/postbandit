@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { MascotSection } from "@/components/landing/MascotSection";
+
 type LandingPageProps = {
   displayClassName?: string;
   bodyClassName?: string;
@@ -506,6 +508,8 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
           </div>
         </div>
       </section>
+
+      <MascotSection />
 
       <section id="pricing" className="bg-white py-[96px]">
         <div className="mx-auto w-full max-w-[1160px] px-7">
