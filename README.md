@@ -1,161 +1,139 @@
 # PostBandit
 
-[![Python](https://img.shields.io/badge/Python_3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Next.js_14-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL_15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
-[![Celery](https://img.shields.io/badge/Celery-37814A?style=flat-square&logo=celery&logoColor=white)](https://docs.celeryq.dev)
-[![Stripe](https://img.shields.io/badge/Stripe-008CDD?style=flat-square&logo=stripe&logoColor=white)](https://stripe.com)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
+AI-powered content workflow platform — import video, generate clips, publish everywhere.
 
-**AI-native video-to-social platform.** Import any video, generate short-form clips with AI, burn in captions, write platform-specific copy, and schedule to 6 social platforms — with a public API and MCP integration for agent-driven automation.
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Stripe](https://img.shields.io/badge/Stripe-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://stripe.com/)
 
-🔗 **Live at [postbandit.com](https://postbandit.com)**
+PostBandit is a production-oriented content operations platform for creators, teams, agencies, and brands. It turns source videos and social posts into publish-ready clips, carousel drafts, captions, platform-specific copy, scheduled publish jobs, and analytics.
 
----
+## Product Screenshots
 
-## Architecture
+![Official API workflow builder](docs/screenshots/workflow-builder.png)
 
-![PostBandit system architecture](./docs/architecture.svg)
+*Official API workflow setup for repurposing source posts from Instagram, YouTube, or Facebook into selected destination accounts.*
 
----
+![Developer API dashboard](docs/screenshots/developer-api.png)
 
-## Stack
+*Developer API dashboard with usage limits, API key management, and quick-start snippets for automation and agent workflows.*
 
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS, Recharts |
-| Backend | FastAPI (Python 3.11), Pydantic v2 |
-| Task queue | Celery 5 + Redis, Celery Beat for scheduled tasks |
-| Database | PostgreSQL 15 |
-| Video | FFmpeg, faster-whisper (CPU, int8, medium model), yt-dlp |
-| AI | Claude Haiku (platform-aware copy generation) |
-| Billing | Stripe (subscriptions, webhooks, customer portal) |
-| Storage | Backblaze B2 offsite DB backups (S3-compatible via boto3) |
-| Observability | Sentry (backend + frontend), `/health` endpoint |
-| Infrastructure | Docker Compose, Nginx, Contabo VPS (8 vCPU / 24 GB RAM) |
+![Carousel studio](docs/screenshots/carousel-studio.png)
 
----
+*Carousel creation studio with template selection, editable slide structure, cached previews, and export-ready rendering.*
+
+![Dashboard calendar and connections](docs/screenshots/dashboard-calendar.png)
+
+*Main dashboard with connected account status, publishing calendar, platform filters, and schedule visibility.*
+
+![Video URL import modal](docs/screenshots/video-url-import.png)
+
+*Video import flow supporting direct uploads and URL imports from YouTube, Instagram, TikTok, Facebook, X, Twitch, and more.*
+
+![Login screen](docs/screenshots/login.png)
+
+*PostBandit authentication screen with product positioning around clipping, exporting, and multi-platform publishing.*
 
 ## Features
 
-**Content pipeline**
-- Import from YouTube, Instagram, TikTok, Facebook, X, Twitch via yt-dlp
-- Word-level transcription (faster-whisper) → AI clip scoring and detection
-- FFmpeg caption burn-in: split-line (default), word-by-word karaoke, subtitle blocks
-- Aspect ratio presets: 9:16 vertical, 16:9 horizontal, 1:1 square
+- Import videos by file upload or URL from YouTube, Instagram, TikTok, Facebook, X, Twitch, and other supported sources.
+- Generate clips from long-form videos with transcription, scoring, captions, thumbnails, and export-ready assets.
+- Build social repurpose workflows that detect source posts through official APIs and route them into publish destinations.
+- Schedule and track publishing jobs across Instagram, YouTube, TikTok, Facebook, Threads, X, and LinkedIn-oriented workflows.
+- Manage connected social accounts with platform logos, reconnect states, destination selection, and publishing readiness.
+- Generate AI-assisted platform copy with reusable title, caption, description, hashtag, and per-platform override fields.
+- Create carousel posts from AI CMO queue items, templates, source text, and rendered preview/export flows.
+- Use the dashboard calendar to view scheduled posts, published history, failed jobs, and platform-specific status.
+- Access a developer API for programmatic imports, exports, publishing workflows, and automation integrations.
+- Handle billing and access tiers through Stripe-powered subscription infrastructure.
 
-**Publishing**
-- Connect 6 platforms: YouTube, TikTok, Instagram, X, Facebook, Threads
-- Per-platform scheduling — same clip to TikTok Monday, Instagram Wednesday
-- Platform-aware AI copy: X (280 chars), Instagram (2200 + hashtag blocks), YouTube (keyword-rich description + tags), TikTok (trending CTAs), Facebook, Threads
-- Content calendar with platform color coding, reschedule drawer, publish status tracking
+## Tech Stack
 
-**Analytics**
-- Post performance pull-back from each platform: views, likes, comments, shares, reach
-- Instagram analytics via `graph.instagram.com` (Login API — incompatible with Facebook Graph endpoint)
-- 7/30/90-day date range filter, top performers list, Recharts views-over-time chart
-
-**Developer platform**
-- Public REST API v1 with API key auth (`pb_live_` prefix, SHA-256 hashed at rest, never stored plaintext)
-- Redis sliding window rate limiting per user per plan (Creator: 200/hr, Pro: 1000/hr)
-- MCP server integration (in progress — enables Claude to run full content workflows autonomously)
-
-**Infrastructure**
-- Stripe billing: 7-day trial (card required upfront), Creator $18/mo, Pro $49/mo, Elite $250/mo
-- Idempotent Stripe webhook handling (`processed_stripe_events` dedup table)
-- Automated daily PostgreSQL backups → Backblaze B2 (offsite)
-- Fernet encryption at rest for all OAuth tokens
-- SlowAPI rate limiting on auth endpoints
-
----
-
-## Engineering notes
-
-The decisions worth knowing about.
-
-**Per-platform `publish_jobs` schema**
-
-One row per platform per clip rather than one row with a `platforms[]` array. This enables independent scheduling, copy, status tracking, retry logic, and analytics per destination. A failed TikTok post doesn't block or affect the Instagram job for the same clip. The schema change is what makes the content calendar, per-platform analytics, and independent retries possible — it's not a delivery detail, it's the core architectural decision.
-
-**Celery race condition**
-
-The scheduled publishing task uses `SELECT FOR UPDATE SKIP LOCKED` combined with `countdown=1` on the downstream task. `SKIP LOCKED` lets competing workers skip rows already claimed by another worker rather than blocking. `countdown=1` ensures the publish task fires after the DB transaction commits rather than before, eliminating a class of subtle duplicate-dispatch bugs in high-concurrency conditions.
-
-**OAuth token encryption**
-
-All OAuth tokens for connected social platforms are encrypted at rest using Fernet symmetric encryption. Tokens are decrypted in memory only at the moment of platform API calls and are never logged or included in error messages. The encryption key lives exclusively in environment variables and is never present in application code or version control.
-
-**API key auth as a parallel dependency**
-
-API key authentication is implemented as a separate FastAPI dependency (`get_current_user_or_api_key`) applied only to `/api/v1/` routes. The original `get_current_user` dependency used by the dashboard is never modified — API key auth is purely additive. Rate limits are enforced per-user rather than per-key, so generating multiple API keys doesn't multiply the effective rate limit.
-
-**Instagram API endpoint distinction**
-
-Instagram Login API tokens are incompatible with `graph.facebook.com`. They require `graph.instagram.com`. This is significantly underdocumented by Meta and required targeted debugging to identify. Additionally, the `impressions` metric is unsupported for Reels media type — `views` is the correct metric for video content on Instagram.
-
-**Backblaze B2 with boto3**
-
-B2's S3-compatible API requires two non-obvious configurations: `signature_version="s3v4"` must be set explicitly in the boto3 config (the default AWS behavior doesn't apply), and the region must be a real region string like `us-west-004` rather than the `"auto"` shorthand that works with AWS S3. Both are silent failures without the fix — no error is raised, requests simply don't authenticate.
-
----
-
-## Screenshots
-
-<!-- Add dashboard, calendar, analytics, and publish flow screenshots here -->
-
-| Dashboard | Content calendar |
+| Area | Stack |
 |---|---|
-| *coming soon* | *coming soon* |
+| Frontend | Next.js 14 App Router, React 18, TypeScript, Tailwind CSS, NextAuth, Recharts |
+| Backend | FastAPI, Python 3.11, SQLAlchemy, Alembic, Pydantic, httpx |
+| AI/ML | faster-whisper, Claude Haiku, FFmpeg, yt-dlp, Pillow |
+| Infrastructure | Docker Compose, Celery, Celery Beat, Redis, PostgreSQL 15, Backblaze B2, Sentry, Nginx, Contabo VPS |
+| Payments | Stripe Checkout, Stripe Billing Portal, Stripe subscriptions, webhook idempotency |
 
-| Analytics | Publish flow |
-|---|---|
-| *coming soon* | *coming soon* |
-
----
-
-## Local development
+## Local Development Setup
 
 ### Prerequisites
 
-- Docker + Docker Compose
-- Python 3.11+
-- Node.js 18+
+- Docker and Docker Compose
+- Git
+- Node.js 20+ if running the frontend outside Docker
+- Python 3.11+ if running backend tools outside Docker
 
-### Setup
+### Clone and configure
 
 ```bash
 git clone https://github.com/TociNwaoha/clipbandit.git
 cd clipbandit
 cp .env.example .env
-# Fill in required values — see .env.example for all required keys
-docker compose up -d
 ```
 
-### Services
+Fill in the required values in `.env`, including database credentials, Redis password, auth secrets, AI provider keys, storage credentials, Stripe values, and social OAuth app credentials as needed for the features you want to test.
+
+### Run the stack
+
+```bash
+docker compose up -d --build
+```
+
+### Useful local URLs
 
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3001 |
 | Backend API | http://localhost:8000 |
-| API docs (Swagger) | http://localhost:8000/docs |
+| API docs | http://localhost:8000/docs |
 | Health check | http://localhost:8000/health |
 
-### Running workers
+### Common commands
 
 ```bash
-# Celery worker
-docker compose up -d worker
+# View running services
+docker compose ps
 
-# Celery Beat (scheduled tasks)
-docker compose up -d worker-beat
+# Tail backend logs
+docker compose logs -f backend
+
+# Tail worker logs
+docker compose logs -f worker
+
+# Run backend migrations
+docker compose exec backend alembic upgrade head
+
+# Rebuild only the frontend
+docker compose up -d --build frontend
 ```
 
----
+## Architecture
+
+PostBandit is built around two primary workflows: clip-first and publish-first.
+
+### Clip-first workflow
+
+A user uploads or imports a long-form video. The backend stores the source media, queues transcription through Celery, extracts word-level transcript data with faster-whisper, scores potential short-form moments, generates clip records, creates thumbnails, and renders final MP4 exports with FFmpeg. Those exports can then be downloaded, scheduled, or published to connected social accounts.
+
+```text
+Video upload/import → object storage → transcription → clip scoring → clip review → FFmpeg export → publish/download
+```
+
+### Publish-first workflow
+
+A user connects source and destination accounts, then creates an official API workflow. PostBandit polls supported source platforms, detects new source posts, imports reusable media when the official API permits it, processes the content, creates or reuses exports, and creates platform-specific publish jobs. Publish jobs remain the source of truth for scheduling, retry state, published URLs, and analytics.
+
+```text
+Connected source account → source post detection → media import/recovery → export creation → publish jobs → calendar + analytics
+```
+
+The application is deployed as Docker Compose services: a Next.js frontend, FastAPI backend, PostgreSQL database, Redis broker, Celery workers, Celery Beat scheduler, and Nginx reverse proxy on a Contabo VPS. Durable media and backups are handled through Backblaze B2, while local volumes support thumbnails, temporary processing, and service runtime state.
 
 ## License
 
-All rights reserved. © 2026 BANDAMONT LLC.
-
-PostBandit is a proprietary commercial product. The source code is shared publicly for portfolio and review purposes only. No license is granted to use, copy, modify, or distribute this code for commercial or non-commercial purposes without explicit written permission from BANDAMONT LLC.
+MIT

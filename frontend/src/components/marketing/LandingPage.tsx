@@ -57,50 +57,58 @@ const featureCards = [
 
 const pricing = [
   {
-    plan: "Starter",
-    price: "$9",
+    plan: "Creator",
+    price: "$18",
     note: "/mo",
-    desc: "Perfect for solo creators just getting started.",
+    desc: "For creators starting a repeatable video-to-social workflow.",
     items: [
-      "5 video imports / month",
-      "20 AI clips / month",
+      "7-day trial with card required",
       "Connect up to 5 platforms",
-      "AI captions and hashtags",
+      "5GB included storage",
+      "AI clips, captions, and platform copy",
+      "Scheduling calendar and publish history",
     ],
     cta: "Get started",
     featured: false,
   },
   {
-    plan: "Creator",
-    price: "$29",
+    plan: "Pro",
+    price: "$49",
     note: "/mo",
-    desc: "For active creators publishing across multiple channels weekly.",
+    desc: "For active creators and teams publishing across more channels.",
     items: [
-      "25 video imports / month",
-      "100 AI clips / month",
-      "All 10 platforms connected",
-      "Scheduling and auto-posting",
+      "Connect up to 10 platforms",
+      "25GB included storage",
+      "Social repurpose workflows",
+      "AI CMO carousel drafts",
       "Priority publishing queue",
     ],
     cta: "Try now for free",
     featured: true,
   },
   {
-    plan: "Agency",
-    price: "$59",
+    plan: "Elite",
+    price: "$250",
     note: "/mo",
-    desc: "For teams, agencies, and churches managing multiple brands.",
+    desc: "For serious operators managing high-volume content systems.",
     items: [
-      "Unlimited video imports",
-      "Unlimited AI clips",
-      "Multiple brand workspaces",
-      "Team collaboration tools",
-      "Priority email support",
+      "Every supported social platform",
+      "100GB included storage",
+      "Highest workflow limits",
+      "Advanced automation and API access",
+      "Priority human support",
     ],
     cta: "Get started",
     featured: false,
   },
 ];
+
+const workflowDestinations = [
+  { label: "TikTok", key: "tiktok" },
+  { label: "X", key: "x" },
+  { label: "Facebook", key: "facebook" },
+  { label: "YouTube", key: "youtube" },
+] as const;
 
 function CheckIcon({ className = "" }: { className?: string }) {
   return (
@@ -195,6 +203,77 @@ function PlatformIcon({ platform, className = "" }: { platform: string; classNam
         fill="currentColor"
       />
     </svg>
+  );
+}
+
+function WorkflowDiagram({ displayClassName }: { displayClassName: string }) {
+  return (
+    <div className="sr mt-10 overflow-hidden rounded-[28px] border border-[#D6E2F5] bg-[#F6FAFF] p-5 shadow-[0_18px_48px_rgba(9,21,40,0.08)]">
+      <div className="grid items-stretch gap-4 lg:grid-cols-[1fr_auto_1.08fr_auto_1.28fr]">
+        <div className="rounded-2xl border border-[#D6E2F5] bg-white p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#7A94B0]">Source post</p>
+          <div className="mt-4 flex items-center gap-3">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FACC15] via-[#E1306C] to-[#5851DB] text-white shadow-[0_12px_28px_rgba(225,48,108,0.22)]">
+              <PlatformIcon platform="instagram" className="h-6 w-6" />
+            </span>
+            <div>
+              <p className={`${displayClassName} text-xl font-bold tracking-[-0.5px] text-[#091528]`}>Instagram Reel</p>
+              <p className="text-sm text-[#5A7192]">Detected from a connected source account</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="hidden items-center justify-center text-[#9AB0CF] lg:flex">
+          <ArrowRightIcon className="h-8 w-8" />
+        </div>
+
+        <div className="rounded-2xl border border-[#BFD1F3] bg-white p-5 shadow-[inset_0_0_0_1px_rgba(29,63,208,0.08)]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#1D3FD0]">PostBandit workflow</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+            {["Import media", "Generate export", "Write platform copy"].map((step, index) => (
+              <div key={step} className="rounded-xl border border-[#E0EAF9] bg-[#FAFCFF] p-3">
+                <p className="text-[11px] font-bold text-[#1D3FD0]">0{index + 1}</p>
+                <p className="mt-1 text-sm font-semibold text-[#18325D]">{step}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="hidden items-center justify-center text-[#9AB0CF] lg:flex">
+          <ArrowRightIcon className="h-8 w-8" />
+        </div>
+
+        <div className="rounded-2xl border border-[#D6E2F5] bg-white p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#7A94B0]">Republished to</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {workflowDestinations.map((destination) => (
+              <div key={destination.key} className="flex items-center gap-2 rounded-xl border border-[#E0EAF9] bg-[#FBFDFF] px-3 py-2.5">
+                <span
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${
+                    destination.key === "youtube"
+                      ? "bg-[#FF0000] text-white"
+                      : destination.key === "tiktok" || destination.key === "x"
+                        ? "bg-[#111827] text-white"
+                        : "bg-[#1877F2] text-white"
+                  }`}
+                >
+                  {destination.key === "facebook" ? (
+                    <span className="text-lg font-bold leading-none">f</span>
+                  ) : (
+                    <PlatformIcon platform={destination.key} className="h-4.5 w-4.5" />
+                  )}
+                </span>
+                <span className="text-sm font-semibold text-[#18325D]">{destination.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-4 text-center text-sm leading-6 text-[#5A7192]">
+        Example: PostBandit detects an Instagram post, imports the reusable video when the official API allows it, prepares the export, and creates destination jobs for TikTok, X, Facebook, and YouTube.
+      </p>
+    </div>
   );
 }
 
@@ -442,6 +521,8 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
               </article>
             ))}
           </div>
+
+          <WorkflowDiagram displayClassName={displayClassName} />
         </div>
       </section>
 
@@ -516,7 +597,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
           <SectionHeading
             tag="Pricing"
             title="Simple, fair pricing"
-            body="No hidden fees. No per-post charges. Cancel any time."
+            body="Start with a 7-day trial. No hidden fees, no per-post charges, and plan limits are visible before you publish."
             displayClassName={displayClassName}
           />
 
