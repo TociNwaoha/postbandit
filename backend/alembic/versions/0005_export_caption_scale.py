@@ -1,4 +1,4 @@
-"""prompt11 export caption scale
+"""export caption scale
 
 Revision ID: 0005
 Revises: 0004

@@ -60,7 +60,7 @@ export default function PrivacyPage() {
               <li>TikTok — Publishing to TikTok (tiktok.com/legal/privacy-policy)</li>
               <li>Meta (Instagram, Facebook, Threads) — Publishing to Meta platforms (facebook.com/privacy/policy)</li>
               <li>X Corp — Publishing to X (twitter.com/privacy)</li>
-              <li>Anthropic — AI copy generation (anthropic.com/privacy)</li>
+              <li>DeepSeek — AI copy generation (deepseek.com)</li>
               <li>Sentry — Error monitoring (sentry.io/privacy)</li>
               <li>Backblaze / Cloudflare — Cloud storage (backblaze.com/company/privacy)</li>
             </ul>

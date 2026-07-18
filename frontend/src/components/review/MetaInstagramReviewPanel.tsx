@@ -191,7 +191,7 @@ export function MetaInstagramReviewPanel() {
         <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-200">
           <li>Sign in to PostBandit.</li>
           <li>Click <span className="font-semibold text-white">Connect Instagram</span>.</li>
-          <li>Complete the Meta OAuth prompts for your Instagram professional account.</li>
+          <li>Complete the Meta OAuth authorization screens for your Instagram professional account.</li>
           <li>Return to this page and show the connected Instagram profile details.</li>
         </ol>
       </SectionCard>

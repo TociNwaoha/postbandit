@@ -550,5 +550,5 @@ def score_job(self, video_id: str):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# Prompt 2 naming compatibility.
+# Legacy filename compatibility.
 score_clips = score_job

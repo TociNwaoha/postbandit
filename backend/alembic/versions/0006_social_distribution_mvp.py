@@ -1,4 +1,4 @@
-"""prompt12 social distribution mvp
+"""social distribution foundation
 
 Revision ID: 0006
 Revises: 0005

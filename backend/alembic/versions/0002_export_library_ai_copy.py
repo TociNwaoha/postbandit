@@ -1,4 +1,4 @@
-"""prompt7 export library ai copy
+"""export library and clip copy fields
 
 Revision ID: 0002
 Revises: 0001

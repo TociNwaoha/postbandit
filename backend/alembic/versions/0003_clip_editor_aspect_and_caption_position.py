@@ -1,4 +1,4 @@
-"""prompt9 clip editor aspect and caption position
+"""clip editor aspect and caption position
 
 Revision ID: 0003
 Revises: 0002

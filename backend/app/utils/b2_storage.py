@@ -29,7 +29,7 @@ def _required_env() -> dict[str, str]:
     Resolve required B2 settings.
 
     Media storage already uses B2_KEY_ID/B2_APPLICATION_KEY in this repo. The
-    backup prompt used B2_ACCESS_KEY_ID/B2_SECRET_ACCESS_KEY. Support both, with
+    backup tooling also accepts B2_ACCESS_KEY_ID/B2_SECRET_ACCESS_KEY. Support both, with
     the existing repo names taking precedence, so backups work with the current
     VPS configuration without duplicating secrets.
     """

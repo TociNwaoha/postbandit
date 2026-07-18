@@ -105,7 +105,7 @@ export default function TermsPage() {
               You are solely responsible for the content you upload and publish. You represent that you have all necessary rights, licenses, and permissions to use that content and to publish it to connected social platforms.
             </p>
             <p className="mt-2">
-              PostBandit uses artificial intelligence to generate clip suggestions, caption text, and social media copy. AI-generated outputs are provided as suggestions. You are responsible for reviewing and approving all content before it is published.
+              PostBandit uses artificial intelligence to generate clip suggestions, caption text, and social media copy. AI outputs are provided as suggestions. You are responsible for reviewing and approving all content before it is published.
             </p>
           </section>
 
@@ -154,7 +154,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-[#091528]">13. Disclaimer of Warranties</h2>
             <p className="mt-2 uppercase">
-              The Service is provided &quot;as is&quot; and &quot;as available&quot; without warranties of any kind. We do not warrant that the Service will be uninterrupted, error-free, or that AI-generated content will be accurate or suitable for your purposes.
+              The Service is provided &quot;as is&quot; and &quot;as available&quot; without warranties of any kind. We do not warrant that the Service will be uninterrupted, error-free, or that AI output will be accurate or suitable for your purposes.
             </p>
           </section>
 

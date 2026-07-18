@@ -392,5 +392,5 @@ def transcribe_job(self, video_id: str):
             logger.warning(f"Cleanup failed: {cleanup_err}")
 
 
-# Prompt 2 naming compatibility.
+# Legacy filename compatibility.
 transcribe_video = transcribe_job

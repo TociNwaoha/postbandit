@@ -506,5 +506,5 @@ def ingest_job(self, video_id: str):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# Prompt 1 naming compatibility.
+# Legacy filename compatibility.
 download_video = ingest_job

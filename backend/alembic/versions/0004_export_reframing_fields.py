@@ -1,4 +1,4 @@
-"""prompt10 export reframing fields
+"""export reframing fields
 
 Revision ID: 0004
 Revises: 0003

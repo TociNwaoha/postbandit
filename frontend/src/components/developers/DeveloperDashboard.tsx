@@ -111,7 +111,7 @@ export function DeveloperDashboard() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-subtle)]">API Access</p>
             <h2 className="mt-1 text-2xl font-semibold text-[var(--app-text)]">Developer API</h2>
-            <p className="mt-1 text-sm text-[var(--app-muted)]">Create API keys for agents, automations, and external tools.</p>
+            <p className="mt-1 text-sm text-[var(--app-muted)]">Create API keys for automations, integrations, and external tools.</p>
           </div>
           <span className="rounded-full bg-[rgba(29,63,208,0.1)] px-3 py-1 text-sm font-medium text-[var(--app-primary)]">
             {usage ? `${usage.plan.charAt(0).toUpperCase()}${usage.plan.slice(1)} Plan` : "Loading plan"}

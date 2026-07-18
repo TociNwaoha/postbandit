@@ -46,7 +46,7 @@ export default function RefundPolicyPage() {
               We will issue a full refund if you were charged after cancelling before your trial ended due to a billing error; you were charged twice for the same billing period due to a technical error; or you contact us within 48 hours of your first charge (after trial) and have not used the Service to publish any content.
             </p>
             <p className="mt-2">
-              We do not issue refunds for change of mind after the trial period; unused time remaining in a billing period after cancellation; failure to cancel before the trial ends; social platform rejections or API changes outside our control; or dissatisfaction with AI-generated content quality.
+              We do not issue refunds for change of mind after the trial period; unused time remaining in a billing period after cancellation; failure to cancel before the trial ends; social platform rejections or API changes outside our control; or dissatisfaction with AI output quality.
             </p>
           </section>
 
