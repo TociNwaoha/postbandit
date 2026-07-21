@@ -317,10 +317,10 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
       onClick={closeModal}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-2xl"
+        className="w-full max-w-xl rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[var(--app-border)] px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--app-border)] px-5 py-3.5">
           <h2 className="text-lg font-semibold text-[var(--app-text)]">Add Video</h2>
           <button
             className="rounded-md p-2 text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)] hover:text-[var(--app-text)] transition-colors"
@@ -334,7 +334,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
           </button>
         </div>
 
-        <div className="px-6 pt-4">
+        <div className="px-5 pt-3.5">
           <div className="inline-flex rounded-lg bg-[var(--app-surface-soft)] p-1">
             <button
               className={`rounded-md px-4 py-2 text-sm transition-colors ${
@@ -365,8 +365,8 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
           </div>
         </div>
 
-        <div className="p-6">
-          <div className="mb-5 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+        <div className="p-5">
+          <div className="mb-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
               Clip Profile
             </label>
@@ -394,7 +394,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
               />
               <button
                 type="button"
-                className={`w-full rounded-xl border-2 border-dashed px-6 py-14 text-center transition-colors ${
+                className={`w-full rounded-xl border-2 border-dashed px-5 py-10 text-center transition-colors ${
                   isDragging
                     ? "border-[#1D3FD0] bg-[#1D3FD0]/10"
                     : "border-[var(--app-border)] bg-white/40 hover:border-[#1D3FD0]/80 hover:bg-[#1D3FD0]/5"
