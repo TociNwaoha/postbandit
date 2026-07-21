@@ -6,7 +6,7 @@ import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,7 @@ EDITOR_PREVIEW_PROFILE_VERSION = 2
 EDITOR_PREVIEW_STATUS_PENDING = "pending"
 EDITOR_PREVIEW_STATUS_READY = "ready"
 EDITOR_PREVIEW_STATUS_FAILED = "failed"
+EDITOR_PREVIEW_FAILED_RETRY_AFTER = timedelta(hours=6)
 
 HDR_COLOR_SPACES = {"bt2020", "bt2020nc", "bt2020ncl"}
 HDR_COLOR_TRANSFERS = {"arib-std-b67", "smpte2084", "pq"}
@@ -48,6 +49,18 @@ class EditorPreviewError(Exception):
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def build_editor_preview_key(video_id: str) -> str:
@@ -71,12 +84,14 @@ def parse_editor_preview_metadata(metadata: dict[str, Any] | None) -> dict[str, 
     profile_version = payload.get(EDITOR_PREVIEW_PROFILE_VERSION_KEY)
     if not isinstance(profile_version, int):
         profile_version = None
+    updated_at = _parse_iso(payload.get(EDITOR_PREVIEW_UPDATED_AT_KEY))
     return {
         "status": status,
         "key": key,
         "source_key": source_key,
         "error": error,
         "profile_version": profile_version,
+        "updated_at": updated_at,
     }
 
 
@@ -149,7 +164,10 @@ def should_enqueue_editor_preview(
             return True
         return not object_storage_client.file_exists(key)
     if status == EDITOR_PREVIEW_STATUS_FAILED:
-        return True
+        updated_at = preview.get("updated_at")
+        if isinstance(updated_at, datetime):
+            return datetime.now(timezone.utc) - updated_at >= EDITOR_PREVIEW_FAILED_RETRY_AFTER
+        return False
     return True
 
 

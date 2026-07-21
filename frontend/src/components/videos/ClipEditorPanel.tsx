@@ -1040,7 +1040,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-[var(--app-muted)]">
-                    Framed preview unavailable because source video is missing.
+                    Source video is temporarily unavailable from storage. Try again after the storage download limit resets.
                   </div>
                 )}
 
