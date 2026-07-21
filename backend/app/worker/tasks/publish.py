@@ -248,18 +248,22 @@ def execute_publish_job(self, publish_job_id: str):
             attempt.finished_at = datetime.now(timezone.utc)
             db.commit()
 
-            from app.worker.tasks.workflow import (
-                process_publish_workflow_source,
-                reconcile_social_workflow_runs,
-            )
-
             if publish_job.status == PublishStatus.published:
-                process_publish_workflow_source.apply_async(
-                    args=[str(publish_job.id)],
-                    queue="publish",
-                    countdown=1,
-                )
-            if publish_job.workflow_run_id:
+                if publish_job.workflow_source_post_id:
+                    from app.worker.tasks.social_workflows import continue_source_workflow_after_video_ready
+
+                    continue_source_workflow_after_video_ready.apply_async(queue="ingest", countdown=2)
+                elif not (publish_job.provider_metadata_json or {}).get("workflow_origin"):
+                    from app.worker.tasks.workflow import process_publish_workflow_source
+
+                    process_publish_workflow_source.apply_async(
+                        args=[str(publish_job.id)],
+                        queue="publish",
+                        countdown=1,
+                    )
+            if publish_job.workflow_run_id and not publish_job.workflow_source_post_id:
+                from app.worker.tasks.workflow import reconcile_social_workflow_runs
+
                 reconcile_social_workflow_runs.apply_async(queue="publish", countdown=2)
 
             return {
@@ -275,7 +279,11 @@ def execute_publish_job(self, publish_job_id: str):
             attempt.error_message = error_message
             attempt.finished_at = datetime.now(timezone.utc)
             db.commit()
-            if publish_job.workflow_run_id:
+            if publish_job.workflow_source_post_id:
+                from app.worker.tasks.social_workflows import continue_source_workflow_after_video_ready
+
+                continue_source_workflow_after_video_ready.apply_async(queue="ingest", countdown=2)
+            elif publish_job.workflow_run_id:
                 from app.worker.tasks.workflow import reconcile_social_workflow_runs
 
                 reconcile_social_workflow_runs.apply_async(queue="publish", countdown=2)

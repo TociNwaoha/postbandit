@@ -484,6 +484,7 @@ export interface SocialPublishJob {
   clip_id: string | null;
   platform: SocialPlatform;
   connected_account_id: string | null;
+  workflow_source_post_id: string | null;
   workflow_run_id: string | null;
   status: PublishJobStatus;
   publish_mode: PublishMode;

@@ -104,3 +104,14 @@ class PublishJob(Base):
     attempts: Mapped[list["PublishAttempt"]] = relationship(
         "PublishAttempt", back_populates="publish_job", cascade="all, delete-orphan"
     )
+
+    @property
+    def workflow_run_id(self) -> uuid.UUID | None:
+        """Return the legacy workflow run id stored in provider metadata, if present."""
+        value = (self.provider_metadata_json or {}).get("workflow_run_id")
+        if not value:
+            return None
+        try:
+            return uuid.UUID(str(value))
+        except (TypeError, ValueError):
+            return None

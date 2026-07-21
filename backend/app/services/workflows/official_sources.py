@@ -1137,6 +1137,7 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
             destination_display_name=account.display_name or account.username_or_channel_name or account.external_account_id,
             content_title_snapshot=copy.get("title") or clip.title or source_post.caption_snapshot or "Workflow repost",
             provider_metadata_json={
+                "workflow_origin": True,
                 "workflow_id": str(workflow.id),
                 "workflow_source_post_id": str(source_post.id),
                 "source_platform": source_post.source_platform.value,
