@@ -21,8 +21,15 @@ interface UploadUrlResponse {
   use_local: boolean;
 }
 
+interface VideoStatusResponse {
+  video_id: string;
+  status: "queued" | "downloading" | "transcribing" | "scoring" | "ready" | "error";
+  error_message?: string | null;
+}
+
 const MAX_UPLOAD_BYTES = 5_368_709_120;
-const CONFIRM_RETRY_DELAYS_MS = [800, 1500];
+const CONFIRM_RETRY_DELAYS_MS = [1000, 2000, 3000, 5000, 8000, 10000, 10000];
+const PROCESSING_STARTED_STATUSES = new Set(["downloading", "transcribing", "scoring", "ready"]);
 const ACCEPTED_TYPES = new Set([
   "video/mp4",
   "video/quicktime",
@@ -115,7 +122,18 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-async function confirmUploadWithRetry(videoId: string, maxAttempts = 3): Promise<void> {
+async function fetchVideoStatus(videoId: string): Promise<VideoStatusResponse | null> {
+  try {
+    return await api.get<VideoStatusResponse>(`/api/videos/${videoId}/status`);
+  } catch {
+    return null;
+  }
+}
+
+async function confirmUploadWithRetry(
+  videoId: string,
+  maxAttempts = CONFIRM_RETRY_DELAYS_MS.length + 1
+): Promise<void> {
   let attempt = 0;
   let lastError: unknown = null;
 
@@ -125,6 +143,13 @@ async function confirmUploadWithRetry(videoId: string, maxAttempts = 3): Promise
       return;
     } catch (err) {
       lastError = err;
+      const status = await fetchVideoStatus(videoId);
+      if (status?.status && PROCESSING_STARTED_STATUSES.has(status.status)) {
+        return;
+      }
+      if (status?.status === "error") {
+        throw new Error(status.error_message || "Video processing failed");
+      }
       attempt += 1;
       if (attempt >= maxAttempts) break;
       const delay = CONFIRM_RETRY_DELAYS_MS[Math.min(attempt - 1, CONFIRM_RETRY_DELAYS_MS.length - 1)];
@@ -141,6 +166,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "preparing" | "uploading" | "finalizing">("idle");
   const [pendingConfirmVideoId, setPendingConfirmVideoId] = useState<string | null>(null);
   const [confirmingUpload, setConfirmingUpload] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -160,6 +186,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
   const resetState = () => {
     setSelectedFile(null);
     setUploadProgress(0);
+    setUploadPhase("idle");
     setUploading(false);
     setConfirmingUpload(false);
     setImporting(false);
@@ -207,6 +234,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
     setError(null);
     setSuccessMessage(null);
     setUploading(true);
+    setUploadPhase("preparing");
     setUploadProgress(0);
     let uploadedVideoId: string | null = null;
     let uploadTransferred = false;
@@ -220,10 +248,12 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
       });
       uploadedVideoId = upload.video_id;
 
+      setUploadPhase("uploading");
       await uploadWithXhr(upload, selectedFile, setUploadProgress);
       uploadTransferred = true;
+      setUploadPhase("finalizing");
       setPendingConfirmVideoId(upload.video_id);
-      await confirmUploadWithRetry(upload.video_id, 3);
+      await confirmUploadWithRetry(upload.video_id);
       setPendingConfirmVideoId(null);
 
       setSuccessMessage("Video uploaded! Processing...");
@@ -236,13 +266,14 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
         console.warn("[upload_confirm_failed]", { videoId: uploadedVideoId, error: err });
         setPendingConfirmVideoId(uploadedVideoId);
         setSuccessMessage("File upload completed.");
-        setError("Upload finished but processing was not confirmed. Retry now.");
+        setError("Upload finished, but processing has not started yet. Keep this popup open and retry confirmation.");
       } else {
         const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Upload failed";
         setError(message);
       }
     } finally {
       setUploading(false);
+      setUploadPhase("idle");
     }
   };
 
@@ -260,8 +291,8 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
       }, 1500);
     } catch (err) {
       console.warn("[upload_confirm_failed]", { videoId: pendingConfirmVideoId, error: err });
-      const message = err instanceof ApiError ? err.message : "Upload confirmation failed";
-      setError(`Upload finished but processing was not confirmed. Retry now. (${message})`);
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Upload confirmation failed";
+      setError(`Upload finished, but processing has not started yet. Retry confirmation. (${message})`);
     } finally {
       setConfirmingUpload(false);
     }
@@ -439,7 +470,13 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
               {uploading && (
                 <div className="mt-4">
                   <div className="mb-1 flex items-center justify-between text-xs text-[var(--app-muted)]">
-                    <span>Uploading...</span>
+                    <span>
+                      {uploadPhase === "preparing"
+                        ? "Preparing secure upload..."
+                        : uploadPhase === "finalizing"
+                          ? "Finalizing and starting processing..."
+                          : "Uploading..."}
+                    </span>
                     <span>{uploadProgress}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-[var(--app-surface-soft)]">
@@ -448,6 +485,11 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
+                  {uploadPhase === "finalizing" ? (
+                    <p className="mt-2 text-xs text-[var(--app-muted)]">
+                      The file is in storage. Keep this popup open while PostBandit confirms it and starts transcription.
+                    </p>
+                  ) : null}
                 </div>
               )}
 

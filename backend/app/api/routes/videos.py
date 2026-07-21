@@ -483,6 +483,9 @@ async def create_upload_url(
     video.storage_key = storage_key
 
     signed = object_storage_client.get_presigned_upload_url(storage_key, expiry=900)
+    await db.commit()
+    await db.refresh(video)
+
     return VideoUploadUrlResponse(
         video_id=video.id,
         upload_url=signed["url"],
@@ -504,6 +507,8 @@ async def confirm_upload(
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+    if video.status in {VideoStatus.transcribing, VideoStatus.scoring, VideoStatus.ready}:
+        return VideoConfirmUploadResponse(video_id=video.id, status=video.status)
     if video.status != VideoStatus.queued:
         logger.warning(
             "[upload_confirm_failed] video_id=%s reason=invalid_state status=%s",
