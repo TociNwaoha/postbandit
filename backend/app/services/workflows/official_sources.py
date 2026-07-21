@@ -4,8 +4,9 @@ import logging
 import tempfile
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from sqlalchemy import func, select
 
@@ -491,10 +492,14 @@ def _workflow_intake_settings(workflow: SocialWorkflow) -> tuple[str, int | None
     except (TypeError, ValueError):
         backfill_limit = None
     if backfill_limit is not None:
-        backfill_limit = max(1, min(backfill_limit, 10))
+        backfill_limit = max(1, min(backfill_limit, 20))
     elif mode == "last_n":
-        backfill_limit = 3
+        backfill_limit = 10
     return mode, backfill_limit, mode != "manual_select"
+
+
+def _media_sort_key(media: OfficialSourceMedia) -> tuple[datetime, str]:
+    return (media.timestamp or datetime.min.replace(tzinfo=timezone.utc), media.id)
 
 
 def poll_source_workflow(workflow_id: str) -> dict:
@@ -558,6 +563,7 @@ def poll_source_workflow(workflow_id: str) -> dict:
             watch_started_at = watch_started_at.replace(tzinfo=timezone.utc)
         elif watch_started_at:
             watch_started_at = watch_started_at.astimezone(timezone.utc)
+        candidate_media: list[OfficialSourceMedia] = []
         for media in media_rows:
             if media.media_type not in {"VIDEO", "REELS"}:
                 continue
@@ -572,6 +578,15 @@ def poll_source_workflow(workflow_id: str) -> dict:
             ).scalar_one_or_none()
             if existing_source_id:
                 continue
+            candidate_media.append(media)
+
+        if intake_mode == "last_n" and initial_scan and backfill_limit:
+            newest_media = sorted(candidate_media, key=_media_sort_key, reverse=True)[:backfill_limit]
+            selected_media = sorted(newest_media, key=_media_sort_key)
+        else:
+            selected_media = candidate_media
+
+        for media in selected_media:
             source_post = SocialWorkflowSourcePost(
                 user_id=workflow.user_id,
                 workflow_id=workflow.id,
@@ -597,8 +612,6 @@ def poll_source_workflow(workflow_id: str) -> dict:
             db.flush()
             created += 1
             new_source_ids.append(str(source_post.id))
-            if intake_mode == "last_n" and initial_scan and backfill_limit and created >= backfill_limit:
-                break
 
         if auto_import_detected:
             # Redispatch existing detected posts as well as brand-new detections.
@@ -610,7 +623,7 @@ def poll_source_workflow(workflow_id: str) -> dict:
                     SocialWorkflowSourcePost.workflow_id == workflow.id,
                     SocialWorkflowSourcePost.status == SocialWorkflowSourceStatus.detected,
                 )
-                .order_by(SocialWorkflowSourcePost.created_at.asc())
+                .order_by(SocialWorkflowSourcePost.published_at.asc().nullslast(), SocialWorkflowSourcePost.created_at.asc())
                 .limit(50)
             ).scalars().all()
             seen_source_ids: set[str] = set()
@@ -792,7 +805,7 @@ def import_source_post(source_post_id: str) -> dict:
                 video_id=video_id,
                 log_context=f"official_{platform.value}_workflow:{source_post.id}",
             )
-            title = (source_post.caption_snapshot or f"{_platform_title(platform)} source import").replace("\n", " ").strip()[:140]
+            title = workflow_source_clip_title(source_post).replace("\n", " ").strip()[:140]
             video = Video(
                 id=video_id,
                 user_id=source_post.user_id,
@@ -1002,14 +1015,25 @@ def _hashtags_from_caption(caption: str | None) -> list[str] | None:
     return tags or None
 
 
+def _source_description(source_post: SocialWorkflowSourcePost) -> str | None:
+    raw_metadata = source_post.raw_metadata_json if isinstance(source_post.raw_metadata_json, dict) else {}
+    for value in [raw_metadata.get("description"), source_post.caption_snapshot, raw_metadata.get("caption")]:
+        cleaned = _clean_workflow_title_candidate(value, max_length=5000)
+        if cleaned:
+            return cleaned
+    return None
+
+
 def _copy_for_destinations(source_post: SocialWorkflowSourcePost, workflow: SocialWorkflow, clip: Clip, platforms: list[str]) -> dict[str, dict]:
     source_caption = source_post.caption_snapshot or ""
+    source_title = workflow_source_clip_title(source_post, video=None) or clip.title or "PostBandit repost"
+    source_description = _source_description(source_post) or source_caption or None
     fallback = {
         platform: {
             "caption": source_caption or None,
-            "title": (clip.title or "PostBandit repost")[:100],
-            "description": source_caption or None,
-            "hashtags": _hashtags_from_caption(source_caption),
+            "title": source_title[:100],
+            "description": source_description,
+            "hashtags": _hashtags_from_caption(source_caption or source_description),
         }
         for platform in platforms
     }
@@ -1085,6 +1109,85 @@ def _resolve_destination_account(
     return account, repaired
 
 
+def _workflow_posting_schedule(workflow: SocialWorkflow) -> tuple[str, list[time], str] | None:
+    cursor = workflow.poll_cursor_json or {}
+    raw_schedule = cursor.get("posting_schedule") if isinstance(cursor, dict) else None
+    if not isinstance(raw_schedule, dict):
+        return None
+    cadence = str(raw_schedule.get("cadence") or "immediate")
+    if cadence == "immediate":
+        return None
+    raw_times = raw_schedule.get("times")
+    if not isinstance(raw_times, list):
+        return None
+    required = 2 if cadence == "twice_daily" else 1
+    parsed_times: list[time] = []
+    for value in raw_times[:required]:
+        try:
+            hour_text, minute_text = str(value).split(":", 1)
+            parsed_times.append(time(hour=int(hour_text), minute=int(minute_text)))
+        except (TypeError, ValueError):
+            return None
+    if len(parsed_times) < required:
+        return None
+    timezone_name = str(raw_schedule.get("timezone") or "UTC")
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        timezone_name = "UTC"
+    return cadence, sorted(parsed_times), timezone_name
+
+
+def _next_workflow_schedule_slot(db, workflow: SocialWorkflow, source_post: SocialWorkflowSourcePost) -> tuple[datetime | None, str | None]:
+    schedule = _workflow_posting_schedule(workflow)
+    if not schedule:
+        return None, None
+    _, daily_times, timezone_name = schedule
+    tz = ZoneInfo(timezone_name)
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(tz)
+    future_source_count = db.execute(
+        select(func.count(func.distinct(PublishJob.workflow_source_post_id)))
+        .join(SocialWorkflowSourcePost, PublishJob.workflow_source_post_id == SocialWorkflowSourcePost.id)
+        .where(
+            SocialWorkflowSourcePost.workflow_id == workflow.id,
+            PublishJob.workflow_source_post_id != source_post.id,
+            PublishJob.status == PublishStatus.scheduled,
+            PublishJob.scheduled_for.is_not(None),
+            PublishJob.scheduled_for > now_utc,
+        )
+    ).scalar_one()
+
+    slots_seen = 0
+    for day_offset in range(0, 366):
+        slot_date = now_local.date() + timedelta(days=day_offset)
+        for slot_time in daily_times:
+            local_slot = datetime.combine(slot_date, slot_time, tzinfo=tz)
+            if local_slot <= now_local:
+                continue
+            if slots_seen == future_source_count:
+                return local_slot.astimezone(timezone.utc), timezone_name
+            slots_seen += 1
+    return None, None
+
+
+def _queued_workflow_job_ids(db, job_ids: list[str]) -> list[str]:
+    parsed_ids: list[uuid.UUID] = []
+    for job_id in job_ids:
+        try:
+            parsed_ids.append(uuid.UUID(str(job_id)))
+        except (TypeError, ValueError):
+            continue
+    if not parsed_ids:
+        return []
+    return [
+        str(job_id)
+        for job_id in db.execute(
+            select(PublishJob.id).where(PublishJob.id.in_(parsed_ids), PublishJob.status == PublishStatus.queued)
+        ).scalars().all()
+    ]
+
+
 def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: SocialWorkflow, export: Export) -> list[str]:
     clip = db.get(Clip, export.clip_id)
     if not clip:
@@ -1095,6 +1198,9 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
     created_job_ids: list[str] = []
     repaired_targets: list[dict] = []
     targets_changed = False
+    scheduled_for, schedule_timezone = _next_workflow_schedule_slot(db, workflow, source_post)
+    initial_status = PublishStatus.scheduled if scheduled_for else PublishStatus.queued
+    publish_mode = PublishMode.scheduled if scheduled_for else PublishMode.now
 
     for target in targets:
         platform_raw = target.get("platform")
@@ -1132,12 +1238,14 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
             platform=platform,
             connected_account_id=account.id,
             workflow_source_post_id=source_post.id,
-            status=PublishStatus.queued,
-            publish_mode=PublishMode.now,
+            status=initial_status,
+            publish_mode=publish_mode,
             caption=copy.get("caption"),
             title=copy.get("title"),
             description=copy.get("description"),
             hashtags=copy.get("hashtags"),
+            scheduled_for=scheduled_for,
+            timezone=schedule_timezone,
             destination_display_name=account.display_name or account.username_or_channel_name or account.external_account_id,
             content_title_snapshot=copy.get("title") or clip.title or source_post.caption_snapshot or "Workflow repost",
             provider_metadata_json={
@@ -1146,6 +1254,7 @@ def _create_publish_jobs(db, source_post: SocialWorkflowSourcePost, workflow: So
                 "workflow_source_post_id": str(source_post.id),
                 "source_platform": source_post.source_platform.value,
                 "source_external_post_id": source_post.external_post_id,
+                "workflow_posting_schedule": bool(scheduled_for),
             },
         )
         db.add(job)
@@ -1167,6 +1276,7 @@ def start_source_post_workflow(source_post_id: str, destination_targets: list[di
     import_task_id = None
     publish_task_ids: list[str] = []
     job_ids: list[str] = []
+    queued_job_ids: list[str] = []
 
     with SyncSessionLocal() as db:
         source_post = db.execute(
@@ -1258,12 +1368,13 @@ def start_source_post_workflow(source_post_id: str, destination_targets: list[di
         _sync_status(source_post, SocialWorkflowSourceStatus.publishing)
         if source_post.workflow_run:
             source_post.workflow_run.publish_job_ids_json = job_ids
+        queued_job_ids = _queued_workflow_job_ids(db, job_ids)
         db.commit()
 
-    if job_ids:
+    if queued_job_ids:
         from app.worker.tasks.publish import execute_publish_job
 
-        for job_id in job_ids:
+        for job_id in queued_job_ids:
             task = execute_publish_job.apply_async(args=[job_id], queue="publish")
             publish_task_ids.append(task.id)
 
@@ -1286,6 +1397,7 @@ def continue_ready_official_source_workflows() -> dict:
         processing_posts = db.execute(
             select(SocialWorkflowSourcePost)
             .where(SocialWorkflowSourcePost.status == SocialWorkflowSourceStatus.imported_processing)
+            .order_by(SocialWorkflowSourcePost.published_at.asc().nullslast(), SocialWorkflowSourcePost.created_at.asc())
             .with_for_update(skip_locked=True)
             .limit(50)
         ).scalars().all()
@@ -1316,6 +1428,7 @@ def continue_ready_official_source_workflows() -> dict:
         ready_posts = db.execute(
             select(SocialWorkflowSourcePost)
             .where(SocialWorkflowSourcePost.status == SocialWorkflowSourceStatus.ready_to_publish)
+            .order_by(SocialWorkflowSourcePost.published_at.asc().nullslast(), SocialWorkflowSourcePost.created_at.asc())
             .with_for_update(skip_locked=True)
             .limit(50)
         ).scalars().all()
@@ -1339,11 +1452,12 @@ def continue_ready_official_source_workflows() -> dict:
                     "No valid destination account is connected. Reconnect or select a destination, then publish again.",
                 )
                 continue
-            jobs_to_enqueue.extend(job_ids)
+            queued_job_ids = _queued_workflow_job_ids(db, job_ids)
+            jobs_to_enqueue.extend(queued_job_ids)
             _sync_status(source_post, SocialWorkflowSourceStatus.publishing)
             if source_post.workflow_run:
                 source_post.workflow_run.publish_job_ids_json = job_ids
-            published += len(job_ids)
+            published += len(queued_job_ids)
         db.commit()
 
         if jobs_to_enqueue:

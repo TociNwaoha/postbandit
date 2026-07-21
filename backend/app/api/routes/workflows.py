@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -42,6 +43,38 @@ router = APIRouter(prefix="/social/workflows", tags=["social-workflows"])
 
 
 ENABLED_SOURCE_PLATFORMS = {SocialPlatform.instagram, SocialPlatform.youtube, SocialPlatform.facebook}
+POSTING_CADENCES = {"immediate", "once_daily", "twice_daily"}
+
+
+def _normalize_posting_schedule(schedule) -> dict:
+    if schedule is None:
+        return {"cadence": "immediate", "times": [], "timezone": "UTC"}
+    cadence = schedule.cadence if schedule.cadence in POSTING_CADENCES else "immediate"
+    timezone_name = (schedule.timezone or "UTC").strip() or "UTC"
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail="Posting schedule timezone is invalid") from None
+
+    normalized_times: list[str] = []
+    for value in schedule.times or []:
+        text = str(value).strip()
+        try:
+            hour_text, minute_text = text.split(":", 1)
+            hour = int(hour_text)
+            minute = int(minute_text)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Posting schedule times must use HH:MM format") from None
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            raise HTTPException(status_code=400, detail="Posting schedule times must use HH:MM format")
+        normalized_times.append(f"{hour:02d}:{minute:02d}")
+
+    if cadence == "immediate":
+        return {"cadence": "immediate", "times": [], "timezone": timezone_name}
+    required = 2 if cadence == "twice_daily" else 1
+    if len(normalized_times) < required:
+        raise HTTPException(status_code=400, detail="Posting schedule is missing a posting time")
+    return {"cadence": cadence, "times": sorted(normalized_times[:required]), "timezone": timezone_name}
 
 
 def _destination_type(account: ConnectedAccount) -> str:
@@ -325,6 +358,7 @@ async def create_workflow(
         poll_cursor_json={
             "source_import_mode": body.source_import_mode,
             "source_backfill_limit": body.source_backfill_limit if body.source_import_mode == "last_n" else None,
+            "posting_schedule": _normalize_posting_schedule(body.posting_schedule),
         },
     )
     db.add(workflow)
@@ -362,6 +396,10 @@ async def update_workflow(
         workflow.auto_publish = body.auto_publish
     if body.destinations is not None:
         workflow.destination_targets_json = await _validate_destinations(db, current_user.id, body.destinations)
+    if body.posting_schedule is not None:
+        cursor = dict(workflow.poll_cursor_json or {})
+        cursor["posting_schedule"] = _normalize_posting_schedule(body.posting_schedule)
+        workflow.poll_cursor_json = cursor
     await db.commit()
     workflow = await _workflow_or_404(db, current_user.id, workflow.id)
     return (await _workflow_responses(db, current_user.id, [workflow]))[0]

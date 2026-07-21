@@ -22,6 +22,37 @@ import {
 
 const DESTINATION_PLATFORMS: SocialPlatform[] = ["instagram", "threads", "facebook", "youtube", "x", "tiktok"];
 const SOURCE_PLATFORMS: SocialPlatform[] = ["instagram", "youtube", "facebook"];
+const BACKFILL_COUNTS = [1, 3, 5, 10, 15, 20];
+
+type PostingCadence = "immediate" | "once_daily" | "twice_daily";
+
+function currentTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+function postingScheduleLabel(cadence: PostingCadence, timeOne: string, timeTwo: string): string {
+  if (cadence === "once_daily") return `Once daily at ${timeOne}`;
+  if (cadence === "twice_daily") return `Twice daily at ${timeOne} and ${timeTwo}`;
+  return "Post immediately when ready";
+}
+
+function workflowPostingScheduleLabel(workflow: SocialWorkflow): string {
+  const schedule = workflow.poll_cursor_json?.posting_schedule;
+  if (!schedule || typeof schedule !== "object") return "Post immediately when ready";
+  const cadence = (schedule as { cadence?: unknown }).cadence;
+  const times = (schedule as { times?: unknown }).times;
+  if (cadence === "once_daily" && Array.isArray(times) && typeof times[0] === "string") {
+    return `Once daily at ${times[0]}`;
+  }
+  if (cadence === "twice_daily" && Array.isArray(times) && typeof times[0] === "string" && typeof times[1] === "string") {
+    return `Twice daily at ${times[0]} and ${times[1]}`;
+  }
+  return "Post immediately when ready";
+}
 
 function statusLabel(value: string): string {
   return value
@@ -177,7 +208,12 @@ export function SocialWorkflowsPanel() {
   const [sourceAccountId, setSourceAccountId] = useState("");
   const [copyMode, setCopyMode] = useState<"reuse_source" | "platform_ai" | "both">("both");
   const [sourceImportMode, setSourceImportMode] = useState<SocialWorkflowImportMode>("manual_select");
-  const [sourceBackfillLimit, setSourceBackfillLimit] = useState(3);
+  const [sourceBackfillLimit, setSourceBackfillLimit] = useState(10);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [postingCadence, setPostingCadence] = useState<PostingCadence>("immediate");
+  const [postingTimeOne, setPostingTimeOne] = useState("09:00");
+  const [postingTimeTwo, setPostingTimeTwo] = useState("17:00");
+  const [postingTimezone, setPostingTimezone] = useState(currentTimezone);
   const [selectedDestinationIds, setSelectedDestinationIds] = useState<Set<string>>(new Set());
 
   const load = async () => {
@@ -249,6 +285,11 @@ export function SocialWorkflowsPanel() {
         auto_publish: true,
         source_import_mode: sourceImportMode,
         source_backfill_limit: sourceImportMode === "last_n" ? sourceBackfillLimit : null,
+        posting_schedule: {
+          cadence: postingCadence,
+          times: postingCadence === "twice_daily" ? [postingTimeOne, postingTimeTwo] : postingCadence === "once_daily" ? [postingTimeOne] : [],
+          timezone: postingTimezone,
+        },
         destinations,
       });
       setSelectedDestinationIds(new Set());
@@ -478,7 +519,7 @@ export function SocialWorkflowsPanel() {
                   onChange={(event) => setSourceBackfillLimit(Number(event.target.value))}
                   className="rounded-lg border border-[var(--app-border)] bg-white px-2 py-1 text-[var(--app-text)] outline-none"
                 >
-                  {[1, 3, 5, 10].map((count) => (
+                  {BACKFILL_COUNTS.map((count) => (
                     <option key={count} value={count}>
                       {count}
                     </option>
@@ -521,6 +562,18 @@ export function SocialWorkflowsPanel() {
                 </button>
               );
             })}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--app-border)] bg-white px-3 py-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-subtle)]">Posting cadence</p>
+              <p className="text-sm font-medium text-[var(--app-text)]">
+                {postingScheduleLabel(postingCadence, postingTimeOne, postingTimeTwo)}
+              </p>
+              <p className="text-xs text-[var(--app-muted)]">Timezone: {postingTimezone}</p>
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setScheduleOpen(true)}>
+              Edit schedule
+            </Button>
           </div>
         </div>
 
@@ -605,6 +658,9 @@ export function SocialWorkflowsPanel() {
                   </p>
                   <p className="mt-1 text-xs text-[var(--app-subtle)]">
                     Intake: {statusLabel(workflowImportMode(workflow))}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--app-subtle)]">
+                    Schedule: {workflowPostingScheduleLabel(workflow)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--app-muted)]">
                     <span className="rounded-full bg-[var(--app-surface-soft)] px-2 py-1">
@@ -932,6 +988,95 @@ export function SocialWorkflowsPanel() {
           })
         )}
       </div>
+      {scheduleOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--app-border)] bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--app-subtle)]">Workflow schedule</p>
+                <h3 className="mt-1 text-xl font-bold text-[var(--app-text)]">Choose posting cadence</h3>
+                <p className="mt-1 text-sm text-[var(--app-muted)]">
+                  Backfilled posts are queued from earliest to most recent, then spaced using this cadence.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScheduleOpen(false)}
+                className="rounded-full p-2 text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
+                aria-label="Close schedule settings"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {[
+                { value: "immediate", title: "Post as soon as ready", description: "Current behavior. Publish jobs run after processing finishes." },
+                { value: "once_daily", title: "Once a day", description: "Use one daily posting time for each source post." },
+                { value: "twice_daily", title: "Twice a day", description: "Use two posting slots per day for faster backfills." },
+              ].map((option) => {
+                const selected = postingCadence === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPostingCadence(option.value as PostingCadence)}
+                    className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                      selected ? "border-[var(--app-primary)] bg-[#EEF3FF]" : "border-[var(--app-border)] hover:bg-[var(--app-surface-soft)]"
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-[var(--app-text)]">{option.title}</span>
+                    <span className="mt-0.5 block text-xs text-[var(--app-muted)]">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {postingCadence !== "immediate" ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-xs font-semibold text-[var(--app-muted)]">
+                  First time
+                  <input
+                    type="time"
+                    value={postingTimeOne}
+                    onChange={(event) => setPostingTimeOne(event.target.value)}
+                    className="w-full rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-primary)]"
+                  />
+                </label>
+                {postingCadence === "twice_daily" ? (
+                  <label className="space-y-1 text-xs font-semibold text-[var(--app-muted)]">
+                    Second time
+                    <input
+                      type="time"
+                      value={postingTimeTwo}
+                      onChange={(event) => setPostingTimeTwo(event.target.value)}
+                      className="w-full rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-primary)]"
+                    />
+                  </label>
+                ) : null}
+                <label className="space-y-1 text-xs font-semibold text-[var(--app-muted)] sm:col-span-2">
+                  Timezone
+                  <input
+                    value={postingTimezone}
+                    onChange={(event) => setPostingTimezone(event.target.value)}
+                    className="w-full rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-primary)]"
+                    placeholder="America/New_York"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setScheduleOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => setScheduleOpen(false)}>
+                Save schedule
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <UploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}

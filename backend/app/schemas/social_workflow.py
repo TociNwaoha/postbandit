@@ -10,6 +10,12 @@ from app.models.social_workflow_source_post import SocialWorkflowSourceStatus
 from app.schemas.social import PublishJobResponse
 
 
+class SocialWorkflowPostingSchedule(BaseModel):
+    cadence: Literal["immediate", "once_daily", "twice_daily"] = "immediate"
+    times: list[str] = Field(default_factory=list, max_length=2)
+    timezone: str | None = Field(default=None, max_length=100)
+
+
 class SocialWorkflowDestinationInput(BaseModel):
     platform: SocialPlatform
     connected_account_id: uuid.UUID
@@ -22,7 +28,8 @@ class SocialWorkflowCreateRequest(BaseModel):
     copy_mode: SocialWorkflowCopyMode = SocialWorkflowCopyMode.both
     auto_publish: bool = True
     source_import_mode: Literal["manual_select", "start_now", "last_n"] = "manual_select"
-    source_backfill_limit: int | None = Field(default=3, ge=1, le=10)
+    source_backfill_limit: int | None = Field(default=3, ge=1, le=20)
+    posting_schedule: SocialWorkflowPostingSchedule | None = None
     destinations: list[SocialWorkflowDestinationInput] = Field(min_length=1, max_length=12)
 
 
@@ -32,6 +39,7 @@ class SocialWorkflowPatchRequest(BaseModel):
     copy_mode: SocialWorkflowCopyMode | None = None
     auto_publish: bool | None = None
     destinations: list[SocialWorkflowDestinationInput] | None = Field(default=None, min_length=1, max_length=12)
+    posting_schedule: SocialWorkflowPostingSchedule | None = None
 
 
 class SocialWorkflowAttachExportRequest(BaseModel):
