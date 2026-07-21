@@ -305,7 +305,7 @@ def _enqueue_recovery_transcribe_job(db, *, video: Video) -> bool:
 
 def sweep_stale_queued_uploads_impl(*, dry_run: bool) -> dict:
     now = datetime.now(timezone.utc)
-    stale_hours = max(1, int(settings.stale_queued_upload_retention_hours))
+    stale_hours = max(1, int(settings.stale_queued_upload_cleanup_retention_hours))
     cutoff = now - timedelta(hours=stale_hours)
 
     scanned = 0

@@ -129,6 +129,10 @@ class ObjectStorageClient:
         status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") if exc.response else None
         return status == 404 or code in {"404", "nosuchkey", "notfound"}
 
+    def _is_forbidden(self, exc: ClientError) -> bool:
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") if exc.response else None
+        return status == 403
+
     def upload_file(self, file_path: str, key: str) -> str:
         try:
             self._get_client().upload_file(file_path, self.bucket_name, key)
@@ -212,7 +216,7 @@ class ObjectStorageClient:
             self._get_client().download_file(self.bucket_name, key, destination_path)
             return destination_path
         except ClientError as exc:
-            if self._is_not_found(exc) and self._local_file_exists(key):
+            if (self._is_not_found(exc) or self._is_forbidden(exc)) and self._local_file_exists(key):
                 self._log_local_fallback(key, "download_file")
                 shutil.copy2(self.local_fallback_path(key), destination)
                 return destination_path
@@ -230,7 +234,7 @@ class ObjectStorageClient:
             response = self._get_client().get_object(Bucket=self.bucket_name, Key=key)
             return response["Body"].read().decode("utf-8")
         except ClientError as exc:
-            if self._is_not_found(exc) and self._local_file_exists(key):
+            if (self._is_not_found(exc) or self._is_forbidden(exc)) and self._local_file_exists(key):
                 self._log_local_fallback(key, "read_text_file")
                 return self.local_fallback_path(key).read_text(encoding="utf-8")
             logger.error("Failed to read %s from B2: %s", key, exc)

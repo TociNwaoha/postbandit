@@ -23,6 +23,12 @@ from app.services.transcription import get_model_with_metadata, transcribe_audio
 
 logger = logging.getLogger(__name__)
 
+TRANSCRIBE_ELIGIBLE_STATUSES = {
+    VideoStatus.queued,
+    VideoStatus.downloading,
+    VideoStatus.transcribing,
+}
+
 
 class PerfTracker:
     def __init__(self, video_id: str):
@@ -131,6 +137,24 @@ def transcribe_job(self, video_id: str):
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
             if not video:
                 raise ValueError(f"Video not found: {video_id}")
+            if video.status not in TRANSCRIBE_ELIGIBLE_STATUSES:
+                job = _latest_transcribe_job(db, video_uuid)
+                if job and job.status in {JobStatus.queued, JobStatus.running}:
+                    job.status = JobStatus.failed
+                    job.error = f"Skipped transcription because video status is {video.status.value}."
+                    job.completed_at = datetime.now(timezone.utc)
+                    db.commit()
+                logger.info(
+                    "[transcribe] skipping ineligible video video_id=%s status=%s",
+                    video_id,
+                    video.status.value,
+                )
+                return {
+                    "video_id": video_id,
+                    "status": video.status.value,
+                    "skipped": "ineligible_status",
+                }
+
             workspace = start_workspace(
                 job_type="transcribe",
                 workspace_key=f"{video_id}-transcribe-{self.request.id or uuid.uuid4().hex[:8]}",
