@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { SlidePreview } from "@/components/carousels/SlidePreview";
+import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -14,7 +15,9 @@ import {
   CarouselRenderResponse,
   CarouselSlide,
   CarouselTemplate,
+  ConnectedAccount,
   ContentQueueItem,
+  SocialProvider,
 } from "@/types";
 
 const GLOW_OPTIONS = ["corners", "left", "right", "spread", "top-right"];
@@ -60,6 +63,21 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
+function toLocalDatetimeInput(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
 interface SlideEditorProps {
   initialTemplateId?: string;
   initialQueueItemId?: string;
@@ -72,6 +90,10 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialTemplateId || "");
   const [topic, setTopic] = useState(initialTopic || "");
   const [config, setConfig] = useState<CarouselConfig>(defaultConfig());
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [scheduleValue, setScheduleValue] = useState(() => toLocalDatetimeInput(initialScheduledFor));
+  const [providers, setProviders] = useState<SocialProvider[]>([]);
+  const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [referenceImages, setReferenceImages] = useState<Record<string, string>>({});
   const [renderResult, setRenderResult] = useState<CarouselRenderResponse | null>(null);
   const [savedExport, setSavedExport] = useState<CarouselExport | null>(null);
@@ -80,6 +102,7 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
   const [generating, setGenerating] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loadingQueueItem, setLoadingQueueItem] = useState(false);
@@ -116,6 +139,31 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
     };
   }, [initialTemplateId]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPublishDestinations = async () => {
+      try {
+        const [providerRows, accountRows] = await Promise.all([
+          api.get<SocialProvider[]>("/api/social/providers"),
+          api.get<ConnectedAccount[]>("/api/social/accounts"),
+        ]);
+        if (!mounted) return;
+        setProviders(providerRows);
+        setAccounts(accountRows);
+      } catch {
+        if (!mounted) return;
+        setProviders([]);
+        setAccounts([]);
+      }
+    };
+
+    void loadPublishDestinations();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
 
 
   useEffect(() => {
@@ -129,6 +177,8 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
         const item = await api.get<ContentQueueItem>(`/api/content-queue/${initialQueueItemId}`);
         if (!mounted) return;
         setConfig(item.config);
+        setSelectedPlatforms(item.platforms || []);
+        setScheduleValue(toLocalDatetimeInput(item.scheduled_at || initialScheduledFor || null));
         setExpanded({});
         const renderer = typeof item.config.renderer === "string" ? item.config.renderer : "";
         const match = templates.find((template) => template.renderer === renderer || template.id === renderer);
@@ -169,11 +219,30 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
     return () => {
       mounted = false;
     };
-  }, [initialQueueItemId, templates]);
+  }, [initialQueueItemId, initialScheduledFor, templates]);
   const selectedTemplate = useMemo(
     () => templates.find((item) => item.id === selectedTemplateId) || null,
     [templates, selectedTemplateId]
   );
+  const connectedPlatforms = useMemo(() => {
+    const readyPlatforms = new Set(
+      providers
+        .filter((provider) => provider.setup_status === "ready")
+        .map((provider) => provider.platform)
+    );
+    const unique = new Map<string, ConnectedAccount>();
+    for (const account of accounts) {
+      if (!readyPlatforms.has(account.platform) || unique.has(account.platform)) continue;
+      unique.set(account.platform, account);
+    }
+    return Array.from(unique.values());
+  }, [accounts, providers]);
+
+  const togglePlatform = (platform: string) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(platform) ? prev.filter((item) => item !== platform) : [...prev, platform]
+    );
+  };
 
   const toggleExpanded = (index: number) => {
     setExpanded((prev) => ({ ...prev, [index]: !prev[index] }));
@@ -295,6 +364,41 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
       setError(err instanceof ApiError ? err.message : "Failed to save carousel export");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onScheduleCarousel = async (postNow = false) => {
+    if (!initialQueueItemId) {
+      setError("Open this carousel from Content Queue before scheduling it.");
+      return;
+    }
+    if (!selectedPlatforms.length) {
+      setError("Choose at least one connected platform before scheduling.");
+      return;
+    }
+
+    const scheduledAt = postNow ? null : localInputToIso(scheduleValue);
+    if (!postNow && !scheduledAt) {
+      setError("Choose a valid schedule time.");
+      return;
+    }
+
+    setScheduling(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await api.patch<ContentQueueItem>(`/api/content-queue/${initialQueueItemId}`, {
+        config,
+        platforms: selectedPlatforms,
+        scheduled_at: scheduledAt,
+      });
+      const approved = await api.patch<ContentQueueItem>(`/api/content-queue/${initialQueueItemId}/approve`, {});
+      setScheduleValue(toLocalDatetimeInput(approved.scheduled_at));
+      setInfo(postNow ? "Carousel approved for posting from the content queue." : "Carousel scheduled in the content queue.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to schedule carousel.");
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -578,6 +682,94 @@ export function SlideEditor({ initialTemplateId, initialQueueItemId, initialSche
                 Save to Exports
               </Button>
             </div>
+
+            <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-[var(--app-text)]">Schedule carousel</h4>
+                  <p className="mt-1 text-xs text-[var(--app-muted)]">
+                    Save this carousel to the content queue and schedule it for connected platforms.
+                  </p>
+                </div>
+                {initialQueueItemId ? (
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-[#1D3FD0]">
+                    Queue item
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+                    Draft only
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 space-y-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--app-muted)]">
+                    Connected platforms
+                  </p>
+                  {connectedPlatforms.length ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {connectedPlatforms.map((account) => {
+                        const brand = getPlatformBrandMeta(account.platform);
+                        const active = selectedPlatforms.includes(account.platform);
+                        return (
+                          <button
+                            key={account.platform}
+                            type="button"
+                            onClick={() => togglePlatform(account.platform)}
+                            className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-medium ${
+                              active
+                                ? "border-[#1D3FD0] bg-blue-50 text-[#1D3FD0]"
+                                : "border-[var(--app-border)] bg-white text-[var(--app-muted)] hover:bg-[var(--app-surface)]"
+                            }`}
+                          >
+                            <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${brand.badgeClassName}`}>
+                              {brand.icon}
+                            </span>
+                            {brand.displayName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-[var(--app-subtle)]">
+                      Connect a platform first, then come back to schedule this carousel.
+                    </p>
+                  )}
+                </div>
+
+                <label className="block text-xs text-[var(--app-muted)]">
+                  Scheduled time
+                  <input
+                    type="datetime-local"
+                    value={scheduleValue}
+                    onChange={(event) => setScheduleValue(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => void onScheduleCarousel(false)}
+                    loading={scheduling}
+                    disabled={!initialQueueItemId || !connectedPlatforms.length}
+                  >
+                    Schedule carousel
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void onScheduleCarousel(true)}
+                    loading={scheduling}
+                    disabled={!initialQueueItemId || !connectedPlatforms.length}
+                  >
+                    Post now
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             {isPreloadedPreview ? (
               <p className="text-xs text-[var(--app-subtle)]">
                 Preview loaded from queue cache. Click Render preview to regenerate before saving to exports.
