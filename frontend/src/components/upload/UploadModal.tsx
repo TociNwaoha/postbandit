@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { getSession } from "next-auth/react";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { ClipProfile, YouTubeImportResponse } from "@/types";
@@ -28,6 +29,7 @@ interface VideoStatusResponse {
 }
 
 const MAX_UPLOAD_BYTES = 5_368_709_120;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const CONFIRM_RETRY_DELAYS_MS = [1000, 2000, 3000, 5000, 8000, 10000, 10000];
 const PROCESSING_STARTED_STATUSES = new Set(["downloading", "transcribing", "scoring", "ready"]);
 const ACCEPTED_TYPES = new Set([
@@ -118,6 +120,58 @@ function uploadWithXhr(upload: UploadUrlResponse, file: File, onProgress: (perce
   });
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const session = await getSession();
+  const token = (session as any)?.accessToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function proxyUploadWithXhr(
+  upload: UploadUrlResponse,
+  file: File,
+  onProgress: (percent: number) => void,
+  endpoint = `${API_URL}/api/videos/proxy-upload`
+) {
+  return authHeaders().then((headers) => new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", endpoint);
+
+    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+      onProgress(percent);
+    };
+
+    xhr.onerror = () => reject(new Error("Upload failed. Please try again."));
+    xhr.onabort = () => reject(new Error("Upload canceled"));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(100);
+        resolve();
+        return;
+      }
+
+      let message = `Upload failed with status ${xhr.status}`;
+      try {
+        const payload = JSON.parse(xhr.responseText || "{}");
+        if (payload?.detail) {
+          message = typeof payload.detail === "string" ? payload.detail : payload.detail.message || message;
+        }
+      } catch {
+        // keep status-based message
+      }
+      reject(new Error(message));
+    };
+
+    const formData = new FormData();
+    formData.append("video_id", upload.video_id);
+    formData.append("file", file);
+    xhr.send(formData);
+  }));
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -166,7 +220,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadPhase, setUploadPhase] = useState<"idle" | "preparing" | "uploading" | "finalizing">("idle");
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "preparing" | "uploading" | "fallback" | "finalizing">("idle");
   const [pendingConfirmVideoId, setPendingConfirmVideoId] = useState<string | null>(null);
   const [confirmingUpload, setConfirmingUpload] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -249,7 +303,26 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
       uploadedVideoId = upload.video_id;
 
       setUploadPhase("uploading");
-      await uploadWithXhr(upload, selectedFile, setUploadProgress);
+      try {
+        await uploadWithXhr(upload, selectedFile, setUploadProgress);
+      } catch (directUploadError) {
+        console.warn("[direct_upload_failed_using_proxy]", {
+          videoId: upload.video_id,
+          error: directUploadError,
+        });
+        setUploadProgress(0);
+        setUploadPhase("fallback");
+        setSuccessMessage("Direct upload was interrupted. Finishing through PostBandit...");
+        try {
+          await proxyUploadWithXhr(upload, selectedFile, setUploadProgress);
+        } catch (proxyError) {
+          if (API_URL) {
+            await proxyUploadWithXhr(upload, selectedFile, setUploadProgress, "/api/backend/videos/proxy-upload");
+          } else {
+            throw proxyError;
+          }
+        }
+      }
       uploadTransferred = true;
       setUploadPhase("finalizing");
       setPendingConfirmVideoId(upload.video_id);
@@ -473,6 +546,8 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
                     <span>
                       {uploadPhase === "preparing"
                         ? "Preparing secure upload..."
+                        : uploadPhase === "fallback"
+                          ? "Finishing through PostBandit..."
                         : uploadPhase === "finalizing"
                           ? "Finalizing and starting processing..."
                           : "Uploading..."}
@@ -485,6 +560,11 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
+                  {uploadPhase === "fallback" ? (
+                    <p className="mt-2 text-xs text-[var(--app-muted)]">
+                      The direct upload was interrupted, so PostBandit is completing the upload through the app.
+                    </p>
+                  ) : null}
                   {uploadPhase === "finalizing" ? (
                     <p className="mt-2 text-xs text-[var(--app-muted)]">
                       The file is in storage. Keep this popup open while PostBandit confirms it and starts transcription.

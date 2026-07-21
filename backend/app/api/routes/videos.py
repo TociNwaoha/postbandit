@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -547,6 +547,60 @@ async def confirm_upload(
     await db.refresh(video)
 
     await _enqueue_transcribe_job(db, video)
+    return VideoConfirmUploadResponse(video_id=video.id, status=video.status)
+
+
+@router.post("/videos/proxy-upload", response_model=VideoConfirmUploadResponse)
+async def proxy_upload(
+    video_id: uuid.UUID = Form(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Video).where(Video.id == video_id, Video.user_id == current_user.id)
+    )
+    video = result.scalar_one_or_none()
+    if not video:
+        await file.close()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+    if video.status in {VideoStatus.transcribing, VideoStatus.scoring, VideoStatus.ready}:
+        await file.close()
+        return VideoConfirmUploadResponse(video_id=video.id, status=video.status)
+    if not _is_unconfirmed_upload_placeholder(video):
+        await file.close()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video is not waiting for upload")
+    if not video.storage_key:
+        await file.close()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video storage key is missing")
+
+    content_type = file.content_type or "video/mp4"
+    if content_type not in ALLOWED_VIDEO_TYPES:
+        await file.close()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported content type")
+
+    try:
+        object_storage_client.upload_fileobj(file.file, video.storage_key, content_type=content_type)
+    except Exception as exc:
+        logger.warning("[proxy_upload_failed] video_id=%s storage_key=%s error=%s", video.id, video.storage_key, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Upload could not be completed. Please try again.",
+        ) from exc
+    finally:
+        await file.close()
+
+    video.status = VideoStatus.transcribing
+    video.external_metadata_json = _with_upload_confirmation_metadata(
+        video.external_metadata_json,
+        confirmed=True,
+    )
+    await db.flush()
+    await db.commit()
+    await db.refresh(video)
+
+    await _enqueue_transcribe_job(db, video)
+    await _enqueue_editor_preview_proxy_job(db, video)
     return VideoConfirmUploadResponse(video_id=video.id, status=video.status)
 
 
