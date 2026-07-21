@@ -64,12 +64,13 @@ interface SlideEditorProps {
   initialTemplateId?: string;
   initialQueueItemId?: string;
   initialScheduledFor?: string;
+  initialTopic?: string;
 }
 
-export function SlideEditor({ initialTemplateId, initialQueueItemId, initialScheduledFor }: SlideEditorProps) {
+export function SlideEditor({ initialTemplateId, initialQueueItemId, initialScheduledFor, initialTopic }: SlideEditorProps) {
   const [templates, setTemplates] = useState<CarouselTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialTemplateId || "");
-  const [topic, setTopic] = useState("");
+  const [topic, setTopic] = useState(initialTopic || "");
   const [config, setConfig] = useState<CarouselConfig>(defaultConfig());
   const [referenceImages, setReferenceImages] = useState<Record<string, string>>({});
   const [renderResult, setRenderResult] = useState<CarouselRenderResponse | null>(null);

@@ -8,7 +8,7 @@ import { authOptions } from "@/lib/auth";
 export default async function NewCarouselPage({
   searchParams,
 }: {
-  searchParams?: { template?: string; queueItem?: string; scheduledFor?: string };
+  searchParams?: { template?: string; queueItem?: string; scheduledFor?: string; topic?: string };
 }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
@@ -17,6 +17,7 @@ export default async function NewCarouselPage({
   const initialQueueItemId = typeof searchParams?.queueItem === "string" ? searchParams.queueItem : undefined;
   const initialScheduledFor =
     typeof searchParams?.scheduledFor === "string" ? searchParams.scheduledFor : undefined;
+  const initialTopic = typeof searchParams?.topic === "string" ? searchParams.topic : undefined;
 
   return (
     <DashboardLayout title="New Carousel">
@@ -24,6 +25,7 @@ export default async function NewCarouselPage({
         initialTemplateId={initialTemplateId}
         initialQueueItemId={initialQueueItemId}
         initialScheduledFor={initialScheduledFor}
+        initialTopic={initialTopic}
       />
     </DashboardLayout>
   );

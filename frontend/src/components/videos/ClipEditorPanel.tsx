@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } 
 
 import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { CarouselSchedulePanel } from "@/components/videos/CarouselSchedulePanel";
 import { SocialPublishPanel } from "@/components/videos/SocialPublishPanel";
 import { api, ApiError } from "@/lib/api";
 import {
@@ -1824,14 +1825,19 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
         ) : null}
       </Card>
 
-      <Card>
-        <SocialPublishPanel
-          clip={clip}
-          exports={exports}
-          onClipUpdate={setClip}
-          initialScheduledFor={initialScheduleAt}
-        />
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
+        <Card>
+          <SocialPublishPanel
+            clip={clip}
+            exports={exports}
+            onClipUpdate={setClip}
+            initialScheduledFor={initialScheduleAt}
+          />
+        </Card>
+        <Card>
+          <CarouselSchedulePanel clip={clip} initialScheduledFor={initialScheduleAt} />
+        </Card>
+      </div>
     </div>
   );
 }
