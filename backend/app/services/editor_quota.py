@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.plans import get_storage_limits, storage_hard_stop_from_quota_bytes
@@ -12,8 +12,10 @@ from app.models.editor_render import EditorRender, EditorRenderStatus
 from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.user import User
 from app.models.user_storage_usage import UserStorageUsage
-from app.models.video import Video
+from app.models.video import Video, VideoSourceType, VideoStatus
 from app.schemas.editor import UserStorageUsageResponse
+
+UPLOAD_CONFIRMED_KEY = "upload_confirmed"
 
 
 async def get_user_storage_limits(db: AsyncSession, user_id: uuid.UUID) -> tuple[int, int]:
@@ -25,11 +27,17 @@ async def get_user_storage_limits(db: AsyncSession, user_id: uuid.UUID) -> tuple
 
 async def refresh_user_storage_usage(db: AsyncSession, user_id: uuid.UUID) -> UserStorageUsage:
     quota_bytes, _hard_stop_bytes = await get_user_storage_limits(db, user_id)
+    unconfirmed_upload_placeholder = and_(
+        Video.source_type == VideoSourceType.upload,
+        Video.status == VideoStatus.queued,
+        func.coalesce(Video.external_metadata_json.op("->>")(UPLOAD_CONFIRMED_KEY), "false") != "true",
+    )
     raw_video_bytes = (
         await db.scalar(
             select(func.coalesce(func.sum(Video.file_size_bytes), 0)).where(
                 Video.user_id == user_id,
                 Video.storage_key.is_not(None),
+                not_(unconfirmed_upload_placeholder),
             )
         )
         or 0

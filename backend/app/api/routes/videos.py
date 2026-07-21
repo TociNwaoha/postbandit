@@ -156,6 +156,19 @@ def _with_upload_confirmation_metadata(
     return metadata
 
 
+def _upload_confirmed(video: Video) -> bool:
+    metadata = video.external_metadata_json or {}
+    return bool(metadata.get(UPLOAD_CONFIRMED_KEY)) if isinstance(metadata, dict) else False
+
+
+def _is_unconfirmed_upload_placeholder(video: Video) -> bool:
+    return (
+        video.source_type == VideoSourceType.upload
+        and video.status == VideoStatus.queued
+        and not _upload_confirmed(video)
+    )
+
+
 def _assert_upload_constraints(body: VideoUploadUrlRequest) -> None:
     if body.content_type not in ALLOWED_VIDEO_TYPES:
         raise HTTPException(
@@ -836,6 +849,10 @@ async def list_videos(
     if not videos:
         return []
 
+    videos = [video for video in videos if not _is_unconfirmed_upload_placeholder(video)]
+    if not videos:
+        return []
+
     video_ids = [video.id for video in videos]
     thumbnail_keys_by_video_id: dict[uuid.UUID, str] = {}
     thumbnail_urls_by_video_id: dict[uuid.UUID, str] = {}
@@ -1310,7 +1327,8 @@ async def get_video(
     if not video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
 
-    await _enqueue_editor_preview_proxy_job(db, video)
+    if not _is_unconfirmed_upload_placeholder(video):
+        await _enqueue_editor_preview_proxy_job(db, video)
 
     source_download_url: str | None = None
     if video.storage_key:
