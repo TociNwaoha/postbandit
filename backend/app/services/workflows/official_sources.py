@@ -407,8 +407,12 @@ def is_reconnect_required_source_error(error: object) -> bool:
         "reconnect required",
         "reconnect the",
         "refresh token is unavailable",
+        "invalid_grant",
+        "oauth2.googleapis.com/token",
     )
     if any(marker in normalized for marker in reconnect_markers):
+        return True
+    if "400 bad request" in normalized and ("oauth" in normalized or "token" in normalized):
         return True
     return "190" in normalized and ("oauth" in normalized or "access token" in normalized)
 

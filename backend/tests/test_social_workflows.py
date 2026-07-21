@@ -9,6 +9,10 @@ from app.models.social_workflow import WorkflowCopyMode
 from app.schemas.workflow import WorkflowCreateRequest
 from app.services.workflow_detection import source_capability
 from app.services.workflow_engine import _source_copy, _validate_destination_media
+from app.services.workflows.official_sources import (
+    is_reconnect_required_source_error,
+    source_poll_error_message,
+)
 
 
 def _account(platform: SocialPlatform, scopes: list[str], **metadata):
@@ -85,3 +89,16 @@ def test_media_preflight_skips_overlong_destination(monkeypatch):
     account = _account(SocialPlatform.threads, ["threads_basic"])
     clip = SimpleNamespace(start_time=0, end_time=360)
     assert "exceeds" in _validate_destination_media(account, clip)
+
+
+def test_youtube_oauth_token_poll_failure_is_reconnect_message():
+    raw_error = (
+        "YouTube uploads poll failed: Client error '400 Bad Request' for url "
+        "'https://oauth2.googleapis.com/token' For more information check: "
+        "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    )
+
+    assert is_reconnect_required_source_error(raw_error) is True
+    assert source_poll_error_message(SocialPlatform.youtube, raw_error) == (
+        "Reconnect the YouTube source account with readonly permissions."
+    )
