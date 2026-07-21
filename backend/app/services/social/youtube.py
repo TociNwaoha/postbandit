@@ -301,8 +301,28 @@ class YouTubeAdapter(SocialProviderAdapter):
         updated_access_token = None
         updated_token_expires_at = None
 
-        if token_expires_at and token_expires_at <= (utcnow() + timedelta(seconds=60)) and refresh_token:
-            refreshed_token, refreshed_expiry = self._refresh_access_token(refresh_token)
+        if token_expires_at and token_expires_at <= (utcnow() + timedelta(seconds=60)):
+            if not refresh_token:
+                return PublishResult(
+                    status="waiting_user_action",
+                    error_message="Reconnect YouTube before publishing.",
+                    provider_metadata_json={
+                        "reason": "reconnect_required",
+                        "action": "reconnect_youtube",
+                    },
+                )
+            try:
+                refreshed_token, refreshed_expiry = self._refresh_access_token(refresh_token)
+            except (httpx.HTTPStatusError, httpx.RequestError, ProviderOperationError) as exc:
+                logger.warning("[social] youtube token refresh failed: %s", exc.__class__.__name__)
+                return PublishResult(
+                    status="waiting_user_action",
+                    error_message="Reconnect YouTube before publishing.",
+                    provider_metadata_json={
+                        "reason": "reconnect_required",
+                        "action": "reconnect_youtube",
+                    },
+                )
             token_to_use = refreshed_token
             updated_access_token = refreshed_token
             updated_token_expires_at = refreshed_expiry
@@ -370,6 +390,30 @@ class YouTubeAdapter(SocialProviderAdapter):
                 exc.response.status_code,
                 reason,
             )
+            normalized_reason = reason.lower()
+            if exc.response.status_code in {400, 401, 403} and (
+                "invalid" in normalized_reason
+                or "auth" in normalized_reason
+                or "token" in normalized_reason
+                or "permission" in normalized_reason
+                or "scope" in normalized_reason
+                or reason.startswith("http_")
+            ):
+                return PublishResult(
+                    status="waiting_user_action",
+                    error_message="Reconnect YouTube before publishing.",
+                    provider_metadata_json={
+                        "reason": "reconnect_required",
+                        "action": "reconnect_youtube",
+                        "youtube_error": {
+                            "stage": upload_stage,
+                            "http_status": exc.response.status_code,
+                            "reason": reason,
+                        },
+                    },
+                    updated_access_token=updated_access_token,
+                    updated_token_expires_at=updated_token_expires_at,
+                )
             return PublishResult(
                 status="failed",
                 error_message=f"YouTube upload failed: {reason}",

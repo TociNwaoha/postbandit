@@ -2,10 +2,60 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.connected_account import SocialPlatform
 from app.models.publish_job import PublishMode, PublishStatus
+
+
+_PLATFORM_DISPLAY_NAMES = {
+    SocialPlatform.instagram: "Instagram",
+    SocialPlatform.threads: "Threads",
+    SocialPlatform.facebook: "Facebook",
+    SocialPlatform.youtube: "YouTube",
+    SocialPlatform.x: "X",
+    SocialPlatform.tiktok: "TikTok",
+    SocialPlatform.linkedin: "LinkedIn",
+}
+
+
+def _safe_publish_error_message(
+    platform: SocialPlatform,
+    error_message: str | None,
+    provider_metadata_json: dict | None,
+) -> str | None:
+    if not error_message:
+        return None
+
+    metadata = provider_metadata_json or {}
+    action = str(metadata.get("action") or "").lower()
+    reason = str(metadata.get("reason") or "").lower()
+    normalized = error_message.lower()
+    display_name = _PLATFORM_DISPLAY_NAMES.get(platform, platform.value.title())
+
+    if action.startswith("reconnect_") or reason == "reconnect_required" or "reconnect" in normalized:
+        return f"Reconnect {display_name} in Connections, then retry this post."
+
+    provider_error_markers = (
+        "client error",
+        "bad request",
+        "unauthorized",
+        "invalid token",
+        "access token",
+        "oauth",
+        "googleapis.com",
+        "graph.facebook.com",
+        "graph.instagram.com",
+        "api.twitter.com",
+        "api.x.com",
+        "open.tiktokapis.com",
+        "api.linkedin.com",
+        "developer.mozilla.org",
+    )
+    if any(marker in normalized for marker in provider_error_markers):
+        return f"Reconnect {display_name} in Connections, then retry this post."
+
+    return error_message
 
 
 class ProviderCapabilitiesResponse(BaseModel):
@@ -109,6 +159,15 @@ class PublishJobResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def hide_raw_provider_errors(self):
+        self.error_message = _safe_publish_error_message(
+            self.platform,
+            self.error_message,
+            self.provider_metadata_json,
+        )
+        return self
 
 
 class PublishJobPatchRequest(BaseModel):

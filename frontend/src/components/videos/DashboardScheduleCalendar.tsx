@@ -51,6 +51,30 @@ const STATUS_STYLES: Record<PublishJobStatus, string> = {
   cancelled: "bg-slate-200 text-slate-600",
 };
 
+function safeCalendarErrorMessage(item: PublishCalendarItem): string | null {
+  if (!item.error_message) return null;
+  const normalized = item.error_message.toLowerCase();
+  if (
+    normalized.includes("client error") ||
+    normalized.includes("bad request") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("invalid token") ||
+    normalized.includes("access token") ||
+    normalized.includes("oauth") ||
+    normalized.includes("googleapis.com") ||
+    normalized.includes("graph.facebook.com") ||
+    normalized.includes("graph.instagram.com") ||
+    normalized.includes("api.twitter.com") ||
+    normalized.includes("api.x.com") ||
+    normalized.includes("open.tiktokapis.com") ||
+    normalized.includes("api.linkedin.com") ||
+    normalized.includes("developer.mozilla.org")
+  ) {
+    return `Reconnect ${getSocialPlatformMeta(item.platform).displayName} in Connections, then retry this post.`;
+  }
+  return item.error_message;
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -754,7 +778,9 @@ function EventDrawer({ item, timezone, saving, onClose, onSave, onAction, onRetr
           </label>
         </div>
 
-        {item.error_message ? <p className="mt-4 rounded-md bg-red-50 p-3 text-xs text-red-700">{item.error_message}</p> : null}
+        {safeCalendarErrorMessage(item) ? (
+          <p className="mt-4 rounded-md bg-red-50 p-3 text-xs text-red-700">{safeCalendarErrorMessage(item)}</p>
+        ) : null}
         {item.external_post_url ? (
           <a href={item.external_post_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex text-sm text-[var(--app-primary)] underline">
             Open published post

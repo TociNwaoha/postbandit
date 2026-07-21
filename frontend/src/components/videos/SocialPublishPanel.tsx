@@ -224,6 +224,38 @@ function isReconnectRequiredXJob(job: SocialPublishJob | undefined): boolean {
   return errorMessage.includes("reconnect");
 }
 
+function isReconnectRequiredPublishJob(job: SocialPublishJob | undefined): boolean {
+  if (!job) return false;
+
+  const metadata = job.provider_metadata_json || {};
+  const action = typeof metadata.action === "string" ? metadata.action.toLowerCase() : "";
+  const reason = typeof metadata.reason === "string" ? metadata.reason.toLowerCase() : "";
+  const errorMessage = (job.error_message || "").toLowerCase();
+
+  if (action.startsWith("reconnect_") || reason === "reconnect_required") return true;
+  if (job.platform === "x" && isReconnectRequiredXJob(job)) return true;
+  if (errorMessage.includes("reconnect")) return true;
+  if (job.platform === "youtube") {
+    return (
+      errorMessage.includes("oauth2.googleapis.com/token") ||
+      errorMessage.includes("googleapis.com/upload/youtube") ||
+      errorMessage.includes("bad request") ||
+      errorMessage.includes("unauthorized") ||
+      errorMessage.includes("invalid token")
+    );
+  }
+  return false;
+}
+
+function safePublishErrorMessage(job: SocialPublishJob): string | null {
+  if (!job.error_message) return null;
+  if (isReconnectRequiredPublishJob(job)) {
+    const platformName = getPlatformBrandMeta(job.platform).displayName;
+    return `Reconnect ${platformName} in Connections, then retry this post.`;
+  }
+  return job.error_message;
+}
+
 function hasAnyOverrideValue(fields: PublishFormFields): boolean {
   return Boolean(
     fields.caption.trim() ||
@@ -1203,7 +1235,8 @@ export function SocialPublishPanel({
           const providerSupportsSchedule = Boolean(providerReady && provider?.capabilities?.supports_publish_now);
           const hasConnectedAccounts = selectableAccounts.length > 0;
           const privacyOptions = privacyOptionsForTarget(platform, selectedAccount);
-          const reconnectRequired = isReconnectRequiredXJob(latestJob);
+          const reconnectRequired = isReconnectRequiredPublishJob(latestJob);
+          const safeErrorMessage = latestJob ? safePublishErrorMessage(latestJob) : null;
           const providerSetupDetails = (provider?.setup_details || {}) as Record<string, unknown>;
           const threadsSupportsMedia = Boolean(provider?.capabilities?.supports_video_upload);
           const threadsPublishTextReady = Boolean(providerSetupDetails.publish_text_ready);
@@ -1443,7 +1476,7 @@ export function SocialPublishPanel({
                 </div>
               ) : null}
 
-              {latestJob?.error_message ? <p className="mt-2 text-[11px] text-red-700">{latestJob.error_message}</p> : null}
+              {safeErrorMessage ? <p className="mt-2 text-[11px] text-red-700">{safeErrorMessage}</p> : null}
               {platform === "facebook" ? (
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2">
                   <div>
