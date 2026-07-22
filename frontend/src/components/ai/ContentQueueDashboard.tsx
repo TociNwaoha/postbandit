@@ -36,6 +36,18 @@ function formatStatus(value: string): string {
   return value.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
+function formatAssetRetention(item: ContentQueueItem): string | null {
+  if (item.assets_deleted_at) return "Media cleaned up";
+  if (item.status === "approved" || item.status === "posted" || item.scheduled_at) return "Approved content retained";
+  if (!item.asset_cleanup_at) return null;
+
+  const cleanupAt = new Date(item.asset_cleanup_at).getTime();
+  if (!Number.isFinite(cleanupAt)) return null;
+  const daysLeft = Math.max(0, Math.ceil((cleanupAt - Date.now()) / (1000 * 60 * 60 * 24)));
+  if (daysLeft <= 0) return "Draft media cleanup pending";
+  return `Draft media expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+}
+
 export function ContentQueueDashboard() {
   const searchParams = useSearchParams();
   const saved = searchParams.get("saved") === "1";
@@ -188,6 +200,7 @@ export function ContentQueueDashboard() {
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[item.status] || STATUS_STYLES.draft}`}>{formatStatus(item.status)}</span>
                 <span className="text-xs text-[var(--app-subtle)]">{new Date(item.created_at).toLocaleString()}</span>
               </div>
+              {formatAssetRetention(item) ? <p className="text-xs text-[var(--app-subtle)]">{formatAssetRetention(item)}</p> : null}
               {item.generation_topic ? <p className="text-xs text-[var(--app-subtle)]">Topic: {item.generation_topic}</p> : null}
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {(item.slide_urls || []).map((url, index) => <img key={`${item.id}-${index}`} src={url} alt={`Slide ${index + 1}`} className="h-28 w-20 rounded-md border border-[var(--app-border)] object-cover" />)}

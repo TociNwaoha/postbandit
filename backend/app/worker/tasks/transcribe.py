@@ -15,7 +15,7 @@ from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, get_video_duration, get_video_resolution
-from app.services.object_storage import object_storage_client
+from app.services.object_storage import StorageUnavailableError, object_storage_client
 from app.services.video_thumbnails import ensure_video_thumbnail_from_local_source
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
@@ -357,12 +357,13 @@ def transcribe_job(self, video_id: str):
     except Exception as exc:
         logger.exception(f"Transcription failed for video {video_id}: {exc}")
         perf.mark("task_error", error_type=type(exc).__name__)
+        user_error_message = str(exc)[:500]
 
         with SyncSessionLocal() as db:
             video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
             if video:
                 video.status = VideoStatus.error
-                video.error_message = str(exc)[:500]
+                video.error_message = user_error_message
                 if video.source_type in {
                     VideoSourceType.youtube,
                     VideoSourceType.youtube_single,
@@ -387,7 +388,7 @@ def transcribe_job(self, video_id: str):
             job = _latest_transcribe_job(db, video_uuid)
             if job:
                 job.status = JobStatus.failed
-                job.error = str(exc)[:500]
+                job.error = user_error_message
                 job.completed_at = datetime.now(timezone.utc)
             db.commit()
 
@@ -403,7 +404,7 @@ def transcribe_job(self, video_id: str):
                 metadata={"error_type": type(exc).__name__},
             )
 
-        if not isinstance(exc, (ValueError, FileNotFoundError)):
+        if not isinstance(exc, (ValueError, FileNotFoundError, StorageUnavailableError)):
             raise self.retry(exc=exc, countdown=60)
         raise
 

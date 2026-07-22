@@ -15,6 +15,19 @@ logger = logging.getLogger(__name__)
 
 LOCAL_STORAGE_ROOT = Path("/tmp/clipbandit-storage")
 THUMBNAIL_DIR = Path(os.environ.get("THUMBNAIL_DIR", "/data/thumbnails"))
+STORAGE_TEMPORARILY_UNAVAILABLE_MESSAGE = (
+    "Source video is temporarily unavailable from storage. Try again after the storage download limit resets."
+)
+
+
+class StorageUnavailableError(RuntimeError):
+    """Raised when the configured object store refuses a read for a currently unavailable object."""
+
+    def __init__(self, key: str, operation: str, *, cause: Exception | None = None):
+        super().__init__(STORAGE_TEMPORARILY_UNAVAILABLE_MESSAGE)
+        self.key = key
+        self.operation = operation
+        self.__cause__ = cause
 
 
 def _local_api_base_url() -> str:
@@ -220,6 +233,12 @@ class ObjectStorageClient:
                 self._log_local_fallback(key, "download_file")
                 shutil.copy2(self.local_fallback_path(key), destination)
                 return destination_path
+            if self._is_forbidden(exc):
+                logger.warning(
+                    "B2 download unavailable operation=download_file key=%s status=403",
+                    key,
+                )
+                raise StorageUnavailableError(key, "download_file", cause=exc) from exc
             logger.error("Failed to download %s from B2: %s", key, exc)
             raise
         except RuntimeError:
@@ -237,6 +256,12 @@ class ObjectStorageClient:
             if (self._is_not_found(exc) or self._is_forbidden(exc)) and self._local_file_exists(key):
                 self._log_local_fallback(key, "read_text_file")
                 return self.local_fallback_path(key).read_text(encoding="utf-8")
+            if self._is_forbidden(exc):
+                logger.warning(
+                    "B2 read unavailable operation=read_text_file key=%s status=403",
+                    key,
+                )
+                raise StorageUnavailableError(key, "read_text_file", cause=exc) from exc
             logger.error("Failed to read %s from B2: %s", key, exc)
             raise
         except RuntimeError:
@@ -298,6 +323,12 @@ class ObjectStorageClient:
         except ClientError as exc:
             if self._is_not_found(exc):
                 return None
+            if self._is_forbidden(exc):
+                logger.warning(
+                    "B2 read unavailable operation=remote_file_size key=%s status=403",
+                    key,
+                )
+                raise StorageUnavailableError(key, "remote_file_size", cause=exc) from exc
             raise
 
     def file_exists(self, key: str) -> bool:

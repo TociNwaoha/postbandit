@@ -134,6 +134,10 @@ class Settings(BaseSettings):
     export_retention_enabled: bool = True
     export_retention_days: int = 30
     export_retention_dry_run: bool = False
+    content_queue_asset_retention_enabled: bool = True
+    content_queue_ready_asset_retention_days: int = 30
+    content_queue_rejected_asset_retention_days: int = 14
+    content_queue_asset_retention_dry_run: bool = False
     editor_max_asset_upload_bytes: int = 25 * 1024 * 1024
     editor_preview_proxy_timeout_seconds: int = 1800
 

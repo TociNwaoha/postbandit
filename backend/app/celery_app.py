@@ -61,6 +61,12 @@ if settings.export_retention_enabled:
         "schedule": 3600.0,
         "args": (bool(settings.export_retention_dry_run),),
     }
+if settings.content_queue_asset_retention_enabled:
+    beat_schedule["content-queue-asset-retention-hourly"] = {
+        "task": "app.worker.tasks.cleanup.sweep_content_queue_asset_retention",
+        "schedule": 3600.0,
+        "args": (bool(settings.content_queue_asset_retention_dry_run),),
+    }
 beat_schedule["generate-daily-content"] = {
     "task": "generate_daily_content",
     "schedule": crontab(hour=8, minute=0),

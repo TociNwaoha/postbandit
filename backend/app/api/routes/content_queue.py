@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.database import get_db
+from app.config import settings
 from app.models.brand_profile import BrandProfile
 from app.models.content_queue_item import ContentQueueItem
 from app.models.user import User
@@ -141,6 +142,8 @@ async def update_content_queue_item(
         row.platforms = body.platforms
     if "scheduled_at" in body.model_fields_set:
         row.scheduled_at = body.scheduled_at
+        if row.scheduled_at is not None:
+            row.asset_cleanup_at = None
 
     await db.commit()
     await db.refresh(row)
@@ -160,6 +163,7 @@ async def approve_content_queue_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Queue item not found")
 
     row.status = "approved"
+    row.asset_cleanup_at = None
     if row.scheduled_at and row.scheduled_at.tzinfo is None:
         row.scheduled_at = row.scheduled_at.replace(tzinfo=timezone.utc)
 
@@ -181,6 +185,9 @@ async def reject_content_queue_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Queue item not found")
 
     row.status = "rejected"
+    row.asset_cleanup_at = datetime.now(timezone.utc) + timedelta(
+        days=max(1, int(settings.content_queue_rejected_asset_retention_days))
+    )
     await db.commit()
     await db.refresh(row)
     return row

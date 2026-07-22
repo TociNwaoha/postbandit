@@ -16,6 +16,8 @@ from app.models.job import Job, JobStatus
 from app.models.publish_job import PublishJob, PublishStatus
 from app.models.video import Video, VideoSourceType, VideoStatus
 from app.models.clip import Clip
+from app.models.carousel_export import CarouselExport
+from app.models.content_queue_item import ContentQueueItem
 from app.models.editor_project import EditorProject, EditorProjectStatus
 from app.services.object_storage import object_storage_client
 from app.services.storage import video_thumbnail_key
@@ -569,6 +571,164 @@ def _collect_export_storage_keys(export: Export) -> set[str]:
     if export.srt_key:
         storage_keys.add(export.srt_key)
     return storage_keys
+
+
+def _collect_content_queue_storage_keys(item: ContentQueueItem) -> set[str]:
+    keys: set[str] = set()
+    for key in list(item.slide_keys_json or []):
+        if isinstance(key, str) and key.strip():
+            keys.add(key.strip())
+    if item.zip_key:
+        keys.add(item.zip_key)
+    if item.preview_key:
+        keys.add(item.preview_key)
+    return keys
+
+
+def _carousel_export_references_key(db, *, user_id: uuid.UUID, key: str) -> bool:
+    rows = (
+        db.execute(
+            select(CarouselExport.slide_keys_json, CarouselExport.zip_key, CarouselExport.preview_key)
+            .where(CarouselExport.user_id == user_id)
+        )
+        .all()
+    )
+    for slide_keys, zip_key, preview_key in rows:
+        if key == zip_key or key == preview_key:
+            return True
+        if key in set(slide_keys or []):
+            return True
+    return False
+
+
+def _content_queue_asset_due_at(item: ContentQueueItem, *, now: datetime) -> datetime:
+    if item.status == "rejected":
+        return item.updated_at + timedelta(days=max(1, int(settings.content_queue_rejected_asset_retention_days)))
+    return item.created_at + timedelta(days=max(1, int(settings.content_queue_ready_asset_retention_days)))
+
+
+def _content_queue_item_asset_cleanup_eligible(item: ContentQueueItem, *, now: datetime) -> bool:
+    if item.assets_deleted_at is not None:
+        return False
+    if item.status in {"approved", "posted"}:
+        return False
+    if item.scheduled_at is not None:
+        return False
+    if not _collect_content_queue_storage_keys(item):
+        return False
+
+    due_at = item.asset_cleanup_at or _content_queue_asset_due_at(item, now=now)
+    if due_at.tzinfo is None:
+        due_at = due_at.replace(tzinfo=timezone.utc)
+    return due_at <= now
+
+
+def sweep_content_queue_asset_retention_impl(*, dry_run: bool) -> dict:
+    if not settings.content_queue_asset_retention_enabled:
+        payload = {
+            "dry_run": dry_run,
+            "enabled": False,
+            "scanned": 0,
+            "eligible": 0,
+            "deleted_items": 0,
+            "deleted_keys": 0,
+            "protected_keys": 0,
+            "storage_delete_failures": 0,
+        }
+        logger.info("[content_queue_asset_retention] summary=%s", payload)
+        return payload
+
+    now = datetime.now(timezone.utc)
+    scanned = 0
+    eligible = 0
+    deleted_items = 0
+    deleted_keys = 0
+    protected_keys = 0
+    storage_delete_failures = 0
+
+    with SyncSessionLocal() as db:
+        rows = (
+            db.execute(
+                select(ContentQueueItem)
+                .where(
+                    ContentQueueItem.assets_deleted_at.is_(None),
+                    ContentQueueItem.status.in_(["draft", "ready", "rejected"]),
+                )
+                .order_by(ContentQueueItem.updated_at.asc())
+            )
+            .scalars()
+            .all()
+        )
+        scanned = len(rows)
+
+        for item in rows:
+            if not _content_queue_item_asset_cleanup_eligible(item, now=now):
+                continue
+
+            keys = _collect_content_queue_storage_keys(item)
+            eligible += 1
+            if dry_run:
+                continue
+
+            item_delete_failed = False
+            for key in keys:
+                owned_prefix = f"carousels/{item.user_id}/"
+                if not key.startswith(owned_prefix):
+                    protected_keys += 1
+                    logger.warning(
+                        "[content_queue_asset_retention] skipped non-owned key item_id=%s key=%s",
+                        item.id,
+                        key,
+                    )
+                    continue
+                if _carousel_export_references_key(db, user_id=item.user_id, key=key):
+                    protected_keys += 1
+                    continue
+
+                try:
+                    object_storage_client.delete_file(key)
+                    deleted_keys += 1
+                except Exception as exc:
+                    item_delete_failed = True
+                    storage_delete_failures += 1
+                    logger.warning(
+                        "[content_queue_asset_retention] storage delete failed item_id=%s key=%s error=%s",
+                        item.id,
+                        key,
+                        exc,
+                    )
+
+            if item_delete_failed:
+                continue
+
+            item.slide_urls = []
+            item.slide_keys_json = []
+            item.zip_key = None
+            item.preview_key = None
+            item.assets_deleted_at = now
+            item.asset_cleanup_at = None
+            db.commit()
+            deleted_items += 1
+
+    payload = {
+        "dry_run": dry_run,
+        "enabled": True,
+        "ready_retention_days": max(1, int(settings.content_queue_ready_asset_retention_days)),
+        "rejected_retention_days": max(1, int(settings.content_queue_rejected_asset_retention_days)),
+        "scanned": scanned,
+        "eligible": eligible,
+        "deleted_items": deleted_items,
+        "deleted_keys": deleted_keys,
+        "protected_keys": protected_keys,
+        "storage_delete_failures": storage_delete_failures,
+    }
+    logger.info("[content_queue_asset_retention] summary=%s", payload)
+    return payload
+
+
+@celery_app.task(name="app.worker.tasks.cleanup.sweep_content_queue_asset_retention", queue="ingest")
+def sweep_content_queue_asset_retention(dry_run: bool = False):
+    return sweep_content_queue_asset_retention_impl(dry_run=dry_run)
 
 
 def sweep_export_retention_impl(*, dry_run: bool) -> dict:

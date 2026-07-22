@@ -503,13 +503,14 @@ def score_job(self, video_id: str):
         }
     except Exception as exc:
         logger.exception("[score] score_job failed for video_id=%s: %s", video_id, exc)
+        user_error_message = str(exc)[:500]
         if video_uuid is not None:
             try:
                 with SyncSessionLocal() as db:
                     video = db.execute(select(Video).where(Video.id == video_uuid)).scalars().first()
                     if video:
                         video.status = VideoStatus.error
-                        video.error_message = str(exc)[:500]
+                        video.error_message = user_error_message
                         if video.source_type in {
                             VideoSourceType.youtube,
                             VideoSourceType.youtube_single,
@@ -534,7 +535,7 @@ def score_job(self, video_id: str):
                     score_row = _latest_score_job(db, video_uuid)
                     if score_row:
                         score_row.status = JobStatus.failed
-                        score_row.error = str(exc)[:500]
+                        score_row.error = user_error_message
                         score_row.completed_at = datetime.now(timezone.utc)
                     db.commit()
             except Exception as inner_exc:

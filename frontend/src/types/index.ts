@@ -744,6 +744,11 @@ export interface ContentQueueItem {
   content_type: string;
   config: CarouselConfig;
   slide_urls: string[];
+  slide_keys_json: string[];
+  zip_key: string | null;
+  preview_key: string | null;
+  asset_cleanup_at: string | null;
+  assets_deleted_at: string | null;
   status: ContentQueueStatus;
   platforms: string[];
   scheduled_at: string | null;

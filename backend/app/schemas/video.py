@@ -10,6 +10,31 @@ from app.models.video import (
 )
 
 
+STORAGE_TEMPORARILY_UNAVAILABLE_MESSAGE = (
+    "Source video is temporarily unavailable from storage. Try again after the storage download limit resets."
+)
+
+
+def _safe_video_error_message(value: str | None) -> str | None:
+    if not value:
+        return value
+    normalized = value.lower()
+    storage_markers = (
+        "headobject",
+        "getobject",
+        "download_file",
+        "backblaze",
+        "b2",
+        "forbidden",
+        "403",
+    )
+    if any(marker in normalized for marker in storage_markers) and (
+        "storage" in normalized or "forbidden" in normalized or "headobject" in normalized
+    ):
+        return STORAGE_TEMPORARILY_UNAVAILABLE_MESSAGE
+    return value
+
+
 class VideoResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -47,6 +72,11 @@ class VideoResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("error_message", mode="before")
+    @classmethod
+    def sanitize_error_message(cls, value):
+        return _safe_video_error_message(value)
 
 
 class VideoCreate(BaseModel):
@@ -159,6 +189,11 @@ class VideoListItem(BaseModel):
     raw_source_expires_at: datetime | None = None
     raw_source_days_remaining: int | None = None
 
+    @field_validator("error_message", mode="before")
+    @classmethod
+    def sanitize_error_message(cls, value):
+        return _safe_video_error_message(value)
+
 
 class VideoStatusResponse(BaseModel):
     video_id: uuid.UUID
@@ -168,6 +203,11 @@ class VideoStatusResponse(BaseModel):
     title: str | None
     clip_count: int
     error_message: str | None
+
+    @field_validator("error_message", mode="before")
+    @classmethod
+    def sanitize_error_message(cls, value):
+        return _safe_video_error_message(value)
 
 
 class TranscriptWordSegment(BaseModel):

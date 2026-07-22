@@ -83,6 +83,11 @@ class ContentQueueItemResponse(BaseModel):
     content_type: str
     config: dict
     slide_urls: list[str]
+    slide_keys_json: list[str]
+    zip_key: str | None
+    preview_key: str | None
+    asset_cleanup_at: datetime | None
+    assets_deleted_at: datetime | None
     status: str
     platforms: list[str]
     scheduled_at: datetime | None
