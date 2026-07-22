@@ -131,6 +131,9 @@ class Settings(BaseSettings):
     stale_queued_upload_cleanup_dry_run: bool = False
     raw_source_retention_enabled: bool = True
     raw_source_retention_days: int = 45
+    export_retention_enabled: bool = True
+    export_retention_days: int = 30
+    export_retention_dry_run: bool = False
     editor_max_asset_upload_bytes: int = 25 * 1024 * 1024
     editor_preview_proxy_timeout_seconds: int = 1800
 

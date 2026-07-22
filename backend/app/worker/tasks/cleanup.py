@@ -31,6 +31,11 @@ UPLOAD_CONFIRMED_KEY = "upload_confirmed"
 UPLOAD_STARTED_AT_KEY = "upload_started_at"
 UPLOAD_CONFIRMED_AT_KEY = "upload_confirmed_at"
 RAW_SOURCE_EXPIRED_AT_KEY = "raw_source_expired_at"
+ACTIVE_PUBLISH_STATUSES = {
+    PublishStatus.scheduled,
+    PublishStatus.queued,
+    PublishStatus.publishing,
+}
 
 
 def _parse_iso(iso_value: str | None) -> datetime | None:
@@ -539,6 +544,120 @@ def _has_pinned_or_active_editor_project(db, *, video_id: uuid.UUID) -> bool:
         .first()
     )
     return row is not None
+
+
+def _has_active_publish_job_for_export(db, *, export_id: uuid.UUID) -> bool:
+    row = (
+        db.execute(
+            select(PublishJob.id)
+            .where(
+                PublishJob.export_id == export_id,
+                PublishJob.status.in_(ACTIVE_PUBLISH_STATUSES),
+            )
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    return row is not None
+
+
+def _collect_export_storage_keys(export: Export) -> set[str]:
+    storage_keys: set[str] = set()
+    if export.storage_key:
+        storage_keys.add(export.storage_key)
+    if export.srt_key:
+        storage_keys.add(export.srt_key)
+    return storage_keys
+
+
+def sweep_export_retention_impl(*, dry_run: bool) -> dict:
+    if not settings.export_retention_enabled:
+        payload = {
+            "dry_run": dry_run,
+            "enabled": False,
+            "scanned": 0,
+            "eligible": 0,
+            "deleted": 0,
+            "skipped_active_publish_job": 0,
+            "storage_delete_failures": 0,
+        }
+        logger.info("[export_retention] summary=%s", payload)
+        return payload
+
+    now = datetime.now(timezone.utc)
+    retention_days = max(1, int(settings.export_retention_days))
+    cutoff = now - timedelta(days=retention_days)
+
+    scanned = 0
+    eligible = 0
+    deleted = 0
+    skipped_active_publish_job = 0
+    storage_delete_failures = 0
+
+    with SyncSessionLocal() as db:
+        rows = (
+            db.execute(
+                select(Export)
+                .where(
+                    Export.updated_at <= cutoff,
+                    Export.status.in_([ExportStatus.ready, ExportStatus.error]),
+                )
+                .order_by(Export.updated_at.asc())
+            )
+            .scalars()
+            .all()
+        )
+        scanned = len(rows)
+
+        for export in rows:
+            if _has_active_publish_job_for_export(db, export_id=export.id):
+                skipped_active_publish_job += 1
+                continue
+
+            eligible += 1
+            if dry_run:
+                continue
+
+            storage_delete_failed = False
+            for key in _collect_export_storage_keys(export):
+                try:
+                    object_storage_client.delete_file(key)
+                except Exception as exc:
+                    storage_delete_failed = True
+                    storage_delete_failures += 1
+                    logger.warning(
+                        "[export_retention] storage delete failed export_id=%s key=%s error=%s",
+                        export.id,
+                        key,
+                        exc,
+                    )
+
+            if storage_delete_failed:
+                continue
+
+            db.delete(export)
+            db.commit()
+            deleted += 1
+
+    payload = {
+        "dry_run": dry_run,
+        "enabled": True,
+        "retention_days": retention_days,
+        "cutoff": cutoff.isoformat(),
+        "scanned": scanned,
+        "eligible": eligible,
+        "deleted": deleted,
+        "skipped_active_publish_job": skipped_active_publish_job,
+        "storage_delete_failures": storage_delete_failures,
+    }
+    logger.info("[export_retention] summary=%s", payload)
+    return payload
+
+
+@celery_app.task(name="app.worker.tasks.cleanup.sweep_export_retention", queue="ingest")
+def sweep_export_retention(dry_run: bool = False):
+    return sweep_export_retention_impl(dry_run=dry_run)
 
 
 def sweep_raw_source_retention_impl(*, dry_run: bool) -> dict:
