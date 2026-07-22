@@ -495,7 +495,10 @@ async def create_upload_url(
     storage_key = f"uploads/{video.id}/original{ext}"
     video.storage_key = storage_key
 
-    signed = object_storage_client.get_presigned_upload_url(storage_key, expiry=900)
+    if settings.hot_source_storage_enabled:
+        signed = object_storage_client.get_local_proxy_upload_url(storage_key)
+    else:
+        signed = object_storage_client.get_presigned_upload_url(storage_key, expiry=900)
     await db.commit()
     await db.refresh(video)
 
@@ -580,7 +583,20 @@ async def proxy_upload(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported content type")
 
     try:
-        object_storage_client.upload_fileobj(file.file, video.storage_key, content_type=content_type)
+        if settings.hot_source_storage_enabled:
+            object_storage_client.save_fileobj_locally(
+                file.file,
+                video.storage_key,
+                max_bytes=MAX_UPLOAD_BYTES,
+            )
+        else:
+            object_storage_client.upload_fileobj(file.file, video.storage_key, content_type=content_type)
+    except ValueError as exc:
+        logger.warning("[proxy_upload_rejected] video_id=%s storage_key=%s error=%s", video.id, video.storage_key, exc)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds upload size limit",
+        ) from exc
     except Exception as exc:
         logger.warning("[proxy_upload_failed] video_id=%s storage_key=%s error=%s", video.id, video.storage_key, exc)
         raise HTTPException(

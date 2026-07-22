@@ -131,6 +131,7 @@ class Settings(BaseSettings):
     stale_queued_upload_cleanup_dry_run: bool = False
     raw_source_retention_enabled: bool = True
     raw_source_retention_days: int = 45
+    hot_source_storage_enabled: bool = True
     export_retention_enabled: bool = True
     export_retention_days: int = 30
     export_retention_dry_run: bool = False

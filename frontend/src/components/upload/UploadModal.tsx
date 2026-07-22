@@ -303,16 +303,7 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
       uploadedVideoId = upload.video_id;
 
       setUploadPhase("uploading");
-      try {
-        await uploadWithXhr(upload, selectedFile, setUploadProgress);
-      } catch (directUploadError) {
-        console.warn("[direct_upload_failed_using_proxy]", {
-          videoId: upload.video_id,
-          error: directUploadError,
-        });
-        setUploadProgress(0);
-        setUploadPhase("fallback");
-        setSuccessMessage("Direct upload was interrupted. Finishing through PostBandit...");
+      if (upload.use_local) {
         try {
           await proxyUploadWithXhr(upload, selectedFile, setUploadProgress);
         } catch (proxyError) {
@@ -320,6 +311,27 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
             await proxyUploadWithXhr(upload, selectedFile, setUploadProgress, "/api/backend/videos/proxy-upload");
           } else {
             throw proxyError;
+          }
+        }
+      } else {
+        try {
+          await uploadWithXhr(upload, selectedFile, setUploadProgress);
+        } catch (directUploadError) {
+          console.warn("[direct_upload_failed_using_proxy]", {
+            videoId: upload.video_id,
+            error: directUploadError,
+          });
+          setUploadProgress(0);
+          setUploadPhase("fallback");
+          setSuccessMessage("Direct upload was interrupted. Finishing through PostBandit...");
+          try {
+            await proxyUploadWithXhr(upload, selectedFile, setUploadProgress);
+          } catch (proxyError) {
+            if (API_URL) {
+              await proxyUploadWithXhr(upload, selectedFile, setUploadProgress, "/api/backend/videos/proxy-upload");
+            } else {
+              throw proxyError;
+            }
           }
         }
       }

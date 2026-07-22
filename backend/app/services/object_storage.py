@@ -168,6 +168,39 @@ class ObjectStorageClient:
             logger.error("B2 upload_fileobj failed for %s: %s", key, exc)
             raise
 
+    def save_fileobj_locally(self, file_obj: BinaryIO, key: str, *, max_bytes: int | None = None) -> str:
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
+        destination = self.local_fallback_path(key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        bytes_written = 0
+        try:
+            with destination.open("wb") as output:
+                while True:
+                    chunk = file_obj.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    bytes_written += len(chunk)
+                    if max_bytes is not None and bytes_written > max_bytes:
+                        raise ValueError("File exceeds upload size limit")
+                    output.write(chunk)
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+
+        logger.info("[storage_hot_local_write] key=%s bytes=%s local_root=%s", key, bytes_written, LOCAL_STORAGE_ROOT)
+        return key
+
+    def get_local_proxy_upload_url(self, key: str) -> dict:
+        return {
+            "url": f"{_local_api_base_url()}/api/videos/proxy-upload",
+            "key": key,
+            "fields": {},
+            "use_local": True,
+        }
+
     def get_presigned_upload_url(self, key: str, expiry: int = 900) -> dict:
         try:
             response = self._get_client().generate_presigned_post(
@@ -186,6 +219,11 @@ class ObjectStorageClient:
             raise
 
     def get_presigned_download_url(self, key: str, expiry: int = 86400) -> str:
+        if self._local_file_exists(key):
+            self._log_local_fallback(key, "presigned_download_url_hot")
+            encoded_key = quote(key.lstrip("/"), safe="/")
+            return f"{_local_api_base_url()}/api/storage/local/{encoded_key}"
+
         if self.remote_file_exists(key):
             try:
                 return self._get_client().generate_presigned_url(
@@ -225,6 +263,11 @@ class ObjectStorageClient:
     def download_file(self, key: str, destination_path: str) -> str:
         destination = Path(destination_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if self._local_file_exists(key):
+            self._log_local_fallback(key, "download_file_hot")
+            shutil.copy2(self.local_fallback_path(key), destination)
+            return destination_path
+
         try:
             self._get_client().download_file(self.bucket_name, key, destination_path)
             return destination_path
@@ -249,6 +292,10 @@ class ObjectStorageClient:
             raise
 
     def read_text_file(self, key: str) -> str:
+        if self._local_file_exists(key):
+            self._log_local_fallback(key, "read_text_file_hot")
+            return self.local_fallback_path(key).read_text(encoding="utf-8")
+
         try:
             response = self._get_client().get_object(Bucket=self.bucket_name, Key=key)
             return response["Body"].read().decode("utf-8")
@@ -332,10 +379,10 @@ class ObjectStorageClient:
             raise
 
     def file_exists(self, key: str) -> bool:
-        if self.remote_file_exists(key):
-            return True
         if self._local_file_exists(key):
             self._log_local_fallback(key, "file_exists")
+            return True
+        if self.remote_file_exists(key):
             return True
         return False
 
