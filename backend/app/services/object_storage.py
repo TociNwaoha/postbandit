@@ -38,7 +38,7 @@ def _local_api_base_url() -> str:
 
 
 class ObjectStorageClient:
-    """Backblaze B2-backed object storage with temporary local read fallback."""
+    """Object storage facade with local hot writes and B2 fallback reads."""
 
     def __init__(self):
         self._client = None
@@ -68,8 +68,12 @@ class ObjectStorageClient:
 
     @property
     def use_local(self) -> bool:
-        # Kept for existing response schemas. New writes never use local permanent storage.
-        return False
+        return self.write_backend == "local"
+
+    @property
+    def write_backend(self) -> str:
+        configured = (settings.object_storage_write_backend or "local").strip().lower()
+        return configured if configured in {"local", "b2"} else "local"
 
     def _init_client(self):
         if any(
@@ -147,6 +151,18 @@ class ObjectStorageClient:
         return status == 403
 
     def upload_file(self, file_path: str, key: str) -> str:
+        if self.write_backend == "local":
+            destination = self.local_fallback_path(key)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file_path, destination)
+            logger.info(
+                "[storage_local_write] operation=upload_file key=%s bytes=%s local_root=%s",
+                key,
+                destination.stat().st_size,
+                LOCAL_STORAGE_ROOT,
+            )
+            return key
+
         try:
             self._get_client().upload_file(file_path, self.bucket_name, key)
             return key
@@ -155,6 +171,9 @@ class ObjectStorageClient:
             raise
 
     def upload_fileobj(self, file_obj: BinaryIO, key: str, content_type: str | None = None) -> str:
+        if self.write_backend == "local":
+            return self.save_fileobj_locally(file_obj, key)
+
         if hasattr(file_obj, "seek"):
             file_obj.seek(0)
         extra_args = {"ContentType": content_type} if content_type else None

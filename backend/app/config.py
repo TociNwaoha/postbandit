@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     b2_bucket_name: str = "placeholder"
     b2_endpoint_url: str = "https://placeholder.backblazeb2.com"
     b2_region: str = "placeholder"
+    object_storage_write_backend: str = "local"
 
     # Anthropic (legacy)
     anthropic_api_key: str = "placeholder"
