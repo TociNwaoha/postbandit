@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
 from uuid import UUID
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
