@@ -1,5 +1,7 @@
 import logging
+import re
 import shutil
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +16,7 @@ from app.models.exclude_zone import ExcludeZone
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.video import ClipProfile, Video, VideoImportState, VideoSourceType, VideoStatus
-from app.services.ffmpeg import extract_audio, extract_thumbnail
+from app.services.ffmpeg import extract_audio, extract_thumbnail, get_video_resolution
 from app.services.ai_copy import AICopyUnavailableError, generate_clip_copy, provider_configured
 from app.services.object_storage import object_storage_client
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
@@ -40,6 +42,11 @@ logger = logging.getLogger(__name__)
 
 ENERGY_BUCKET_SEC = 0.5
 LONG_FORM_CLIP_PROFILE_ALIASES = {"long_form_speaking"}
+THUMBNAIL_CAPTION_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+)
 
 
 def _resolve_clip_profile(video: Video) -> ClipProfile:
@@ -90,6 +97,123 @@ def _thumbnail_timestamps(start_time: float, end_time: float) -> list[float]:
             continue
         deduped.append(normalized)
     return deduped
+
+
+def get_thumbnail_caption_words(clip: Clip) -> tuple[str, str]:
+    text = " ".join((clip.transcript_text or "").split())
+    if not text:
+        return ("", "")
+
+    text = re.sub(r"[^\w\s'\-]", "", text).strip()
+    words = text.split()[:12]
+    if not words:
+        return ("", "")
+    if len(words) <= 5:
+        return (" ".join(words).upper(), "")
+
+    midpoint = len(words) // 2
+    return (" ".join(words[:midpoint]).upper(), " ".join(words[midpoint:]).upper())
+
+
+def _resolve_thumbnail_caption_font() -> str | None:
+    for font_path in THUMBNAIL_CAPTION_FONT_CANDIDATES:
+        if Path(font_path).exists():
+            return font_path
+    return None
+
+
+def _thumbnail_caption_font_size(source_path: str) -> int:
+    resolution = get_video_resolution(source_path)
+    try:
+        height = int((resolution or "0x0").split("x", 1)[1])
+    except (IndexError, ValueError):
+        height = 720
+    if height >= 1080:
+        return 54
+    if height >= 720:
+        return 42
+    return 28
+
+
+def _escape_drawtext_text(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace(":", "\\:")
+        .replace(",", "\\,")
+        .replace("%", "\\%")
+    )
+
+
+def generate_thumbnail_with_caption(
+    source_path: str,
+    thumbnail_path: str,
+    timestamp: float,
+    line1: str,
+    line2: str,
+    font_path: str | None = None,
+) -> bool:
+    Path(thumbnail_path).parent.mkdir(parents=True, exist_ok=True)
+    resolved_font = font_path or _resolve_thumbnail_caption_font()
+    font_size = _thumbnail_caption_font_size(source_path)
+    box_border = max(8, round(font_size * 0.28))
+
+    def fallback_plain_thumbnail() -> bool:
+        try:
+            extract_thumbnail(source_path, thumbnail_path, timestamp)
+            return Path(thumbnail_path).exists()
+        except Exception as exc:
+            logger.warning("[score] plain thumbnail fallback failed path=%s error=%s", thumbnail_path, exc)
+            return False
+
+    if not resolved_font or not (line1 or line2):
+        return fallback_plain_thumbnail()
+
+    line1_escaped = _escape_drawtext_text(line1)
+    line2_escaped = _escape_drawtext_text(line2)
+
+    if line1 and line2:
+        y1 = "h*0.68"
+        y2 = f"h*0.68+{font_size + box_border + 8}"
+        video_filter = (
+            f"drawtext=fontfile='{resolved_font}':text='{line1_escaped}':fontsize={font_size}"
+            f":fontcolor=white:x=(w-text_w)/2:y={y1}:box=1:boxcolor=black@0.65:boxborderw={box_border},"
+            f"drawtext=fontfile='{resolved_font}':text='{line2_escaped}':fontsize={font_size}"
+            f":fontcolor=white:x=(w-text_w)/2:y={y2}:box=1:boxcolor=black@0.65:boxborderw={box_border}"
+        )
+    else:
+        video_filter = (
+            f"drawtext=fontfile='{resolved_font}':text='{line1_escaped}':fontsize={font_size}"
+            f":fontcolor=white:x=(w-text_w)/2:y=h*0.72:box=1:boxcolor=black@0.65:boxborderw={box_border}"
+        )
+
+    command = [
+        "ffmpeg",
+        "-ss",
+        f"{max(float(timestamp), 0.0):.3f}",
+        "-i",
+        source_path,
+        "-frames:v",
+        "1",
+        "-update",
+        "1",
+        "-vf",
+        video_filter,
+        "-q:v",
+        "2",
+        "-y",
+        thumbnail_path,
+    ]
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            logger.warning("[score] caption thumbnail failed stderr=%s", result.stderr[-800:])
+            return fallback_plain_thumbnail()
+        return Path(thumbnail_path).exists()
+    except Exception as exc:
+        logger.warning("[score] caption thumbnail exception error=%s", exc)
+        return fallback_plain_thumbnail()
 
 
 def _build_scored_candidates(
@@ -349,7 +473,16 @@ def score_job(self, video_id: str):
 
                 for timestamp in timestamps:
                     try:
-                        extract_thumbnail(str(local_video_path), str(thumb_local_path), timestamp)
+                        line1, line2 = get_thumbnail_caption_words(clip)
+                        thumbnail_ok = generate_thumbnail_with_caption(
+                            source_path=str(local_video_path),
+                            thumbnail_path=str(thumb_local_path),
+                            timestamp=timestamp,
+                            line1=line1,
+                            line2=line2,
+                        )
+                        if not thumbnail_ok:
+                            raise RuntimeError("Caption thumbnail generation failed")
                         object_storage_client.save_thumbnail_locally(str(thumb_local_path), thumb_storage_key)
                         clip.thumbnail_key = thumb_storage_key
                         thumbnail_success += 1
