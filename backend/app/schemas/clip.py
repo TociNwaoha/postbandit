@@ -83,3 +83,11 @@ class ClipCopyOptionsResponse(BaseModel):
     descriptions: list[str] = Field(min_length=5, max_length=5)
     hashtag_sets: list[list[str]] = Field(min_length=5, max_length=5)
     platform: str | None = None
+
+
+class ClipGenerateCarouselResponse(BaseModel):
+    carousel_id: uuid.UUID
+    queue_item_id: uuid.UUID
+    slide_count: int
+    provider_used: str
+    redirect_url: str

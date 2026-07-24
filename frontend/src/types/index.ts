@@ -352,6 +352,14 @@ export interface CarouselGenerateResponse {
   provider_used: string;
 }
 
+export interface ClipGenerateCarouselResponse {
+  carousel_id: string;
+  queue_item_id: string;
+  slide_count: number;
+  provider_used: string;
+  redirect_url: string;
+}
+
 export interface CarouselRenderedSlide {
   index: number;
   key: string;

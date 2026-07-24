@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { api, ApiError } from "@/lib/api";
-import { Clip, ConnectedAccount, SocialProvider } from "@/types";
+import { Clip, ClipGenerateCarouselResponse, ConnectedAccount, SocialProvider } from "@/types";
 
 interface CarouselSchedulePanelProps {
   clip: Clip;
@@ -36,10 +37,13 @@ function buildCarouselTopic(clip: Clip): string {
 }
 
 export function CarouselSchedulePanel({ clip, initialScheduledFor }: CarouselSchedulePanelProps) {
+  const router = useRouter();
   const [providers, setProviders] = useState<SocialProvider[]>([]);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creatingCarousel, setCreatingCarousel] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [scheduledFor, setScheduledFor] = useState(() => toLocalDatetimeInput(initialScheduledFor));
 
   useEffect(() => {
@@ -87,8 +91,21 @@ export function CarouselSchedulePanel({ clip, initialScheduledFor }: CarouselSch
     if (scheduleValue) params.set("scheduledFor", scheduleValue);
     return `/carousels/new?${params.toString()}`;
   };
-  const createNowHref = buildCarouselHref();
   const scheduleHref = buildCarouselHref(scheduledIso);
+
+  const handleCreateCarousel = async () => {
+    setCreatingCarousel(true);
+    setCreateError(null);
+    try {
+      const data = await api.post<ClipGenerateCarouselResponse>(`/api/clips/${clip.id}/generate-carousel`, {});
+      const redirectUrl = data.redirect_url || `/carousels/new?queueItem=${encodeURIComponent(data.queue_item_id)}`;
+      router.push(redirectUrl);
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? err.message : "Could not generate a carousel from this clip.");
+    } finally {
+      setCreatingCarousel(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -146,12 +163,14 @@ export function CarouselSchedulePanel({ clip, initialScheduledFor }: CarouselSch
       </label>
 
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        <Link
-          href={createNowHref}
+        <button
+          type="button"
+          onClick={handleCreateCarousel}
+          disabled={creatingCarousel}
           className="inline-flex items-center justify-center rounded-md bg-[#1D3FD0] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1633B8]"
         >
-          Create Carousel from Video
-        </Link>
+          {creatingCarousel ? "Generating..." : "Create Carousel from Video"}
+        </button>
         <Link
           href={scheduleHref}
           className="inline-flex items-center justify-center rounded-md border border-[var(--app-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
@@ -159,6 +178,8 @@ export function CarouselSchedulePanel({ clip, initialScheduledFor }: CarouselSch
           Schedule Carousel Draft
         </Link>
       </div>
+
+      {createError ? <p className="text-[11px] leading-5 text-red-700">{createError}</p> : null}
 
       <p className="text-[11px] leading-5 text-[var(--app-subtle)]">
         The carousel builder will open with this clip as source text. Render and save the carousel before final publishing.

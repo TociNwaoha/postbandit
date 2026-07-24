@@ -12,11 +12,13 @@ import uuid
 from app.database import get_db
 from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.export import Export
+from app.models.transcript import TranscriptSegment
 from app.models.user import User
 from app.models.clip import Clip
 from app.models.video import Video
 from app.schemas.clip import (
     ClipCopyOptionsResponse,
+    ClipGenerateCarouselResponse,
     ClipOverlayAssetResponse,
     ClipResponse,
     ClipUpdateRequest,
@@ -35,6 +37,10 @@ from app.services.ai_copy import (
 )
 from app.services.editor_quota import enforce_storage_hard_stop
 from app.services.object_storage import object_storage_client
+from app.services.video_carousel import (
+    VideoCarouselGenerationError,
+    create_video_carousel_queue_item,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,6 +52,23 @@ ALLOWED_OVERLAY_IMAGE_FORMATS = {
     "JPEG": ("image/jpeg", ".jpg"),
     "WEBP": ("image/webp", ".webp"),
 }
+
+
+async def _clip_transcript_for_generation(db: AsyncSession, clip: Clip) -> str:
+    transcript_text = " ".join((clip.transcript_text or "").split())
+    if transcript_text:
+        return transcript_text
+
+    result = await db.execute(
+        select(TranscriptSegment.word)
+        .where(
+            TranscriptSegment.video_id == clip.video_id,
+            TranscriptSegment.start_time < clip.end_time,
+            TranscriptSegment.end_time > clip.start_time,
+        )
+        .order_by(TranscriptSegment.start_time.asc())
+    )
+    return " ".join(str(word).strip() for word in result.scalars().all() if word and str(word).strip())
 
 
 def _clip_to_response(clip: Clip) -> ClipResponse:
@@ -381,6 +404,88 @@ async def generate_copy_for_clip(
         descriptions=generated.descriptions,
         hashtag_sets=generated.hashtag_sets,
         platform=generated.platform,
+    )
+
+
+@router.post("/clips/{clip_id}/generate-carousel", response_model=ClipGenerateCarouselResponse)
+async def generate_carousel_for_clip(
+    clip_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        clip_uuid = UUID(clip_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid clip_id")
+
+    row = await db.execute(
+        select(Clip, Video)
+        .join(Video, Clip.video_id == Video.id)
+        .where(Clip.id == clip_uuid, Video.user_id == current_user.id)
+    )
+    clip_row = row.first()
+    if not clip_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+    clip, video = clip_row
+
+    transcript_text = await _clip_transcript_for_generation(db, clip)
+    if not transcript_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clip transcript text is unavailable",
+        )
+
+    content_brief = " ".join((clip.content_brief or "").split())
+    if not content_brief and provider_configured():
+        try:
+            content_brief = generate_content_brief(
+                transcript_text=transcript_text,
+                video_title=video.title,
+            )
+            clip.content_brief = content_brief
+            await db.commit()
+            await db.refresh(clip)
+        except Exception as exc:
+            logger.warning("[clips] content brief fallback failed clip_id=%s error=%s", clip.id, exc)
+            content_brief = ""
+
+    try:
+        item, provider_used = await create_video_carousel_queue_item(
+            user_id=current_user.id,
+            clip_id=clip.id,
+            transcript=transcript_text,
+            content_brief=content_brief,
+            db=db,
+        )
+    except VideoCarouselGenerationError as exc:
+        logger.warning("[clips] generate carousel failed clip_id=%s error=%s", clip.id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc) or "Carousel generation is temporarily unavailable",
+        ) from exc
+    except Exception as exc:
+        logger.exception("[clips] generate carousel save failed clip_id=%s", clip.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate carousel",
+        ) from exc
+
+    slide_count = len(item.config.get("slides") or [])
+    redirect_url = f"/carousels/new?queueItem={item.id}"
+    logger.info(
+        "[clips] generate carousel complete user_id=%s clip_id=%s queue_item_id=%s slides=%s provider=%s",
+        current_user.id,
+        clip.id,
+        item.id,
+        slide_count,
+        provider_used,
+    )
+    return ClipGenerateCarouselResponse(
+        carousel_id=item.id,
+        queue_item_id=item.id,
+        slide_count=slide_count,
+        provider_used=provider_used,
+        redirect_url=redirect_url,
     )
 
 

@@ -146,17 +146,18 @@ def _clip_text(value: str | None, *, max_len: int = 120) -> str | None:
 def _normalize_config(config: dict, template: dict) -> dict:
     parsed = CarouselConfig.model_validate(config)
     slides = list(parsed.slides)
-    if len(slides) < 6:
-        raise CarouselError("Generated carousel must include at least 6 slides")
-    slides = slides[:6]
+    if len(slides) < 5:
+        raise CarouselError("Generated carousel must include at least 5 slides")
+    slides = slides[:12]
 
     normalized_slides: list[dict] = []
     default_cta = 'Comment *"GUIDE"* and I\'ll DM you the link'
+    final_index = len(slides) - 1
     for index, slide in enumerate(slides):
         data = slide.model_dump(exclude_none=True)
         if index == 0:
             data["type"] = "hook"
-        elif index == 5:
+        elif index == final_index:
             data["type"] = "cta"
         else:
             data["type"] = "body"
@@ -178,7 +179,7 @@ def _normalize_config(config: dict, template: dict) -> dict:
             data["glow"] = _clip_text(str(data["glow"]), max_len=40)
         if "image" in data:
             data["image"] = _clip_text(str(data["image"]), max_len=200)
-        if index == 5:
+        if index == final_index:
             cta_action = _clip_text(str(data.get("cta_action") or ""), max_len=120)
             if not cta_action:
                 data["cta_action"] = default_cta
