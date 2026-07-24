@@ -9,7 +9,7 @@ from app.config import settings
 from app.models.brand_profile import BrandProfile
 
 BANDIT_LM_BASE_URL = "https://api.deepseek.com"
-BANDIT_LM_MODEL = "deepseek-chat"
+BANDIT_LM_MODEL = "deepseek-v4-flash"
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\\s*(.*?)\\s*```", re.IGNORECASE | re.DOTALL)
 
 

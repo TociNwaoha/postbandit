@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # DeepSeek
     deepseek_api_key: str = "placeholder"
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-v4-flash"
     deepseek_timeout_sec: int = 30
     bandit_lm_api_key: str = "placeholder"
     google_ai_api_key: str = "placeholder"
