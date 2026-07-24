@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.clip import Clip
 from app.models.video import Video
 from app.schemas.clip import (
+    ClipCopyOptionsResponse,
     ClipOverlayAssetResponse,
     ClipResponse,
     ClipUpdateRequest,
@@ -27,7 +28,7 @@ from app.api.deps import get_current_user
 from app.services.ai_copy import (
     AICopyError,
     AICopyUnavailableError,
-    generate_clip_copy,
+    generate_copy_options,
     generate_platform_copy,
     provider_configured,
 )
@@ -277,9 +278,10 @@ async def delete_clip_overlay_asset(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/clips/{clip_id}/generate-copy", response_model=ClipResponse)
+@router.post("/clips/{clip_id}/generate-copy", response_model=ClipCopyOptionsResponse)
 async def generate_copy_for_clip(
     clip_id: str,
+    platform: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -318,11 +320,10 @@ async def generate_copy_for_clip(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI copy unavailable")
 
     try:
-        generated = generate_clip_copy(
+        generated = generate_copy_options(
             transcript_text=transcript_text,
             video_title=video.title,
-            clip_start=clip.start_time,
-            clip_end=clip.end_time,
+            platform=platform,
         )
     except AICopyUnavailableError as exc:
         clip.title_options = None
@@ -342,23 +343,31 @@ async def generate_copy_for_clip(
         await db.refresh(clip)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate clip copy")
 
-    clip.title_options = generated.title_options
-    clip.hashtag_options = generated.hashtag_options
+    clip.title_options = generated.titles
+    clip.hashtag_options = generated.hashtag_sets
     clip.copy_generation_status = "ready"
     clip.copy_generation_error = None
-    clip.title = generated.title_options[0] if generated.title_options else clip.title
-    clip.hashtags = generated.hashtag_options[0] if generated.hashtag_options else clip.hashtags
+    clip.title = generated.titles[0] if generated.titles else clip.title
+    clip.hashtags = generated.hashtag_sets[0] if generated.hashtag_sets else clip.hashtags
     await db.commit()
     await db.refresh(clip)
 
     logger.info(
-        "[clips] generate copy complete user_id=%s clip_id=%s titles=%s hashtag_sets=%s",
+        "[clips] generate copy complete user_id=%s clip_id=%s platform=%s titles=%s captions=%s hashtag_sets=%s",
         current_user.id,
         clip.id,
-        len(generated.title_options),
-        len(generated.hashtag_options),
+        generated.platform or "universal",
+        len(generated.titles),
+        len(generated.captions),
+        len(generated.hashtag_sets),
     )
-    return _clip_to_response(clip)
+    return ClipCopyOptionsResponse(
+        provider_used="deepseek",
+        titles=generated.titles,
+        captions=generated.captions,
+        hashtag_sets=generated.hashtag_sets,
+        platform=generated.platform,
+    )
 
 
 @router.post(

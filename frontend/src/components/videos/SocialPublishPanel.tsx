@@ -8,6 +8,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { api, ApiError } from "@/lib/api";
 import {
   Clip,
+  ClipCopyOptionsResponse,
   ConnectedAccount,
   Export,
   PlatformCopyGenerateResponse,
@@ -41,6 +42,7 @@ interface TargetDraft {
 }
 
 const PLATFORM_ORDER: SocialPlatform[] = ["instagram", "threads", "facebook", "youtube", "x", "tiktok", "linkedin"];
+const COPY_REGEN_PLATFORMS: SocialPlatform[] = ["youtube", "tiktok", "instagram", "x", "facebook", "threads"];
 const ACTIVE_PUBLISH_STATUSES = new Set<PublishJobStatus>(["queued", "publishing"]);
 const PRIVACY_OPTIONS_BY_PLATFORM: Partial<Record<SocialPlatform, Array<{ value: string; label: string }>>> = {
   youtube: [
@@ -96,23 +98,6 @@ function emptyFields(): PublishFormFields {
 function normalizeText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length ? trimmed : null;
-}
-
-function cleanText(value: string | null | undefined): string {
-  return (value || "").trim();
-}
-
-function descriptionFromTranscript(transcript: string | null | undefined): string {
-  const normalized = (transcript || "").replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
-
-  const maxLen = 260;
-  if (normalized.length <= maxLen) return normalized;
-
-  const cut = normalized.slice(0, maxLen);
-  const lastSpace = cut.lastIndexOf(" ");
-  const safeCut = lastSpace > 120 ? cut.slice(0, lastSpace) : cut;
-  return `${safeCut.trim()}...`;
 }
 
 function parseHashtags(value: string): string[] | null {
@@ -595,6 +580,61 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
   );
 }
 
+interface CopyOptionPickerProps {
+  label: string;
+  options: string[] | string[][];
+  currentValue: string;
+  onSelect: (value: string) => void;
+  isHashtags?: boolean;
+}
+
+function CopyOptionPicker({
+  label,
+  options,
+  currentValue,
+  onSelect,
+  isHashtags = false,
+}: CopyOptionPickerProps) {
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    setExpanded(true);
+  }, [options]);
+
+  if (!expanded || !options.length) return null;
+
+  return (
+    <div className="mt-2 space-y-2 rounded-lg border border-[var(--app-border)] bg-white p-2.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-muted)]">
+        {label} options — pick one
+      </p>
+      {options.map((option, index) => {
+        const value = isHashtags ? (option as string[]).join(" ") : String(option);
+        const selected = currentValue.trim() === value.trim();
+
+        return (
+          <button
+            key={`${label}-${index}-${value.slice(0, 24)}`}
+            type="button"
+            onClick={() => {
+              onSelect(value);
+              window.setTimeout(() => setExpanded(false), 150);
+            }}
+            className={`w-full rounded-md border px-3 py-2 text-left text-xs leading-5 transition ${
+              selected
+                ? "border-[#1D3FD0] bg-[#1D3FD0]/10 text-[#1633B8]"
+                : "border-[var(--app-border)] bg-white text-[var(--app-text)] hover:border-[#1D3FD0]/50 hover:bg-[#1D3FD0]/5"
+            }`}
+          >
+            <span className="mr-2 text-[10px] font-semibold text-[var(--app-subtle)]">{index + 1}</span>
+            {value}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SocialPublishPanel({
   exports,
   clip: initialClip,
@@ -620,6 +660,8 @@ export function SocialPublishPanel({
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [generatingCopy, setGeneratingCopy] = useState(false);
+  const [generatingCopyPlatform, setGeneratingCopyPlatform] = useState<SocialPlatform | null>(null);
+  const [copyOptions, setCopyOptions] = useState<ClipCopyOptionsResponse | null>(null);
   const [generatingPlatformCopy, setGeneratingPlatformCopy] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [showUniversalEditor, setShowUniversalEditor] = useState(false);
@@ -808,50 +850,56 @@ export function SocialPublishPanel({
     }));
   };
 
-  const applyClipCopyToUniversalFields = (source: Clip) => {
-    const title = cleanText(source.title_options?.[0] || source.title || "");
-    const hashtagsArray = source.hashtag_options?.[0] || source.hashtags || [];
-    const hashtags = hashtagsArray.join(" ").trim();
-    const caption = [title, hashtags].filter(Boolean).join("\n\n");
-    const description = descriptionFromTranscript(source.transcript_text);
-
+  const applyCopyOptionsToUniversalFields = (options: ClipCopyOptionsResponse) => {
     setUniversalFields((previous) => ({
       ...previous,
-      title,
-      caption,
-      description,
-      hashtags,
+      title: options.titles[0] || previous.title,
+      caption: options.captions[0] || previous.caption,
+      hashtags: (options.hashtag_sets[0] || []).join(" ") || previous.hashtags,
     }));
   };
 
-  const handleGenerateCopy = async () => {
+  const handleGenerateCopy = async (platform?: SocialPlatform) => {
     setError(null);
     setMessage(null);
-
-    const hasStoredCopy =
-      clip.copy_generation_status === "ready" &&
-      Array.isArray(clip.title_options) &&
-      clip.title_options.length > 0 &&
-      Array.isArray(clip.hashtag_options) &&
-      clip.hashtag_options.length > 0;
-
-    if (hasStoredCopy) {
-      applyClipCopyToUniversalFields(clip);
-      setMessage("Filled fields from existing AI clip copy.");
-      return;
-    }
+    setCopyOptions(null);
+    setGeneratingCopyPlatform(platform || null);
 
     setGeneratingCopy(true);
     try {
-      const updatedClip = await api.post<Clip>(`/api/clips/${clip.id}/generate-copy`, {});
-      setClip(updatedClip);
+      const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
+      const generated = await api.post<ClipCopyOptionsResponse>(`/api/clips/${clip.id}/generate-copy${query}`, {});
+      setCopyOptions(generated);
+      const updatedClip = {
+        ...clip,
+        copy_generation_status: "ready",
+        copy_generation_error: null,
+        title: generated.titles[0] || clip.title,
+        hashtags: generated.hashtag_sets[0] || clip.hashtags,
+        title_options: generated.titles,
+        hashtag_options: generated.hashtag_sets,
+      };
+      setClip((previous) => ({
+        ...previous,
+        copy_generation_status: "ready",
+        copy_generation_error: null,
+        title: generated.titles[0] || previous.title,
+        hashtags: generated.hashtag_sets[0] || previous.hashtags,
+        title_options: generated.titles,
+        hashtag_options: generated.hashtag_sets,
+      }));
       onClipUpdate?.(updatedClip);
-      applyClipCopyToUniversalFields(updatedClip);
-      setMessage("Generated clip copy and filled title, caption, and description.");
+      applyCopyOptionsToUniversalFields(generated);
+      setMessage(
+        generated.platform
+          ? `Generated 5 ${generated.platform} copy options for title, caption, and hashtags.`
+          : "Generated 5 copy options for title, caption, and hashtags."
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI copy generation is unavailable right now.");
     } finally {
       setGeneratingCopy(false);
+      setGeneratingCopyPlatform(null);
     }
   };
 
@@ -1128,6 +1176,26 @@ export function SocialPublishPanel({
         <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
           Universal fields apply unless a platform override is enabled.
         </p>
+        {copyOptions ? (
+          <div className="mt-2">
+            <p className="text-[11px] text-[var(--app-subtle)]">
+              Regenerate the universal options for a specific platform:
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {COPY_REGEN_PLATFORMS.map((platform) => (
+                <button
+                  key={`copy-regenerate-${platform}`}
+                  type="button"
+                  onClick={() => void handleGenerateCopy(platform)}
+                  disabled={generatingCopy}
+                  className="rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1 text-[11px] font-medium capitalize text-[var(--app-text)] hover:border-[#1D3FD0]/50 hover:bg-[#1D3FD0]/5 disabled:opacity-60"
+                >
+                  {generatingCopyPlatform === platform ? "..." : platform}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="mt-2 grid gap-2 md:grid-cols-2">
           <label className="text-xs text-[var(--app-muted)]">
             Title
@@ -1211,6 +1279,29 @@ export function SocialPublishPanel({
             />
           </div>
         </div>
+        {copyOptions ? (
+          <div className="mt-3 grid gap-3">
+            <CopyOptionPicker
+              label="Title"
+              options={copyOptions.titles}
+              currentValue={universalFields.title}
+              onSelect={(value) => setUniversalFields((prev) => ({ ...prev, title: value }))}
+            />
+            <CopyOptionPicker
+              label="Caption"
+              options={copyOptions.captions}
+              currentValue={universalFields.caption}
+              onSelect={(value) => setUniversalFields((prev) => ({ ...prev, caption: value }))}
+            />
+            <CopyOptionPicker
+              label="Hashtags"
+              options={copyOptions.hashtag_sets}
+              currentValue={universalFields.hashtags}
+              onSelect={(value) => setUniversalFields((prev) => ({ ...prev, hashtags: value }))}
+              isHashtags
+            />
+          </div>
+        ) : null}
       </div>
       ) : null}
 

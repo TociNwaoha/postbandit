@@ -592,6 +592,14 @@ export interface PlatformCopyGenerateResponse {
   errors: Partial<Record<SocialPlatform, string>>;
 }
 
+export interface ClipCopyOptionsResponse {
+  provider_used: "deepseek";
+  titles: string[];
+  captions: string[];
+  hashtag_sets: string[][];
+  platform: SocialPlatform | null;
+}
+
 export interface FullVideoExportResponse {
   clip_id: string;
   export_id: string;

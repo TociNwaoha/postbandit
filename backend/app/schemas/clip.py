@@ -73,3 +73,11 @@ class PlatformCopyGenerateResponse(BaseModel):
     provider_used: str
     results: dict[str, PlatformCopyFields]
     errors: dict[str, str]
+
+
+class ClipCopyOptionsResponse(BaseModel):
+    provider_used: str = "deepseek"
+    titles: list[str] = Field(min_length=5, max_length=5)
+    captions: list[str] = Field(min_length=5, max_length=5)
+    hashtag_sets: list[list[str]] = Field(min_length=5, max_length=5)
+    platform: str | None = None
