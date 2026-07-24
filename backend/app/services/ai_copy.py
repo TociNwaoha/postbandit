@@ -446,7 +446,8 @@ Respond ONLY with valid JSON in this exact shape:
 Rules:
 - Titles: 50-100 characters, strong hook, no generic clickbait
 - Captions: under 280 characters, specific to the video content, not the same text as the title
-- Descriptions: 120-250 words, useful and specific, written for publish pages and YouTube-style descriptions
+- Descriptions: each description must be one full 120-250 word paragraph, useful and specific, written for publish pages and YouTube-style descriptions
+- Descriptions are not captions. Do not return short blurbs in the descriptions array.
 - Hashtags: relevant to the actual video content
 - All 5 variations must be meaningfully different, not minor rewrites
 - Base everything on the content brief; do not use generic filler"""
