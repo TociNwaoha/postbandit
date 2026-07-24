@@ -665,6 +665,7 @@ export function SocialPublishPanel({
   const [generatingPlatformCopy, setGeneratingPlatformCopy] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [showUniversalEditor, setShowUniversalEditor] = useState(false);
+  const [showScheduleConfirm, setShowScheduleConfirm] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const schedulePrefillAppliedRef = useRef(false);
@@ -722,6 +723,24 @@ export function SocialPublishPanel({
     }
     return map;
   }, [publishJobs]);
+
+  const selectedPlatforms = useMemo(
+    () =>
+      PLATFORM_ORDER.filter((platform) => {
+        const draft = targetDrafts[platform];
+        return Boolean(draft?.enabled && draft.connected_account_id);
+      }),
+    [targetDrafts]
+  );
+
+  const scheduleConfirmTime = useMemo(() => {
+    if (universalFields.scheduled_for) return universalFields.scheduled_for;
+    for (const platform of selectedPlatforms) {
+      const value = targetDrafts[platform]?.override.scheduled_for;
+      if (value) return value;
+    }
+    return "";
+  }, [selectedPlatforms, targetDrafts, universalFields.scheduled_for]);
 
   const loadMeta = async () => {
     setLoadingMeta(true);
@@ -1053,6 +1072,10 @@ export function SocialPublishPanel({
     }
   };
 
+  const handleSchedulePosts = async () => {
+    await handleCreatePublishJobs();
+  };
+
   const handleRetry = async (publishJobId: string) => {
     setRetryingJobId(publishJobId);
     setError(null);
@@ -1095,10 +1118,11 @@ export function SocialPublishPanel({
   };
 
   return (
-    <div id="publish-social" className="scroll-mt-6 space-y-3">
+    <>
+    <div id="publish-social" className="scroll-mt-6 space-y-2 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[var(--app-text)]">Publish to Social</h3>
+          <h3 className="text-sm font-semibold text-[var(--app-text)]">Publish to Social</h3>
           <p className="mt-0.5 text-[11px] text-[var(--app-muted)]">
             Publish from a ready export. One publish job is created per selected platform/account.
           </p>
@@ -1111,11 +1135,11 @@ export function SocialPublishPanel({
         </Link>
       </div>
 
-      {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      {message ? <p className="text-xs text-emerald-700">{message}</p> : null}
+      {error ? <p className="text-xs text-red-700">{error}</p> : null}
 
       {loadingMeta ? (
-        <p className="inline-flex items-center gap-2 text-sm text-[var(--app-muted)]">
+        <p className="inline-flex items-center gap-2 text-xs text-[var(--app-muted)]">
           <LoadingSpinner size="sm" />
           Loading social providers...
         </p>
@@ -1312,7 +1336,7 @@ export function SocialPublishPanel({
       </div>
       ) : null}
 
-      <div className="grid gap-2 lg:grid-cols-2">
+      <div className="grid gap-1.5 lg:grid-cols-2 2xl:grid-cols-3">
         {PLATFORM_ORDER.map((platform) => {
           const provider = providersByPlatform[platform];
           const platformAccounts = accountsByPlatform[platform] || [];
@@ -1344,11 +1368,11 @@ export function SocialPublishPanel({
           const showOverrideEditor = Boolean(draft?.use_override || (platform === "tiktok" && draft?.enabled));
 
           return (
-            <div key={platform} className="rounded-lg border border-[var(--app-border)] bg-white p-2.5 shadow-[0_1px_2px_rgba(9,21,40,0.04)]">
+            <div key={platform} className="rounded-md border border-[var(--app-border)] bg-white p-2 shadow-[0_1px_2px_rgba(9,21,40,0.04)]">
               <div className="flex items-center justify-between gap-2">
-                <label className="inline-flex min-w-0 items-center gap-2 text-sm text-[var(--app-text)]">
+                <label className="inline-flex min-w-0 items-center gap-1.5 text-xs text-[var(--app-text)]">
                   <span
-                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${brand.baseClassName}`}
+                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md [&_svg]:h-3.5 [&_svg]:w-3.5 ${brand.baseClassName}`}
                     aria-hidden="true"
                   >
                     {brand.icon}
@@ -1371,7 +1395,7 @@ export function SocialPublishPanel({
                     disabled={!providerReady || !hasConnectedAccounts}
                     onChange={(event) => handlePlatformToggle(platform, event.target.checked)}
                     aria-label={`Publish to ${providerName}`}
-                    className="h-4 w-4 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
+                    className="h-3.5 w-3.5 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
                   />
                 {latestJob ? (
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyles[latestJob.status]}`}>
@@ -1383,7 +1407,7 @@ export function SocialPublishPanel({
                 </div>
               </div>
 
-              <p className="mt-1.5 text-[11px] leading-4 text-[var(--app-muted)]">
+              <p className="mt-1 text-[10px] leading-4 text-[var(--app-muted)]">
                 {!providerReady
                   ? provider?.setup_message || "Provider is not configured"
                   : platform === "facebook"
@@ -1422,14 +1446,14 @@ export function SocialPublishPanel({
                 </p>
               ) : null}
 
-              <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                <label className="text-xs text-[var(--app-muted)]">
+              <div className="mt-1.5 grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <label className="text-[11px] text-[var(--app-muted)]">
                   {platform === "facebook" ? "Page Destination" : "Account"}
                   <select
                     value={draft?.connected_account_id || ""}
                     onChange={(event) => handlePlatformAccountChange(platform, event.target.value)}
                     disabled={!hasConnectedAccounts}
-                    className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1.5 text-xs text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
+                    className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-white px-2 py-1 text-[11px] text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
                   >
                     {selectableAccounts.length ? null : (
                       <option value="">
@@ -1449,12 +1473,12 @@ export function SocialPublishPanel({
                     Enable to choose TikTok privacy.
                   </p>
                 ) : (
-                  <label className="inline-flex items-center gap-2 text-xs text-[var(--app-muted)]">
+                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[var(--app-muted)]">
                     <input
                       type="checkbox"
                       checked={draft?.use_override || false}
                       onChange={(event) => handleOverrideToggle(platform, event.target.checked)}
-                      className="h-4 w-4 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
+                      className="h-3.5 w-3.5 rounded border-[var(--app-border)] bg-white text-[#1D3FD0] focus:ring-[#1D3FD0]"
                     />
                     Use per-platform overrides
                   </label>
@@ -1648,6 +1672,14 @@ export function SocialPublishPanel({
         </button>
         <button
           type="button"
+          onClick={() => setShowScheduleConfirm(true)}
+          disabled={publishing || selectedPlatforms.length === 0 || !selectedExportId || !readyExports.length}
+          className="rounded-md border border-[#1D3FD0] px-3 py-1.5 text-sm font-medium text-[#1D3FD0] transition-colors hover:bg-[#1D3FD0]/5 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Schedule Posts
+        </button>
+        <button
+          type="button"
           onClick={() => void loadPublishJobs(selectedExportId)}
           disabled={loadingJobs || !selectedExportId}
           className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)] disabled:opacity-60"
@@ -1685,5 +1717,54 @@ export function SocialPublishPanel({
         </div>
       ) : null}
     </div>
+    {showScheduleConfirm ? (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+          <h3 className="text-base font-semibold text-gray-900">Schedule posts</h3>
+          <p className="mt-2 text-sm text-gray-600">We&apos;ll schedule this clip for:</p>
+          <ul className="mt-3 space-y-1">
+            {selectedPlatforms.map((platform) => {
+              const brand = getPlatformBrandMeta(platform);
+              return (
+                <li key={platform} className="flex items-center gap-2 text-sm text-gray-700">
+                  <span className="h-2 w-2 rounded-full bg-[#1D3FD0]" />
+                  <span>{brand.displayName}</span>
+                </li>
+              );
+            })}
+          </ul>
+          {scheduleConfirmTime ? (
+            <p className="mt-3 text-xs text-gray-500">
+              Scheduled for: {formatScheduleLabel(scheduleConfirmTime)}
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-amber-700">
+              No schedule time is set. Confirming will create publish jobs with the current timing fields.
+            </p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowScheduleConfirm(false)}
+              className="px-3 py-1.5 text-sm text-gray-600 transition-colors hover:text-gray-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setShowScheduleConfirm(false);
+                await handleSchedulePosts();
+              }}
+              disabled={publishing}
+              className="rounded-lg bg-[#1D3FD0] px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-[#1633B8] disabled:opacity-60"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }

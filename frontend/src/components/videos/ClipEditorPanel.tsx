@@ -912,33 +912,33 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="space-y-4">
+      <Card padding="sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-[var(--app-muted)]">Clip Editor</p>
-            <h2 className="mt-1 text-xl font-semibold text-[var(--app-text)]">{clip.title || "Untitled clip"}</h2>
-            <p className="mt-1 text-sm text-[var(--app-muted)]">
+            <h2 className="mt-1 text-lg font-semibold text-[var(--app-text)]">{clip.title || "Untitled clip"}</h2>
+            <p className="mt-1 text-xs text-[var(--app-muted)]">
               Video: {video.title || "Untitled video"} • Clip {formatTimeBoundary(clip.start_time)} -{" "}
               {formatTimeBoundary(clip.end_time)}
             </p>
           </div>
           <Link
             href={`/videos/${video.id}`}
-            className="rounded-md border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
+            className="rounded-md border border-[var(--app-border)] px-2.5 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
           >
             Back to Video
           </Link>
         </div>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <Card>
+      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+        <Card padding="sm">
           <h3 className="text-sm font-semibold text-[var(--app-text)]">Preview</h3>
           <p className="mt-1 text-xs text-[var(--app-muted)]">
             Source preview with current clip boundaries and caption style preview for selected export settings.
           </p>
-          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <div className="mt-3 grid gap-3 xl:grid-cols-2">
             <div>
               <div className="mb-2 flex items-center justify-between text-xs text-[var(--app-muted)]">
                 <span>Source Preview</span>
@@ -1195,7 +1195,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
           </div>
           {previewError ? <p className="mt-2 text-sm text-red-700">{previewError}</p> : null}
 
-          <div className="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4">
+          <div className="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--app-muted)]">
               <span>Source Timeline</span>
               <span>
@@ -1250,37 +1250,37 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
             )}
 
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+              <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5">
                 <p className="text-[11px] uppercase tracking-wide text-[var(--app-muted)]">Clip Start</p>
                 <p className="text-sm font-semibold text-[var(--app-text)]">
                   {formatClockTime(normalizedClipRange?.start ?? parseNumberInput(clipStart) ?? 0)}
                 </p>
               </div>
-              <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2">
+              <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5">
                 <p className="text-[11px] uppercase tracking-wide text-[var(--app-muted)]">Clip End</p>
                 <p className="text-sm font-semibold text-[var(--app-text)]">
                   {formatClockTime(normalizedClipRange?.end ?? parseNumberInput(clipEnd) ?? 0)}
                 </p>
               </div>
-              <div className="rounded-md border border-[#1D3FD0]/50 bg-[#1D3FD0]/10 px-3 py-2">
+              <div className="rounded-md border border-[#1D3FD0]/50 bg-[#1D3FD0]/10 px-2.5 py-1.5">
                 <p className="text-[11px] uppercase tracking-wide text-[#1633B8]">Clip Duration</p>
-                <p className="text-base font-semibold text-[var(--app-text)]">{formatSeconds(normalizedClipRange?.duration ?? computedDuration)}</p>
+                <p className="text-sm font-semibold text-[var(--app-text)]">{formatSeconds(normalizedClipRange?.duration ?? computedDuration)}</p>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => void handleReplay()}
-              className="rounded-md bg-[#1D3FD0] px-3 py-2 text-sm font-medium text-white hover:bg-[#1633B8]"
+              className="rounded-md bg-[#1D3FD0] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1633B8]"
             >
               Replay Clip
             </button>
             <button
               type="button"
               onClick={handleSeekStart}
-              className="rounded-md border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
+              className="rounded-md border border-[var(--app-border)] px-3 py-1.5 text-xs text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
             >
               Jump to Clip Start
             </button>
@@ -1292,16 +1292,16 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
           </div>
         </Card>
 
-        <Card>
+        <Card padding="sm">
           <h3 className="text-sm font-semibold text-[var(--app-text)]">Trim</h3>
           {clip.thumbnail_url ? (
             <img
               src={clip.thumbnail_url}
               alt="Clip thumbnail"
-              className="mt-4 h-32 w-full rounded-md border border-[var(--app-border)] object-cover"
+              className="mt-3 h-24 w-full rounded-md border border-[var(--app-border)] object-cover"
             />
           ) : null}
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 space-y-2.5">
             <label className="block text-xs text-[var(--app-muted)]">
               Start (seconds)
               <input
@@ -1310,7 +1310,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                 min={0}
                 value={clipStart}
                 onChange={(event) => setClipStart(event.target.value)}
-                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
               />
             </label>
             <label className="block text-xs text-[var(--app-muted)]">
@@ -1321,7 +1321,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                 min={0}
                 value={clipEnd}
                 onChange={(event) => setClipEnd(event.target.value)}
-                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
               />
             </label>
             <p className="text-xs text-[var(--app-muted)]">
@@ -1337,7 +1337,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
               type="button"
               onClick={() => void handleSaveTrim()}
               disabled={saveLoading}
-              className="w-full rounded-md bg-[#1D3FD0] px-3 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
+              className="w-full rounded-md bg-[#1D3FD0] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
             >
               {saveLoading ? "Saving..." : "Save Trim"}
             </button>
@@ -1345,18 +1345,18 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
             {saveError ? <p className="text-xs text-red-700">{saveError}</p> : null}
           </div>
 
-          <div className="mt-5 border-t border-[var(--app-border)] pt-4">
+          <div className="mt-4 border-t border-[var(--app-border)] pt-3">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">Framing</h4>
             <p className="mt-1 text-xs text-[var(--app-muted)]">
               Choose export aspect and drag the source frame in preview. Aspect changes reset frame to centered.
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-2 gap-2">
               {(["original", "9:16", "1:1", "16:9"] as AspectRatio[]).map((ratio) => (
                 <button
                   key={ratio}
                   type="button"
                   onClick={() => handleAspectRatioChange(ratio)}
-                  className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                  className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                     aspectRatio === ratio
                       ? "border-[#1D3FD0] bg-[#1D3FD0]/20 text-white"
                       : "border-[var(--app-border)] text-[var(--app-muted)] hover:bg-[var(--app-surface-soft)]"
@@ -1385,12 +1385,12 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
               Anchor: x {clampedFrameAnchorX.toFixed(3)} • y {clampedFrameAnchorY.toFixed(3)}
             </p>
 
-            <div className="mt-4 border-t border-[var(--app-border)] pt-3">
+            <div className="mt-3 border-t border-[var(--app-border)] pt-3">
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setImageOverlayOpen((current) => !current)}
-                  className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                  className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                     imageOverlayOpen
                       ? "border-[#1D3FD0] bg-[#1D3FD0]/10 text-[#1D3FD0]"
                       : "border-[var(--app-border)] text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
@@ -1401,7 +1401,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                 <button
                   type="button"
                   onClick={() => setTextOverlayOpen((current) => !current)}
-                  className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                  className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                     textOverlayOpen
                       ? "border-[#1D3FD0] bg-[#1D3FD0]/10 text-[#1D3FD0]"
                       : "border-[var(--app-border)] text-[var(--app-text)] hover:bg-[var(--app-surface-soft)]"
@@ -1412,7 +1412,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
               </div>
 
               {imageOverlayOpen ? (
-                <div className="mt-3 space-y-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                <div className="mt-3 space-y-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-[var(--app-text)]">Image or logo</p>
                     {overlayAsset ? (
@@ -1527,7 +1527,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                       }))
                     }
                     placeholder="Add a hook, CTA, or label"
-                    className="w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+                    className="w-full rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs text-[var(--app-muted)]">
@@ -1617,25 +1617,25 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
         </Card>
       </div>
 
-      <Card>
+      <Card padding="sm">
         <h3 className="text-sm font-semibold text-[var(--app-text)]">Transcript Context</h3>
-        <p className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3 text-sm text-[var(--app-muted)]">
+        <p className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-2.5 text-xs text-[var(--app-muted)]">
           {clip.transcript_text || "Transcript excerpt unavailable for this clip."}
         </p>
       </Card>
 
-      <Card>
+      <Card padding="sm">
         <h3 className="text-sm font-semibold text-[var(--app-text)]">Export Settings</h3>
         <div className="mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-xs text-[var(--app-muted)]">
           Selected aspect from Framing: <span className="font-semibold text-[var(--app-text)]">{aspectRatio}</span>
         </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="text-xs text-[var(--app-muted)]">
             Caption Style
             <select
               value={captionStyle}
               onChange={(event) => setCaptionStyle(event.target.value as CaptionStyle)}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             >
               {captionStyleOptions.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -1679,7 +1679,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
             <select
               value={captionColorVariant}
               onChange={(event) => setCaptionColorVariant(event.target.value as CaptionColorVariant)}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             >
               {captionColorVariantOptions.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -1715,7 +1715,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
             <select
               value={captionFormat}
               onChange={(event) => setCaptionFormat(event.target.value as CaptionFormat)}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
             >
               <option value="none">None</option>
               <option value="burned_in">Burned In</option>
@@ -1728,7 +1728,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
               value={captionCadence}
               onChange={(event) => setCaptionCadence(event.target.value as CaptionCadence)}
               disabled={captionFormat === "none"}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-3 py-2 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none disabled:opacity-50"
             >
               <option value="split_line">Split Line</option>
               <option value="word_by_word">Word by Word</option>
@@ -1741,12 +1741,12 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
           </label>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void handleCreateExport()}
             disabled={createExportLoading}
-            className="rounded-md bg-[#1D3FD0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
+            className="rounded-md bg-[#1D3FD0] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1633B8] disabled:opacity-60"
           >
             {createExportLoading ? "Creating Export..." : "Create Export"}
           </button>
@@ -1754,7 +1754,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
         </div>
       </Card>
 
-      <Card>
+      <Card padding="sm">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--app-text)]">Export History</h3>
           {exportsLoading ? (
@@ -1767,16 +1767,16 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
         {exportError ? <p className="mt-3 text-sm text-red-700">{exportError}</p> : null}
 
         {!exports.length && !exportsLoading ? (
-          <p className="mt-4 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4 text-sm text-[var(--app-muted)]">
+          <p className="mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3 text-sm text-[var(--app-muted)]">
             No exports yet for this clip.
           </p>
         ) : null}
 
         {exports.length ? (
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 space-y-2">
             {exports.map((item) => (
-              <div key={item.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+              <div key={item.id} className="rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-[var(--app-text)]">
                     <p className="font-medium">Export {item.id.slice(0, 8)}</p>
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
@@ -1825,8 +1825,8 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
         ) : null}
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
-        <Card>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
+        <Card padding="sm">
           <SocialPublishPanel
             clip={clip}
             exports={exports}
@@ -1834,7 +1834,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
             initialScheduledFor={initialScheduleAt}
           />
         </Card>
-        <Card>
+        <Card padding="sm">
           <CarouselSchedulePanel clip={clip} initialScheduledFor={initialScheduleAt} />
         </Card>
       </div>
