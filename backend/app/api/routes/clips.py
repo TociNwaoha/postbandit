@@ -3,7 +3,7 @@ import io
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Response, UploadFile, status
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,6 +17,7 @@ from app.models.user import User
 from app.models.clip import Clip
 from app.models.video import Video
 from app.schemas.clip import (
+    ClipCopyGenerateRequest,
     ClipCopyOptionsResponse,
     ClipGenerateCarouselResponse,
     ClipOverlayAssetResponse,
@@ -307,6 +308,7 @@ async def delete_clip_overlay_asset(
 async def generate_copy_for_clip(
     clip_id: str,
     platform: str | None = None,
+    body: ClipCopyGenerateRequest | None = Body(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -345,6 +347,8 @@ async def generate_copy_for_clip(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI copy unavailable")
 
     try:
+        requested_platform = (body.platform if body and body.platform is not None else platform)
+        instructions = body.instructions if body else None
         content_brief = " ".join((clip.content_brief or "").split())
         if not content_brief:
             content_brief = generate_content_brief(
@@ -358,7 +362,8 @@ async def generate_copy_for_clip(
         generated = generate_copy_options(
             content_brief=content_brief,
             video_title=video.title,
-            platform=platform,
+            platform=requested_platform,
+            instructions=instructions,
         )
     except AICopyUnavailableError as exc:
         clip.title_options = None

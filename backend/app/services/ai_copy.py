@@ -140,7 +140,7 @@ def _ensure_three_hashtag_sets(raw_sets: object) -> list[list[str]]:
     return sets[:3]
 
 
-def _ensure_five_strings(raw_values: object, *, field_name: str, max_length: int | None = None) -> list[str]:
+def _ensure_three_strings(raw_values: object, *, field_name: str, max_length: int | None = None) -> list[str]:
     values: list[str] = []
     if isinstance(raw_values, list):
         for item in raw_values:
@@ -153,24 +153,24 @@ def _ensure_five_strings(raw_values: object, *, field_name: str, max_length: int
     if not values:
         raise AICopyError(f"AI response missing {field_name} options")
 
-    while len(values) < 5:
+    while len(values) < 3:
         values.append(values[len(values) % len(values)])
-    return values[:5]
+    return values[:3]
 
 
 def _words(value: str) -> list[str]:
     return [piece for piece in " ".join((value or "").split()).split(" ") if piece]
 
 
-def _ensure_five_descriptions(raw_values: object) -> list[str]:
-    values = _ensure_five_strings(raw_values, field_name="description", max_length=None)
+def _ensure_three_descriptions(raw_values: object) -> list[str]:
+    values = _ensure_three_strings(raw_values, field_name="description", max_length=None)
     normalized: list[str] = []
     for value in values:
         words = _words(value)
         if len(words) > 250:
             value = " ".join(words[:250]).rstrip(" ,.;:") + "."
         normalized.append(value)
-    return normalized[:5]
+    return normalized[:3]
 
 
 def _too_similar(a: str, b: str) -> bool:
@@ -181,7 +181,7 @@ def _too_similar(a: str, b: str) -> bool:
     return left == right or left in right[: max(len(left) + 8, 40)]
 
 
-def _ensure_five_hashtag_sets(raw_sets: object, *, limit: int = 15, minimum: int = 1) -> list[list[str]]:
+def _ensure_three_hashtag_sets(raw_sets: object, *, limit: int = 15, minimum: int = 1) -> list[list[str]]:
     sets: list[list[str]] = []
     if isinstance(raw_sets, list):
         for raw in raw_sets:
@@ -192,9 +192,9 @@ def _ensure_five_hashtag_sets(raw_sets: object, *, limit: int = 15, minimum: int
     if not sets:
         raise AICopyError("AI response missing hashtag set options")
 
-    while len(sets) < 5:
+    while len(sets) < 3:
         sets.append(sets[len(sets) % len(sets)])
-    return sets[:5]
+    return sets[:3]
 
 
 def _extract_content_json(text: str) -> dict:
@@ -387,6 +387,7 @@ def generate_copy_options(
     content_brief: str | None = None,
     video_title: str | None = None,
     platform: str | None = None,
+    instructions: str | None = None,
 ) -> CopyOptionsResult:
     brief = " ".join((content_brief or transcript_text or "").split())
     if not brief:
@@ -397,6 +398,14 @@ def generate_copy_options(
         raise AICopyError("Unsupported platform for copy generation")
 
     platform_constraints = f"\n\n{PLATFORM_COPY_PROMPTS[normalized_platform]}" if normalized_platform else ""
+    normalized_instructions = " ".join((instructions or "").split())[:500].strip()
+    instructions_section = (
+        "\n\nAdditional instructions from the creator:\n"
+        f'"{normalized_instructions}"\n'
+        "Apply these instructions to every generated option."
+        if normalized_instructions
+        else ""
+    )
     hashtag_limit = (
         3
         if normalized_platform == "x"
@@ -421,22 +430,19 @@ def generate_copy_options(
 
 Video title context: {video_title or "Not provided"}
 {platform_constraints}
+{instructions_section}
 
-Generate 5 distinct variations for each field. Make them genuinely different in tone and angle:
+Generate 3 distinct variations for each field. Make them genuinely different in tone and angle:
 - Variation 1: Bold hook, grabs attention immediately
 - Variation 2: Storytelling, personal and relatable
-- Variation 3: Educational, value-forward, positions creator as expert
-- Variation 4: Question-based, drives comments and engagement
-- Variation 5: Conversational, casual, like texting a friend
+- Variation 3: Conversational, casual, like texting a friend
 
 Respond ONLY with valid JSON in this exact shape:
 {{
-  "titles": ["title option 1", "title option 2", "title option 3", "title option 4", "title option 5"],
-  "captions": ["caption option 1", "caption option 2", "caption option 3", "caption option 4", "caption option 5"],
-  "descriptions": ["description option 1", "description option 2", "description option 3", "description option 4", "description option 5"],
+  "titles": ["title option 1", "title option 2", "title option 3"],
+  "captions": ["caption option 1", "caption option 2", "caption option 3"],
+  "descriptions": ["description option 1", "description option 2", "description option 3"],
   "hashtag_sets": [
-    ["#tag1", "#tag2", "#tag3"],
-    ["#tag1", "#tag2", "#tag3"],
     ["#tag1", "#tag2", "#tag3"],
     ["#tag1", "#tag2", "#tag3"],
     ["#tag1", "#tag2", "#tag3"]
@@ -449,17 +455,17 @@ Rules:
 - Descriptions: each description must be one full 120-250 word paragraph, useful and specific, written for publish pages and YouTube-style descriptions
 - Descriptions are not captions. Do not return short blurbs in the descriptions array.
 - Hashtags: relevant to the actual video content
-- All 5 variations must be meaningfully different, not minor rewrites
+- All 3 variations must be meaningfully different, not minor rewrites
 - Base everything on the content brief; do not use generic filler"""
 
     parsed = _post_deepseek_json(system_prompt, user_prompt)
-    titles = _ensure_five_strings(parsed.get("titles"), field_name="title", max_length=120)
-    captions = _ensure_five_strings(parsed.get("captions"), field_name="caption", max_length=280)
+    titles = _ensure_three_strings(parsed.get("titles"), field_name="title", max_length=120)
+    captions = _ensure_three_strings(parsed.get("captions"), field_name="caption", max_length=280)
     for title, caption in zip(titles, captions, strict=False):
         if _too_similar(title, caption):
             raise AICopyError("AI response returned a caption too similar to its title")
-    descriptions = _ensure_five_descriptions(parsed.get("descriptions"))
-    hashtag_sets = _ensure_five_hashtag_sets(
+    descriptions = _ensure_three_descriptions(parsed.get("descriptions"))
+    hashtag_sets = _ensure_three_hashtag_sets(
         parsed.get("hashtag_sets"),
         limit=hashtag_limit,
         minimum=hashtag_minimum,

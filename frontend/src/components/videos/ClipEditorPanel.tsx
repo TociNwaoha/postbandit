@@ -1825,19 +1825,18 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
         ) : null}
       </Card>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
-        <Card padding="sm">
-          <SocialPublishPanel
-            clip={clip}
-            exports={exports}
-            onClipUpdate={setClip}
-            initialScheduledFor={initialScheduleAt}
-          />
-        </Card>
-        <Card padding="sm">
-          <CarouselSchedulePanel clip={clip} initialScheduledFor={initialScheduleAt} />
-        </Card>
-      </div>
+      <Card padding="sm">
+        <SocialPublishPanel
+          clip={clip}
+          exports={exports}
+          onClipUpdate={setClip}
+          initialScheduledFor={initialScheduleAt}
+        />
+      </Card>
+
+      <Card padding="sm">
+        <CarouselSchedulePanel clip={clip} initialScheduledFor={initialScheduleAt} />
+      </Card>
     </div>
   );
 }

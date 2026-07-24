@@ -580,7 +580,7 @@ function SchedulePicker({ value, onChange, disabled = false, disabledReason }: S
   );
 }
 
-interface CopyOptionPickerProps {
+interface CopyOptionSelectProps {
   label: string;
   options: string[] | string[][];
   currentValue: string;
@@ -588,50 +588,39 @@ interface CopyOptionPickerProps {
   isHashtags?: boolean;
 }
 
-function CopyOptionPicker({
+function trimOptionLabel(value: string): string {
+  return value.length > 100 ? `${value.slice(0, 100)}...` : value;
+}
+
+function CopyOptionSelect({
   label,
   options,
   currentValue,
   onSelect,
   isHashtags = false,
-}: CopyOptionPickerProps) {
-  const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    setExpanded(true);
-  }, [options]);
-
-  if (!expanded || !options.length) return null;
+}: CopyOptionSelectProps) {
+  const optionValues = options.map((option) => (isHashtags ? (option as string[]).join(" ") : String(option)));
+  const selectedValue = optionValues.includes(currentValue) ? currentValue : "";
+  if (!optionValues.length) return null;
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg border border-[var(--app-border)] bg-white p-2.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-muted)]">
-        {label} options — pick one
-      </p>
-      {options.map((option, index) => {
-        const value = isHashtags ? (option as string[]).join(" ") : String(option);
-        const selected = currentValue.trim() === value.trim();
-
-        return (
-          <button
-            key={`${label}-${index}-${value.slice(0, 24)}`}
-            type="button"
-            onClick={() => {
-              onSelect(value);
-              window.setTimeout(() => setExpanded(false), 150);
-            }}
-            className={`w-full rounded-md border px-3 py-2 text-left text-xs leading-5 transition ${
-              selected
-                ? "border-[#1D3FD0] bg-[#1D3FD0]/10 text-[#1633B8]"
-                : "border-[var(--app-border)] bg-white text-[var(--app-text)] hover:border-[#1D3FD0]/50 hover:bg-[#1D3FD0]/5"
-            }`}
-          >
-            <span className="mr-2 text-[10px] font-semibold text-[var(--app-subtle)]">{index + 1}</span>
-            {value}
-          </button>
-        );
-      })}
-    </div>
+    <label className="text-xs text-[var(--app-muted)]">
+      {label} options
+      <select
+        value={selectedValue}
+        onChange={(event) => onSelect(event.target.value)}
+        className="mt-1 w-full cursor-pointer rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+      >
+        <option value="" disabled>
+          Pick {label.toLowerCase()}...
+        </option>
+        {optionValues.map((value, index) => (
+          <option key={`${label}-${index}-${value.slice(0, 24)}`} value={value}>
+            {index + 1}. {trimOptionLabel(value)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -662,6 +651,8 @@ export function SocialPublishPanel({
   const [generatingCopy, setGeneratingCopy] = useState(false);
   const [generatingCopyPlatform, setGeneratingCopyPlatform] = useState<SocialPlatform | null>(null);
   const [copyOptions, setCopyOptions] = useState<ClipCopyOptionsResponse | null>(null);
+  const [showCopyInstructions, setShowCopyInstructions] = useState(false);
+  const [copyInstructions, setCopyInstructions] = useState("");
   const [generatingPlatformCopy, setGeneratingPlatformCopy] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [showUniversalEditor, setShowUniversalEditor] = useState(false);
@@ -887,8 +878,10 @@ export function SocialPublishPanel({
 
     setGeneratingCopy(true);
     try {
-      const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
-      const generated = await api.post<ClipCopyOptionsResponse>(`/api/clips/${clip.id}/generate-copy${query}`, {});
+      const generated = await api.post<ClipCopyOptionsResponse>(`/api/clips/${clip.id}/generate-copy`, {
+        platform: platform || null,
+        instructions: copyInstructions.trim() || null,
+      });
       setCopyOptions(generated);
       const updatedClip = {
         ...clip,
@@ -912,8 +905,8 @@ export function SocialPublishPanel({
       applyCopyOptionsToUniversalFields(generated);
       setMessage(
         generated.platform
-          ? `Generated 5 ${generated.platform} copy options for title, caption, description, and hashtags.`
-          : "Generated 5 copy options for title, caption, description, and hashtags."
+          ? `Generated 3 ${generated.platform} copy options for title, caption, description, and hashtags.`
+          : "Generated 3 copy options for title, caption, description, and hashtags."
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI copy generation is unavailable right now.");
@@ -1201,6 +1194,30 @@ export function SocialPublishPanel({
         <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
           Universal fields apply unless a platform override is enabled.
         </p>
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowCopyInstructions((current) => !current)}
+            className="inline-flex items-center gap-1 text-xs text-[var(--app-muted)] transition-colors hover:text-[#1D3FD0]"
+          >
+            <span>{showCopyInstructions ? "▾" : "▸"}</span>
+            Add instructions
+          </button>
+          {showCopyInstructions ? (
+            <div className="mt-2">
+              <textarea
+                value={copyInstructions}
+                onChange={(event) => setCopyInstructions(event.target.value.slice(0, 500))}
+                placeholder="Tell the AI how to write it. Example: keep it casual, focus on the technique, or make it sound more urgent."
+                rows={3}
+                className="w-full resize-none rounded-md border border-[var(--app-border)] bg-white px-2.5 py-1.5 text-sm text-[var(--app-text)] placeholder:text-[var(--app-subtle)] focus:border-[#1D3FD0] focus:outline-none"
+              />
+              <p className="mt-0.5 text-right text-[11px] text-[var(--app-subtle)]">
+                {copyInstructions.length}/500
+              </p>
+            </div>
+          ) : null}
+        </div>
         {copyOptions ? (
           <div className="mt-2">
             <p className="text-[11px] text-[var(--app-subtle)]">
@@ -1305,26 +1322,26 @@ export function SocialPublishPanel({
           </div>
         </div>
         {copyOptions ? (
-          <div className="mt-3 grid gap-3">
-            <CopyOptionPicker
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <CopyOptionSelect
               label="Title"
               options={copyOptions.titles}
               currentValue={universalFields.title}
               onSelect={(value) => setUniversalFields((prev) => ({ ...prev, title: value }))}
             />
-            <CopyOptionPicker
+            <CopyOptionSelect
               label="Caption"
               options={copyOptions.captions}
               currentValue={universalFields.caption}
               onSelect={(value) => setUniversalFields((prev) => ({ ...prev, caption: value }))}
             />
-            <CopyOptionPicker
+            <CopyOptionSelect
               label="Description"
               options={copyOptions.descriptions}
               currentValue={universalFields.description}
               onSelect={(value) => setUniversalFields((prev) => ({ ...prev, description: value }))}
             />
-            <CopyOptionPicker
+            <CopyOptionSelect
               label="Hashtags"
               options={copyOptions.hashtag_sets}
               currentValue={universalFields.hashtags}

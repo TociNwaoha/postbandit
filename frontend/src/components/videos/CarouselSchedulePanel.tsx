@@ -108,10 +108,10 @@ export function CarouselSchedulePanel({ clip, initialScheduledFor }: CarouselSch
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[#1D3FD0]">Carousel workflow</p>
-        <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">Schedule Carousel</h3>
+        <h3 className="mt-1 text-base font-bold text-[var(--app-text)]">Schedule Carousel</h3>
         <p className="mt-1 text-[11px] leading-5 text-[var(--app-muted)]">
           Turn this clip into a carousel draft, then schedule it for your connected platforms.
         </p>
