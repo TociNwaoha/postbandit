@@ -36,6 +36,7 @@ class PlatformCopyResult:
 class CopyOptionsResult:
     titles: list[str]
     captions: list[str]
+    descriptions: list[str]
     hashtag_sets: list[list[str]]
     platform: str | None = None
 
@@ -157,6 +158,29 @@ def _ensure_five_strings(raw_values: object, *, field_name: str, max_length: int
     return values[:5]
 
 
+def _words(value: str) -> list[str]:
+    return [piece for piece in " ".join((value or "").split()).split(" ") if piece]
+
+
+def _ensure_five_descriptions(raw_values: object) -> list[str]:
+    values = _ensure_five_strings(raw_values, field_name="description", max_length=None)
+    normalized: list[str] = []
+    for value in values:
+        words = _words(value)
+        if len(words) > 250:
+            value = " ".join(words[:250]).rstrip(" ,.;:") + "."
+        normalized.append(value)
+    return normalized[:5]
+
+
+def _too_similar(a: str, b: str) -> bool:
+    left = re.sub(r"[^a-z0-9]+", "", (a or "").lower())
+    right = re.sub(r"[^a-z0-9]+", "", (b or "").lower())
+    if not left or not right:
+        return False
+    return left == right or left in right[: max(len(left) + 8, 40)]
+
+
 def _ensure_five_hashtag_sets(raw_sets: object, *, limit: int = 15, minimum: int = 1) -> list[list[str]]:
     sets: list[list[str]] = []
     if isinstance(raw_sets, list):
@@ -247,6 +271,39 @@ def _normalize_platform_copy(platform: str, value: object) -> dict[str, object]:
     return result
 
 
+def generate_content_brief(transcript_text: str, *, video_title: str | None = None) -> str:
+    transcript = " ".join((transcript_text or "").split())
+    if not transcript:
+        raise AICopyError("Clip transcript text is empty")
+
+    system_prompt = (
+        "You turn one video clip transcript into a compact creative brief for social copy. "
+        "Return ONLY valid JSON with this exact shape: {\"brief\":\"...\"}. "
+        "Do not include markdown or generic filler."
+    )
+    user_prompt = f"""Create one 80-110 word content brief from this clip.
+
+The brief must capture:
+- the real topic
+- the strongest hook or key moment
+- the intended audience
+- the tone
+- any useful context for title, caption, description, and hashtag writing
+
+Video title context: {video_title or "Not provided"}
+
+Transcript excerpt:
+{transcript[:1500]}
+"""
+    parsed = _post_deepseek_json(system_prompt, user_prompt)
+    brief = " ".join(str(parsed.get("brief") or "").split()).strip()
+    if len(brief) < 40:
+        raise AICopyError("AI response missing content brief")
+    if len(brief) > 1200:
+        brief = brief[:1200].rstrip()
+    return brief
+
+
 def _post_deepseek_json(system_prompt: str, user_prompt: str) -> dict:
     if not provider_configured():
         raise AICopyUnavailableError("DEEPSEEK_API_KEY is not configured")
@@ -325,14 +382,15 @@ PLATFORM_COPY_PROMPTS: dict[str, str] = {
 
 
 def generate_copy_options(
-    transcript_text: str,
+    transcript_text: str | None = None,
     *,
+    content_brief: str | None = None,
     video_title: str | None = None,
     platform: str | None = None,
 ) -> CopyOptionsResult:
-    transcript = " ".join((transcript_text or "").split())
-    if not transcript:
-        raise AICopyError("Clip transcript text is empty")
+    brief = " ".join((content_brief or transcript_text or "").split())
+    if not brief:
+        raise AICopyError("Clip content brief is empty")
 
     normalized_platform = (platform or "").strip().lower() or None
     if normalized_platform and normalized_platform not in PLATFORM_COPY_PROMPTS:
@@ -355,11 +413,11 @@ def generate_copy_options(
         "Do not include markdown fences, explanations, or raw transcript excerpts as the answer. "
         "Write polished publish-ready copy based on the actual clip content."
     )
-    user_prompt = f"""A creator has a video clip with this transcript excerpt:
+    user_prompt = f"""A creator has a video clip summarized by this content brief:
 
----TRANSCRIPT---
-{transcript[:3000]}
----END TRANSCRIPT---
+---CONTENT BRIEF---
+{brief[:1200]}
+---END CONTENT BRIEF---
 
 Video title context: {video_title or "Not provided"}
 {platform_constraints}
@@ -375,6 +433,7 @@ Respond ONLY with valid JSON in this exact shape:
 {{
   "titles": ["title option 1", "title option 2", "title option 3", "title option 4", "title option 5"],
   "captions": ["caption option 1", "caption option 2", "caption option 3", "caption option 4", "caption option 5"],
+  "descriptions": ["description option 1", "description option 2", "description option 3", "description option 4", "description option 5"],
   "hashtag_sets": [
     ["#tag1", "#tag2", "#tag3"],
     ["#tag1", "#tag2", "#tag3"],
@@ -386,29 +445,36 @@ Respond ONLY with valid JSON in this exact shape:
 
 Rules:
 - Titles: 50-100 characters, strong hook, no generic clickbait
-- Captions: specific to the video content, end with a CTA or question
+- Captions: under 280 characters, specific to the video content, not the same text as the title
+- Descriptions: 120-250 words, useful and specific, written for publish pages and YouTube-style descriptions
 - Hashtags: relevant to the actual video content
 - All 5 variations must be meaningfully different, not minor rewrites
-- Base everything on the actual transcript content; do not use generic filler"""
+- Base everything on the content brief; do not use generic filler"""
 
     parsed = _post_deepseek_json(system_prompt, user_prompt)
     titles = _ensure_five_strings(parsed.get("titles"), field_name="title", max_length=120)
-    captions = _ensure_five_strings(parsed.get("captions"), field_name="caption", max_length=5000)
+    captions = _ensure_five_strings(parsed.get("captions"), field_name="caption", max_length=280)
+    for title, caption in zip(titles, captions, strict=False):
+        if _too_similar(title, caption):
+            raise AICopyError("AI response returned a caption too similar to its title")
+    descriptions = _ensure_five_descriptions(parsed.get("descriptions"))
     hashtag_sets = _ensure_five_hashtag_sets(
         parsed.get("hashtag_sets"),
         limit=hashtag_limit,
         minimum=hashtag_minimum,
     )
     logger.info(
-        "[ai_copy] copy options generated platform=%s titles=%s captions=%s hashtag_sets=%s",
+        "[ai_copy] copy options generated platform=%s titles=%s captions=%s descriptions=%s hashtag_sets=%s",
         normalized_platform or "universal",
         len(titles),
         len(captions),
+        len(descriptions),
         len(hashtag_sets),
     )
     return CopyOptionsResult(
         titles=titles,
         captions=captions,
+        descriptions=descriptions,
         hashtag_sets=hashtag_sets,
         platform=normalized_platform,
     )

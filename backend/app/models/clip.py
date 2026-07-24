@@ -37,6 +37,7 @@ class Clip(Base):
     copy_generation_error: Mapped[str | None] = mapped_column(Text)
     thumbnail_key: Mapped[str | None] = mapped_column(Text)
     transcript_text: Mapped[str | None] = mapped_column(Text)
+    content_brief: Mapped[str | None] = mapped_column(Text)
     status: Mapped[ClipStatus] = mapped_column(
         SAEnum(ClipStatus, name="clip_status"), default=ClipStatus.pending, nullable=False
     )

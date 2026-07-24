@@ -215,6 +215,7 @@ export interface Clip {
   thumbnail_key: string | null;
   thumbnail_url: string | null;
   transcript_text: string | null;
+  content_brief: string | null;
   status: ClipStatus;
   created_at: string;
   updated_at: string;
@@ -596,6 +597,7 @@ export interface ClipCopyOptionsResponse {
   provider_used: "deepseek";
   titles: string[];
   captions: string[];
+  descriptions: string[];
   hashtag_sets: string[][];
   platform: SocialPlatform | null;
 }

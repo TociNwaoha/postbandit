@@ -28,6 +28,7 @@ from app.api.deps import get_current_user
 from app.services.ai_copy import (
     AICopyError,
     AICopyUnavailableError,
+    generate_content_brief,
     generate_copy_options,
     generate_platform_copy,
     provider_configured,
@@ -73,6 +74,7 @@ def _clip_to_response(clip: Clip) -> ClipResponse:
         thumbnail_key=clip.thumbnail_key,
         thumbnail_url=thumbnail_url,
         transcript_text=clip.transcript_text,
+        content_brief=clip.content_brief,
         status=clip.status,
         created_at=clip.created_at,
         updated_at=clip.updated_at,
@@ -320,8 +322,18 @@ async def generate_copy_for_clip(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI copy unavailable")
 
     try:
+        content_brief = " ".join((clip.content_brief or "").split())
+        if not content_brief:
+            content_brief = generate_content_brief(
+                transcript_text=transcript_text,
+                video_title=video.title,
+            )
+            clip.content_brief = content_brief
+            await db.commit()
+            await db.refresh(clip)
+
         generated = generate_copy_options(
-            transcript_text=transcript_text,
+            content_brief=content_brief,
             video_title=video.title,
             platform=platform,
         )
@@ -353,18 +365,20 @@ async def generate_copy_for_clip(
     await db.refresh(clip)
 
     logger.info(
-        "[clips] generate copy complete user_id=%s clip_id=%s platform=%s titles=%s captions=%s hashtag_sets=%s",
+        "[clips] generate copy complete user_id=%s clip_id=%s platform=%s titles=%s captions=%s descriptions=%s hashtag_sets=%s",
         current_user.id,
         clip.id,
         generated.platform or "universal",
         len(generated.titles),
         len(generated.captions),
+        len(generated.descriptions),
         len(generated.hashtag_sets),
     )
     return ClipCopyOptionsResponse(
         provider_used="deepseek",
         titles=generated.titles,
         captions=generated.captions,
+        descriptions=generated.descriptions,
         hashtag_sets=generated.hashtag_sets,
         platform=generated.platform,
     )

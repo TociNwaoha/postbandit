@@ -855,6 +855,7 @@ export function SocialPublishPanel({
       ...previous,
       title: options.titles[0] || previous.title,
       caption: options.captions[0] || previous.caption,
+      description: options.descriptions[0] || previous.description,
       hashtags: (options.hashtag_sets[0] || []).join(" ") || previous.hashtags,
     }));
   };
@@ -892,8 +893,8 @@ export function SocialPublishPanel({
       applyCopyOptionsToUniversalFields(generated);
       setMessage(
         generated.platform
-          ? `Generated 5 ${generated.platform} copy options for title, caption, and hashtags.`
-          : "Generated 5 copy options for title, caption, and hashtags."
+          ? `Generated 5 ${generated.platform} copy options for title, caption, description, and hashtags.`
+          : "Generated 5 copy options for title, caption, description, and hashtags."
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI copy generation is unavailable right now.");
@@ -1292,6 +1293,12 @@ export function SocialPublishPanel({
               options={copyOptions.captions}
               currentValue={universalFields.caption}
               onSelect={(value) => setUniversalFields((prev) => ({ ...prev, caption: value }))}
+            />
+            <CopyOptionPicker
+              label="Description"
+              options={copyOptions.descriptions}
+              currentValue={universalFields.description}
+              onSelect={(value) => setUniversalFields((prev) => ({ ...prev, description: value }))}
             />
             <CopyOptionPicker
               label="Hashtags"
