@@ -26,7 +26,7 @@ def test_music_video_ass_accumulates_words_and_clamps_to_clip_duration():
     dialogue_lines = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
     assert len(dialogue_lines) == 3
     assert "Style: Music,DejaVu Sans" in ass
-    assert "{\\an5\\pos(" in ass
+    assert r"{\an5\pos(" in ass
     assert "WALK" in ass and "WITH" in ass and "GOD" in ass
     assert any(",0:00:02.00,Music," in line for line in dialogue_lines)
 
