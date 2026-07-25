@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { ConnectionsSummary } from "@/components/connections/ConnectionsSummary";
 import { UploadModal } from "@/components/upload/UploadModal";
@@ -11,6 +12,7 @@ import { useVideos } from "@/hooks/useVideos";
 import { useYoutubeImports } from "@/hooks/useYoutubeImports";
 
 export function VideosDashboard() {
+  const searchParams = useSearchParams();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isVideosOpen, setIsVideosOpen] = useState(false);
   const { videos, loading, error, refresh } = useVideos();
@@ -19,6 +21,11 @@ export function VideosDashboard() {
   const refreshAll = async () => {
     await Promise.all([refresh(), refreshImports()]);
   };
+
+  useEffect(() => {
+    if (searchParams.get("upload") === "1") setIsUploadOpen(true);
+    if (searchParams.get("videos") === "1") setIsVideosOpen(true);
+  }, [searchParams]);
 
   return (
     <>

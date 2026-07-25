@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { api } from "@/lib/api";
 
@@ -69,6 +70,30 @@ export function CaptionPresetsPanel() {
           preview
         />
       </div>
+
+      {activePreset ? (
+        <section className="mt-8 border border-blue-200 bg-blue-50/60 p-5" aria-label="Try your active preset">
+          <p className="text-sm font-semibold text-blue-900">Preset active - now try it</p>
+          <p className="mt-1 text-xs text-blue-700">
+            Upload a video or pick an existing clip. The preset applies automatically when you export.
+          </p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/dashboard?upload=1"
+              className="flex flex-1 items-center justify-center bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+            >
+              Upload a video
+            </Link>
+            <Link
+              href="/dashboard?videos=1"
+              className="flex flex-1 items-center justify-center border border-blue-300 px-4 py-2.5 text-center text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100"
+            >
+              Pick existing clip
+            </Link>
+          </div>
+          <p className="mt-3 text-xs text-blue-500">After exporting a clip, download it to see the preset applied.</p>
+        </section>
+      ) : null}
 
       {error ? <p className="mt-4 text-sm text-red-600" role="alert">{error}</p> : null}
     </div>
