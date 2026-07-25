@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.api.routes.auth import delete_account, pwd_context, update_email, update_password
+from app.api.routes.auth import delete_account, pwd_context, set_caption_preset, update_email, update_password
 from app.schemas.user import DeleteAccountRequest, UpdateEmailRequest, UpdatePasswordRequest
 
 
@@ -121,6 +121,30 @@ async def test_update_password_rejects_short_password():
 
     assert err.value.status_code == 400
     assert err.value.detail == "New password must be at least 8 characters"
+
+
+@pytest.mark.asyncio
+async def test_caption_preset_saves_known_value():
+    current_user = _user("user@example.com", "old-password-123")
+    db = _FakeSession()
+
+    response = await set_caption_preset(preset="music_video", db=db, current_user=current_user)
+
+    assert current_user.caption_preset == "music_video"
+    assert response == {"caption_preset": "music_video"}
+    assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_caption_preset_rejects_unknown_value():
+    current_user = _user("user@example.com", "old-password-123")
+    db = _FakeSession()
+
+    with pytest.raises(HTTPException) as err:
+        await set_caption_preset(preset="unknown", db=db, current_user=current_user)
+
+    assert err.value.status_code == 400
+    assert db.commits == 0
 
 
 @pytest.mark.asyncio

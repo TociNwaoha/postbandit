@@ -1,7 +1,7 @@
 import secrets
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from passlib.context import CryptContext
@@ -30,6 +30,8 @@ from app.api.rate_limiter import limiter
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+CAPTION_PRESETS = {"music_video"}
+
 
 def create_access_token(user_id: str) -> str:
     expiry = datetime.utcnow() + timedelta(hours=settings.jwt_expiry_hours)
@@ -56,6 +58,25 @@ def _is_email_verified(value: object) -> bool:
 
 def _new_user_trial_ends_at() -> datetime:
     return datetime.utcnow() + timedelta(days=7)
+
+
+@router.get("/users/me/caption-preset")
+async def get_caption_preset(current_user: User = Depends(get_current_user)):
+    return {"caption_preset": current_user.caption_preset}
+
+
+@router.post("/users/me/caption-preset")
+async def set_caption_preset(
+    preset: str | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if preset is not None and preset not in CAPTION_PRESETS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown preset: {preset}")
+
+    current_user.caption_preset = preset
+    await db.commit()
+    return {"caption_preset": preset}
 
 
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):

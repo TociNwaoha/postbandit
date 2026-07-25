@@ -14,7 +14,9 @@ from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.export import CaptionColorVariant, CaptionFormat, Export, ExportStatus
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
+from app.models.user import User
 from app.models.video import Video
+from app.services.caption_presets import generate_music_video_ass
 from app.services.object_storage import object_storage_client
 from app.services.clip_overlay_rendering import render_highlighted_text_layer
 from app.services.rendering import (
@@ -72,15 +74,16 @@ def render_export(self, export_id: str, job_id: str | None = None):
     try:
         with SyncSessionLocal() as db:
             load_result = db.execute(
-                select(Export, Clip, Video)
+                select(Export, Clip, Video, User)
                 .join(Clip, Export.clip_id == Clip.id)
                 .join(Video, Clip.video_id == Video.id)
+                .join(User, Export.user_id == User.id)
                 .where(Export.id == export_uuid)
             ).first()
             if not load_result:
                 raise RenderPipelineError(f"Export not found: {export_id}")
 
-            export, clip, video = load_result
+            export, clip, video, user = load_result
             logger.info(
                 "[render] export loaded export_id=%s clip_id=%s video_id=%s status=%s",
                 export.id,
@@ -150,17 +153,40 @@ def render_export(self, export_id: str, job_id: str | None = None):
                 write_srt(cues, str(srt_local_path))
                 if export.caption_format == CaptionFormat.burned_in:
                     ass_local_path = tmp_dir / "captions.ass"
-                    write_ass(
-                        cues,
-                        str(ass_local_path),
-                        _enum_value(export.caption_style),
-                        _enum_value(export.caption_color_variant or CaptionColorVariant.classic),
-                        aspect_ratio_value,
-                        target_width,
-                        target_height,
-                        export.caption_vertical_position,
-                        export.caption_scale,
-                    )
+                    if user.caption_preset == "music_video":
+                        preset_words = [
+                            {
+                                "word": segment.word,
+                                "start": max(0.0, float(segment.start_time) - float(clip.start_time)),
+                                "end": max(0.0, float(segment.end_time) - float(clip.start_time)),
+                            }
+                            for segment in transcript_rows
+                        ]
+                        ass_content = generate_music_video_ass(
+                            preset_words,
+                            video_width=target_width,
+                            video_height=target_height,
+                            font_name="DejaVu Sans",
+                            font_size=max(34, round(target_height * (82 / 1920))),
+                            hold_seconds=2.5,
+                            clip_id=str(clip.id),
+                            clip_duration=max(0.0, float(clip.end_time) - float(clip.start_time)),
+                        )
+                        if not ass_content:
+                            raise RenderPipelineError("Music video caption timing is unavailable for this clip.")
+                        ass_local_path.write_text(ass_content, encoding="utf-8")
+                    else:
+                        write_ass(
+                            cues,
+                            str(ass_local_path),
+                            _enum_value(export.caption_style),
+                            _enum_value(export.caption_color_variant or CaptionColorVariant.classic),
+                            aspect_ratio_value,
+                            target_width,
+                            target_height,
+                            export.caption_vertical_position,
+                            export.caption_scale,
+                        )
                 logger.info("[render] caption generation end export_id=%s cues=%s", export.id, len(cues))
             else:
                 logger.info("[render] captions disabled export_id=%s", export.id)
@@ -216,6 +242,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                 target_width=target_width,
                 target_height=target_height,
                 burned_ass_path=str(ass_local_path) if ass_local_path else None,
+                caption_preset=user.caption_preset if ass_local_path else None,
                 frame_anchor_x=export.frame_anchor_x,
                 frame_anchor_y=export.frame_anchor_y,
                 frame_zoom=export.frame_zoom,

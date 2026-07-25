@@ -230,6 +230,7 @@ def render_video_clip(
     target_width: int,
     target_height: int,
     burned_ass_path: str | None = None,
+    caption_preset: str | None = None,
     frame_anchor_x: float | None = None,
     frame_anchor_y: float | None = None,
     frame_zoom: float | None = None,
@@ -267,6 +268,8 @@ def render_video_clip(
         "setsar=1",
         "format=yuv420p",
     ]
+    if caption_preset == "music_video":
+        base_filters.append("eq=brightness=-0.15:saturation=0.90")
 
     has_overlays = bool(overlay_image_path and overlay_image_config) or bool(overlay_text_layer_path)
     if not has_overlays:
