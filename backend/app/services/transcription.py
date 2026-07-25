@@ -72,6 +72,7 @@ def transcribe_audio(
     audio_path: str,
     language: str = "en",
     model: WhisperModel | None = None,
+    transcribe_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Transcribe audio file and return word-level timestamps.
@@ -85,17 +86,18 @@ def transcribe_audio(
     model = model or get_model()
     logger.info(f"Starting transcription of {audio_path}")
 
-    segments_raw, info = model.transcribe(
-        audio_path,
-        language=language,
-        word_timestamps=True,
-        beam_size=settings.whisper_beam_size,
-        best_of=settings.whisper_best_of,
-        temperature=0.0,
-        condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=500),
-    )
+    default_kwargs: dict[str, Any] = {
+        "language": language,
+        "word_timestamps": True,
+        "beam_size": settings.whisper_beam_size,
+        "best_of": settings.whisper_best_of,
+        "temperature": 0.0,
+        "condition_on_previous_text": settings.whisper_condition_on_previous_text,
+        "vad_filter": True,
+        "vad_parameters": dict(min_silence_duration_ms=500),
+    }
+    effective_kwargs = {**default_kwargs, **(transcribe_kwargs or {})}
+    segments_raw, info = model.transcribe(audio_path, **effective_kwargs)
 
     segments: list[dict[str, Any]] = []
     all_words: list[dict[str, Any]] = []

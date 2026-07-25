@@ -13,6 +13,7 @@ from app.celery_app import celery_app
 from app.database import SyncSessionLocal
 from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
+from app.models.user import User
 from app.models.video import Video, VideoImportState, VideoSourceType, VideoStatus
 from app.services.ffmpeg import extract_audio, get_video_duration, get_video_resolution
 from app.services.object_storage import StorageUnavailableError, object_storage_client
@@ -20,6 +21,7 @@ from app.services.video_thumbnails import ensure_video_thumbnail_from_local_sour
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
 from app.services.transcription import get_model_with_metadata, transcribe_audio
+from app.services.music_transcription import get_music_transcribe_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,7 @@ def transcribe_job(self, video_id: str):
     tmp_dir = Path(f"/tmp/clipbandit/{video_id}")
     workspace = None
     queue_delay_s: float | None = None
+    music_transcribe_kwargs: dict | None = None
 
     try:
         video_uuid = uuid.UUID(video_id)
@@ -154,6 +157,20 @@ def transcribe_job(self, video_id: str):
                     "status": video.status.value,
                     "skipped": "ineligible_status",
                 }
+
+            try:
+                caption_preset = db.execute(
+                    select(User.caption_preset).where(User.id == video.user_id)
+                ).scalar_one_or_none()
+                if caption_preset == "music_video":
+                    music_transcribe_kwargs = get_music_transcribe_kwargs()
+                    logger.info("[transcribe] using music transcription pipeline video_id=%s", video_id)
+            except Exception as exc:
+                logger.warning(
+                    "[transcribe] unable to resolve caption preset video_id=%s error=%s",
+                    video_id,
+                    exc,
+                )
 
             workspace = start_workspace(
                 job_type="transcribe",
@@ -248,7 +265,12 @@ def transcribe_job(self, video_id: str):
         perf.start("transcription_inference", model_name=model_name)
         if workspace:
             heartbeat_workspace(workspace)
-        result = transcribe_audio(str(audio_path), language="en", model=model)
+        result = transcribe_audio(
+            str(audio_path),
+            language="en",
+            model=model,
+            transcribe_kwargs=music_transcribe_kwargs,
+        )
         inference_duration_s = perf.end(
             "transcription_inference",
             model_name=model_name,

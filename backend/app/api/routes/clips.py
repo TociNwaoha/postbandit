@@ -12,10 +12,11 @@ import uuid
 from app.database import get_db
 from app.models.clip_overlay_asset import ClipOverlayAsset
 from app.models.export import Export
+from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.user import User
 from app.models.clip import Clip
-from app.models.video import Video
+from app.models.video import Video, VideoStatus
 from app.schemas.clip import (
     ClipCopyGenerateRequest,
     ClipCopyOptionsResponse,
@@ -164,6 +165,73 @@ async def get_clip(
     if not clip:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
     return _clip_to_response(clip)
+
+
+@router.post("/clips/{clip_id}/retranscribe")
+async def retranscribe_clip(
+    clip_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.caption_preset != "music_video":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Music pipeline only available with music video preset active",
+        )
+
+    try:
+        clip_uuid = UUID(clip_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid clip_id")
+
+    row = await db.execute(
+        select(Clip, Video)
+        .join(Video, Clip.video_id == Video.id)
+        .where(Clip.id == clip_uuid, Video.user_id == current_user.id)
+    )
+    clip_row = row.first()
+    if not clip_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+    clip, video = clip_row
+
+    active_job = await db.scalar(
+        select(Job.id)
+        .where(
+            Job.video_id == video.id,
+            Job.type == "transcribe",
+            Job.status.in_([JobStatus.queued, JobStatus.running]),
+        )
+        .limit(1)
+    )
+    if active_job:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Video transcription is already in progress")
+
+    video.status = VideoStatus.queued
+    video.error_message = None
+    job = Job(
+        video_id=video.id,
+        type="transcribe",
+        payload={"reason": "music_preset_retranscribe", "clip_id": str(clip.id)},
+        status=JobStatus.queued,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    try:
+        from app.worker.tasks.transcribe import transcribe_job
+
+        task = transcribe_job.apply_async(args=[str(video.id)], countdown=1, queue="transcribe")
+        job.celery_task_id = task.id
+        await db.commit()
+    except Exception as exc:
+        job.status = JobStatus.failed
+        job.error = f"Unable to enqueue transcription: {exc}"[:500]
+        await db.commit()
+        logger.warning("[clips] unable to enqueue retranscription clip_id=%s error=%s", clip_id, exc)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to queue transcription")
+
+    return {"status": "queued", "clip_id": clip_id}
 
 
 @router.post("/clips/{clip_id}/overlay-assets", response_model=ClipOverlayAssetResponse)
