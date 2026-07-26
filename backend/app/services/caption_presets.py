@@ -29,8 +29,8 @@ def generate_scattered_positions(
         row = (index // columns) % rows
         center_x = margin_x + (column * cell_width) + (cell_width / 2)
         center_y = margin_y + (row * cell_height) + (cell_height / 2)
-        x = round(center_x + rng.uniform(-cell_width * 0.22, cell_width * 0.22))
-        y = round(center_y + rng.uniform(-cell_height * 0.22, cell_height * 0.22))
+        x = round(center_x + rng.uniform(-cell_width * 0.05, cell_width * 0.05))
+        y = round(center_y + rng.uniform(-cell_height * 0.05, cell_height * 0.05))
         positions.append((x, y))
     return positions
 
