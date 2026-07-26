@@ -85,6 +85,53 @@ connected source -> source post ledger -> media import or recovery -> export -> 
 
 The deployed stack is a Docker Compose application behind Nginx. It runs a Next.js frontend, FastAPI backend, PostgreSQL, Redis, Celery workers, and Celery Beat. Backblaze B2 stores durable media and backup artifacts. Local volumes are used only for runtime state, temporary processing, and compatibility paths that are intentionally being retired.
 
+## Platform integrations
+
+All six platform integrations went through real OAuth app review.
+
+| Platform | Auth | Status | Notes |
+|---|---|---|---|
+| YouTube | OAuth 2.0 | ✅ Live | URL import blocked from datacenter IPs (PO Token requirement) |
+| TikTok | OAuth 2.0 | ✅ Live | Content Posting API — 512×512 logo required for review |
+| Instagram | Login API | ✅ Approved | `graph.instagram.com` · Reels use `views` not `impressions` |
+| Facebook | OAuth 2.0 | ✅ Live | Pages automated · personal accounts manual only |
+| X / Twitter | OAuth 2.0 | ✅ Live | Text posting proven |
+| Threads | OAuth 2.0 | ✅ Live | Text baseline |
+
+## Engineering notes
+
+Hard problems hit in production, worth knowing about.
+
+**Celery race condition**
+Scheduled publishing uses `SELECT FOR UPDATE SKIP LOCKED` so competing workers never double-publish the same post. `countdown=1` on the downstream task ensures it fires after the DB transaction commits.
+
+**OAuth token security**
+Caught Instagram access tokens printing in plain text in worker logs — tokens were being passed as query params and captured by httpx request logging. Fixed by moving to `Authorization: Bearer` headers. All OAuth tokens encrypted at rest with Fernet, never logged.
+
+**API key as a parallel dependency**
+API key auth is a separate FastAPI dependency applied only to `/api/v1/` routes and never modifies `get_current_user`. Rate limits are per-user not per-key — generating extra API keys does not multiply the effective limit.
+
+**Content brief caching**
+Copy generation does not pass full transcripts to the LLM. A 100-word content brief is generated once per clip and cached. All subsequent copy generation reuses the brief — one small call instead of thousands of tokens every request.
+
+**Instagram API endpoint**
+Instagram Login API tokens require `graph.instagram.com`, not `graph.facebook.com`. Underdocumented by Meta. Additionally, `impressions` is unsupported for Reels — `views` is the correct metric.
+
+**Backblaze B2 with boto3**
+B2 requires `signature_version="s3v4"` explicitly in the boto3 config and a real region string like `us-west-004` rather than the `"auto"` shorthand. Both are silent failures without the fix.
+
+**Music video transcription**
+faster-whisper VAD filter was silently cutting out the first 64 seconds of a 97-second music video because vocal activity over a beat did not register as speech. Added a coverage guard: if recognized words cover less than 50% of video duration, retry with `vad_filter=False`. First-pass music params include `condition_on_previous_text=False` and a music-specific `initial_prompt` to reduce hallucination compounding.
+
+**Thumbnail read costs**
+Every dashboard load was generating one B2 `head_object` call per thumbnail displayed — up to 20 per page load. Moved thumbnails off B2 entirely onto a local Nginx bind-mount served at `/thumbnails/`. Eliminates Class B read transaction costs and makes thumbnail delivery faster.
+
+## Honest boundaries
+
+- **YouTube URL import:** Contabo datacenter IPs are blocked by YouTube bot detection (PO Token requirement). Manual file upload works. Residential proxy fixes server-side import permanently.
+- **Demucs not running:** Vocal isolation would further improve music transcription accuracy but adds 2–4 GB RAM and 2–5 min processing per clip on CPU. Coverage guard and tuned VAD params handle most cases.
+- **Recurring billing:** Stripe subscriptions live in production. Trial to paid conversion flow works end to end.
+
 ## Local Development
 
 ### Prerequisites
@@ -140,4 +187,6 @@ docker compose up -d --build frontend
 
 ## License
 
-MIT
+All rights reserved. © 2026 BANDAMONT LLC.
+
+Source is shared publicly for portfolio and review purposes. No license is granted for commercial or non-commercial use without explicit written permission from BANDAMONT LLC.
