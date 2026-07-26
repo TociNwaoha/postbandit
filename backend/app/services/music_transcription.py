@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def get_music_transcribe_kwargs(base_kwargs: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -31,3 +34,54 @@ def get_music_transcribe_kwargs(base_kwargs: dict[str, Any] | None = None) -> di
         },
     }
     return {**(base_kwargs or {}), **music_kwargs}
+
+
+def assess_coverage(segments_or_words: list[Any], video_duration: float) -> tuple[float, int]:
+    """Return recognized timestamp coverage and word count for an audio duration."""
+    words: list[Any] = []
+    for item in segments_or_words:
+        if hasattr(item, "words") and item.words:
+            words.extend(item.words)
+        elif isinstance(item, dict) and "word" in item:
+            words.append(item)
+        elif hasattr(item, "word"):
+            words.append(item)
+
+    if not words or video_duration <= 0:
+        return 0.0, len(words)
+
+    try:
+        starts = [float(word["start"] if isinstance(word, dict) else word.start) for word in words]
+        ends = [float(word["end"] if isinstance(word, dict) else word.end) for word in words]
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return 0.0, len(words)
+
+    first_start = min(starts)
+    last_end = max(ends)
+    coverage_ratio = max(0.0, last_end - first_start) / video_duration
+    start_gap = max(0.0, first_start) / video_duration
+    logger.info(
+        "[transcribe] transcript coverage=%.1f%% words=%s start_gap=%.1f%% range=%.1fs-%.1fs duration=%.1fs",
+        coverage_ratio * 100,
+        len(words),
+        start_gap * 100,
+        first_start,
+        last_end,
+        video_duration,
+    )
+    return coverage_ratio, len(words)
+
+
+def is_poor_coverage(coverage_ratio: float, word_count: int, video_duration: float) -> bool:
+    """Identify results likely truncated by voice activity detection."""
+    return coverage_ratio < 0.50 or (video_duration > 30 and word_count < 20)
+
+
+def get_music_transcribe_kwargs_no_vad() -> dict[str, Any]:
+    """Return music transcription options with voice activity detection disabled."""
+    kwargs = get_music_transcribe_kwargs()
+    kwargs["vad_filter"] = False
+    kwargs.pop("vad_parameters", None)
+    kwargs["log_prob_threshold"] = -1.5
+    kwargs["no_speech_threshold"] = 0.8
+    return kwargs

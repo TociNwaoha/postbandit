@@ -460,6 +460,33 @@ def score_job(self, video_id: str):
                 db.add(clip)
                 created_clips.append(clip)
 
+            video_duration = float(video.duration_sec or 0)
+            has_full_video_clip = any(
+                clip.start_time <= 1.0 and clip.end_time >= video_duration - 2.0
+                for clip in created_clips
+            )
+            if 0 < video_duration <= 300 and not has_full_video_clip:
+                full_transcript = " ".join(
+                    (segment.word or "").strip() for segment in transcript_words if (segment.word or "").strip()
+                )
+                full_title = f"{(video.title or 'Video').strip()} (full video)"[:500]
+                full_clip = Clip(
+                    video_id=video_uuid,
+                    start_time=0.0,
+                    end_time=video_duration,
+                    duration_sec=video_duration,
+                    score=0.0,
+                    hook_score=0.0,
+                    energy_score=0.0,
+                    transcript_text=full_transcript or None,
+                    status=ClipStatus.ready,
+                    title=full_title,
+                    is_full_video=True,
+                )
+                db.add(full_clip)
+                created_clips.append(full_clip)
+                logger.info("[score] added full-video clip video_id=%s duration_s=%.3f", video_id, video_duration)
+
             db.flush()
             logger.info("[score] db write prepared video_id=%s clip_rows=%s", video_id, len(created_clips))
 

@@ -21,7 +21,12 @@ from app.services.video_thumbnails import ensure_video_thumbnail_from_local_sour
 from app.services.workspace import finalize_workspace, heartbeat_workspace, start_workspace
 from app.services.youtube import transition_import_state
 from app.services.transcription import get_model_with_metadata, transcribe_audio
-from app.services.music_transcription import get_music_transcribe_kwargs
+from app.services.music_transcription import (
+    assess_coverage,
+    get_music_transcribe_kwargs,
+    get_music_transcribe_kwargs_no_vad,
+    is_poor_coverage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +134,7 @@ def transcribe_job(self, video_id: str):
     workspace = None
     queue_delay_s: float | None = None
     music_transcribe_kwargs: dict | None = None
+    transcription_duration_sec: float | None = None
 
     try:
         video_uuid = uuid.UUID(video_id)
@@ -236,6 +242,7 @@ def transcribe_job(self, video_id: str):
                 resolution = get_video_resolution(str(video_path))
                 if resolution:
                     video.resolution = resolution
+            transcription_duration_sec = float(video.duration_sec or 0) or None
             local_thumbnail_url = ensure_video_thumbnail_from_local_source(
                 video,
                 video_path,
@@ -271,6 +278,30 @@ def transcribe_job(self, video_id: str):
             model=model,
             transcribe_kwargs=music_transcribe_kwargs,
         )
+        if music_transcribe_kwargs is not None:
+            video_duration = transcription_duration_sec or float(result.get("duration") or 0)
+            coverage_ratio, word_count = assess_coverage(result["words"], video_duration)
+            if is_poor_coverage(coverage_ratio, word_count, video_duration):
+                logger.warning(
+                    "[transcribe] poor music coverage video_id=%s coverage=%.1f%% words=%s; retrying with VAD disabled",
+                    video_id,
+                    coverage_ratio * 100,
+                    word_count,
+                )
+                result = transcribe_audio(
+                    str(audio_path),
+                    language="en",
+                    model=model,
+                    transcribe_kwargs=get_music_transcribe_kwargs_no_vad(),
+                )
+                retry_duration = transcription_duration_sec or float(result.get("duration") or 0)
+                retry_coverage, retry_word_count = assess_coverage(result["words"], retry_duration)
+                logger.info(
+                    "[transcribe] VAD-off retry result video_id=%s coverage=%.1f%% words=%s",
+                    video_id,
+                    retry_coverage * 100,
+                    retry_word_count,
+                )
         inference_duration_s = perf.end(
             "transcription_inference",
             model_name=model_name,

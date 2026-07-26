@@ -100,6 +100,7 @@ def _clip_to_response(clip: Clip) -> ClipResponse:
         thumbnail_url=thumbnail_url,
         transcript_text=clip.transcript_text,
         content_brief=clip.content_brief,
+        is_full_video=clip.is_full_video,
         status=clip.status,
         created_at=clip.created_at,
         updated_at=clip.updated_at,

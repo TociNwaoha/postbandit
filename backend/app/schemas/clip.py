@@ -31,6 +31,7 @@ class ClipResponse(BaseModel):
     thumbnail_url: str | None = None
     transcript_text: str | None
     content_brief: str | None
+    is_full_video: bool = False
     status: ClipStatus
     created_at: datetime
     updated_at: datetime

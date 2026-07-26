@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum as SAEnum, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, String, Text
 from sqlalchemy import String as SAString
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -38,6 +38,7 @@ class Clip(Base):
     thumbnail_key: Mapped[str | None] = mapped_column(Text)
     transcript_text: Mapped[str | None] = mapped_column(Text)
     content_brief: Mapped[str | None] = mapped_column(Text)
+    is_full_video: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[ClipStatus] = mapped_column(
         SAEnum(ClipStatus, name="clip_status"), default=ClipStatus.pending, nullable=False
     )
