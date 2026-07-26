@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from app.models.transcript import TranscriptSegment
+from app.services.caption_presets import get_caption_style_ass_line
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,7 @@ def write_ass(
     target_height: int,
     caption_vertical_position: float | None = None,
     caption_scale: float | None = None,
+    user_caption_style: str | None = None,
 ) -> str:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +186,12 @@ def write_ass(
         caption_vertical_position=caption_vertical_position,
         caption_scale=caption_scale,
     )
-    style_line = _ass_style_line(caption_style, caption_color_variant, layout)
+    style_line = (
+        get_caption_style_ass_line(user_caption_style, target_width, target_height)
+        if user_caption_style
+        else _ass_style_line(caption_style, caption_color_variant, layout)
+    )
+    event_style = "Caption" if user_caption_style else "Default"
 
     header = [
         "[Script Info]",
@@ -213,7 +220,7 @@ def write_ass(
         )
         events.append(
             f"Dialogue: 0,{_format_ass_timestamp(cue.start)},{_format_ass_timestamp(cue.end)},"
-            f"Default,,0,0,0,,{_escape_ass_text(wrapped)}"
+            f"{event_style},,0,0,0,,{_escape_ass_text(wrapped)}"
         )
 
     path.write_text("\n".join(header + events) + "\n", encoding="utf-8")

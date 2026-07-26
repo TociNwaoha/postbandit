@@ -34,6 +34,7 @@ class User(Base):
     billing_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     platforms_allowed: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
     caption_preset: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    caption_style: Mapped[str | None] = mapped_column(String(30), nullable=True, default="split_line")
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     onboarding_skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     onboarding_role: Mapped[str | None] = mapped_column(String(50), nullable=True)

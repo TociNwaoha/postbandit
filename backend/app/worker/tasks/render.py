@@ -16,7 +16,7 @@ from app.models.job import Job, JobStatus
 from app.models.transcript import TranscriptSegment
 from app.models.user import User
 from app.models.video import Video
-from app.services.caption_presets import generate_music_video_ass
+from app.services.caption_presets import generate_music_video_ass, normalize_caption_style
 from app.services.object_storage import object_storage_client
 from app.services.clip_overlay_rendering import render_highlighted_text_layer
 from app.services.rendering import (
@@ -138,11 +138,17 @@ def render_export(self, export_id: str, job_id: str | None = None):
                     len(transcript_rows),
                     _enum_value(export.caption_cadence),
                 )
+                user_caption_style = normalize_caption_style(user.caption_style)
+                cue_cadence = (
+                    "word_by_word"
+                    if user_caption_style == "highlight"
+                    else _enum_value(export.caption_cadence)
+                )
                 cues = build_subtitle_cues(
                     transcript_rows,
                     clip_start=float(clip.start_time),
                     clip_end=float(clip.end_time),
-                    cadence=_enum_value(export.caption_cadence),
+                    cadence=cue_cadence,
                 )
                 if not cues:
                     raise RenderPipelineError(
@@ -186,6 +192,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                             target_height,
                             export.caption_vertical_position,
                             export.caption_scale,
+                            user_caption_style=user_caption_style,
                         )
                 logger.info("[render] caption generation end export_id=%s cues=%s", export.id, len(cues))
             else:

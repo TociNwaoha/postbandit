@@ -6,6 +6,99 @@ import random
 from typing import Any
 
 
+DEFAULT_CAPTION_STYLE = "split_line"
+
+# These styles are distinct from Export.caption_style. They represent the user's
+# account-level visual treatment and intentionally leave export color settings alone.
+CAPTION_STYLE_DEFINITIONS: dict[str, dict[str, int | float | str]] = {
+    "split_line": {
+        "font_name": "DejaVu Sans",
+        "font_size": 72,
+        "primary_colour": "&H00FFFFFF",
+        "outline_colour": "&H00000000",
+        "back_colour": "&H96000000",
+        "bold": 1,
+        "border_style": 3,
+        "outline": 2,
+        "shadow": 0,
+        "alignment": 2,
+        "margin_v": 180,
+    },
+    "thick_bold": {
+        "font_name": "DejaVu Sans",
+        "font_size": 76,
+        "primary_colour": "&H00FFFFFF",
+        "outline_colour": "&H00000000",
+        "back_colour": "&H00000000",
+        "bold": 1,
+        "border_style": 1,
+        "outline": 6,
+        "shadow": 3,
+        "alignment": 2,
+        "margin_v": 180,
+    },
+    "highlight": {
+        "font_name": "DejaVu Sans",
+        "font_size": 78,
+        "primary_colour": "&H0000FFFF",
+        "outline_colour": "&H00000000",
+        "back_colour": "&H00000000",
+        "bold": 1,
+        "border_style": 1,
+        "outline": 4,
+        "shadow": 2,
+        "alignment": 2,
+        "margin_v": 180,
+    },
+    "outline": {
+        "font_name": "DejaVu Sans",
+        "font_size": 72,
+        "primary_colour": "&H00FFFFFF",
+        "outline_colour": "&H00000000",
+        "back_colour": "&H00000000",
+        "bold": 1,
+        "border_style": 1,
+        "outline": 5,
+        "shadow": 2,
+        "alignment": 2,
+        "margin_v": 180,
+    },
+    "box_pill": {
+        "font_name": "DejaVu Sans",
+        "font_size": 68,
+        "primary_colour": "&H00FFFFFF",
+        "outline_colour": "&H00101010",
+        "back_colour": "&H00101010",
+        "bold": 1,
+        "border_style": 4,
+        "outline": 10,
+        "shadow": 0,
+        "alignment": 2,
+        "margin_v": 180,
+    },
+}
+
+
+def normalize_caption_style(style: str | None) -> str:
+    """Return a supported account-level caption style."""
+    return style if style in CAPTION_STYLE_DEFINITIONS else DEFAULT_CAPTION_STYLE
+
+
+def get_caption_style_ass_line(style: str | None, target_width: int, target_height: int) -> str:
+    """Build the ASS style line for an account-level caption style."""
+    definition = CAPTION_STYLE_DEFINITIONS[normalize_caption_style(style)]
+    scale = min(target_width / 1080, target_height / 1920)
+    font_size = max(30, round(int(definition["font_size"]) * scale))
+    margin_v = max(48, round(int(definition["margin_v"]) * (target_height / 1920)))
+
+    return (
+        f"Style: Caption,{definition['font_name']},{font_size},"
+        f"{definition['primary_colour']},&H000000FF,{definition['outline_colour']},{definition['back_colour']},"
+        f"{definition['bold']},0,0,0,100,100,0,0,{definition['border_style']},{definition['outline']},{definition['shadow']},"
+        f"{definition['alignment']},40,40,{margin_v},1"
+    )
+
+
 def generate_scattered_positions(
     word_count: int,
     width: int = 1080,

@@ -7,11 +7,24 @@ import { api } from "@/lib/api";
 
 type CaptionPreset = "music_video" | null;
 type CaptionPresetResponse = { caption_preset: CaptionPreset };
+type CaptionStyle = "split_line" | "thick_bold" | "highlight" | "outline" | "box_pill";
+type CaptionStyleResponse = { caption_style: CaptionStyle };
+
+const captionStyles: Array<{ key: CaptionStyle; title: string; description: string }> = [
+  { key: "split_line", title: "Split line", description: "Short phrases, clear and balanced." },
+  { key: "thick_bold", title: "Thick bold", description: "Large outlined text for high impact." },
+  { key: "highlight", title: "Highlight", description: "Yellow word-by-word emphasis." },
+  { key: "outline", title: "Outline", description: "Clean white text with a strong edge." },
+  { key: "box_pill", title: "Box / pill", description: "Bold text on a solid dark backing." },
+];
 
 export function CaptionPresetsPanel() {
   const [activePreset, setActivePreset] = useState<CaptionPreset>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeStyle, setActiveStyle] = useState<CaptionStyle>("split_line");
+  const [isStyleLoading, setIsStyleLoading] = useState(true);
+  const [isStyleSaving, setIsStyleSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -32,6 +45,24 @@ export function CaptionPresetsPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    void api
+      .get<CaptionStyleResponse>("/api/users/me/caption-style")
+      .then((response) => {
+        if (mounted) setActiveStyle(response.caption_style || "split_line");
+      })
+      .catch(() => {
+        if (mounted) setError("Could not load your caption style.");
+      })
+      .finally(() => {
+        if (mounted) setIsStyleLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const selectPreset = async (preset: CaptionPreset) => {
     if (isSaving || preset === activePreset) return;
     setError("");
@@ -43,6 +74,20 @@ export function CaptionPresetsPanel() {
       setError("Could not save your caption preset. Please try again.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const selectStyle = async (style: CaptionStyle) => {
+    if (isStyleSaving || style === activeStyle) return;
+    setError("");
+    setIsStyleSaving(true);
+    try {
+      const response = await api.post<CaptionStyleResponse>("/api/users/me/caption-style", style);
+      setActiveStyle(response.caption_style);
+    } catch {
+      setError("Could not save your caption style. Please try again.");
+    } finally {
+      setIsStyleSaving(false);
     }
   };
 
@@ -71,6 +116,24 @@ export function CaptionPresetsPanel() {
         />
       </div>
 
+      <section className="mt-8 border-t border-[var(--app-border)] pt-8" aria-busy={isStyleLoading}>
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-[var(--app-text)]">Caption style</h2>
+          <p className="mt-1 text-sm text-[var(--app-muted)]">Choose the look used for standard burned-in captions.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {captionStyles.map((style) => (
+            <CaptionStyleOption
+              key={style.key}
+              style={style}
+              active={activeStyle === style.key}
+              disabled={isStyleLoading || isStyleSaving}
+              onClick={() => void selectStyle(style.key)}
+            />
+          ))}
+        </div>
+      </section>
+
       {activePreset ? (
         <section className="mt-8 border border-blue-200 bg-blue-50/60 p-5" aria-label="Try your active preset">
           <p className="text-sm font-semibold text-blue-900">Preset active - now try it</p>
@@ -97,6 +160,65 @@ export function CaptionPresetsPanel() {
 
       {error ? <p className="mt-4 text-sm text-red-600" role="alert">{error}</p> : null}
     </div>
+  );
+}
+
+function CaptionStyleOption({
+  style,
+  active,
+  disabled,
+  onClick,
+}: {
+  style: { key: CaptionStyle; title: string; description: string };
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`border p-3 text-left transition-colors disabled:cursor-wait disabled:opacity-60 ${
+        active
+          ? "border-[var(--app-primary)] bg-[rgba(29,63,208,0.06)]"
+          : "border-[var(--app-border)] bg-white hover:border-[var(--app-subtle)]"
+      }`}
+    >
+      <CaptionStylePreview style={style.key} />
+      <span className="mt-3 flex items-start justify-between gap-3">
+        <span>
+          <span className="block text-sm font-semibold text-[var(--app-text)]">{style.title}</span>
+          <span className="mt-1 block text-xs leading-4 text-[var(--app-muted)]">{style.description}</span>
+        </span>
+        {active ? <span className="shrink-0 text-xs font-semibold text-[var(--app-primary)]">Active</span> : null}
+      </span>
+    </button>
+  );
+}
+
+function CaptionStylePreview({ style }: { style: CaptionStyle }) {
+  const previewText = "YOUR WORDS";
+  const textClass = "absolute bottom-4 left-3 right-3 text-center text-lg leading-none";
+
+  return (
+    <span className="relative block h-24 overflow-hidden bg-[#202634]" aria-hidden="true">
+      {style === "split_line" ? (
+        <span className={`${textClass} mx-auto w-fit bg-black/65 px-2 py-1 font-bold text-white`}>{previewText}</span>
+      ) : null}
+      {style === "thick_bold" ? (
+        <span className={`${textClass} font-black text-white [text-shadow:2px_2px_0_#000,-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000]`}>{previewText}</span>
+      ) : null}
+      {style === "highlight" ? (
+        <span className={`${textClass} font-black text-yellow-300 [text-shadow:2px_2px_0_#000,-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000]`}>{previewText}</span>
+      ) : null}
+      {style === "outline" ? (
+        <span className={`${textClass} font-bold text-white [text-shadow:2px_2px_0_#000,-2px_-2px_0_#000,2px_-2px_0_#000,-2px_2px_0_#000]`}>{previewText}</span>
+      ) : null}
+      {style === "box_pill" ? (
+        <span className={`${textClass} mx-auto w-fit bg-[#101010] px-3 py-2 font-bold text-white`}>{previewText}</span>
+      ) : null}
+    </span>
   );
 }
 

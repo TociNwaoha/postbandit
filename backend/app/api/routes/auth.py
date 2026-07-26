@@ -31,6 +31,7 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 CAPTION_PRESETS = {"music_video"}
+CAPTION_STYLES = {"split_line", "thick_bold", "highlight", "outline", "box_pill"}
 
 
 def create_access_token(user_id: str) -> str:
@@ -77,6 +78,25 @@ async def set_caption_preset(
     current_user.caption_preset = preset
     await db.commit()
     return {"caption_preset": preset}
+
+
+@router.get("/users/me/caption-style")
+async def get_caption_style(current_user: User = Depends(get_current_user)):
+    return {"caption_style": current_user.caption_style or "split_line"}
+
+
+@router.post("/users/me/caption-style")
+async def set_caption_style(
+    style: str = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if style not in CAPTION_STYLES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown caption style: {style}")
+
+    current_user.caption_style = style
+    await db.commit()
+    return {"caption_style": style}
 
 
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):

@@ -19,6 +19,7 @@ class UserBase(BaseModel):
     billing_period_end: datetime | None = None
     platforms_allowed: int = 5
     caption_preset: str | None = None
+    caption_style: str | None = None
 
 
 class UserCreate(BaseModel):
