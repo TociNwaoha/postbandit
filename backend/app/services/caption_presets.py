@@ -41,7 +41,7 @@ def generate_music_video_ass(
     video_height: int,
     font_name: str = "DejaVu Sans",
     font_size: int = 82,
-    hold_seconds: float = 2.5,
+    hold_seconds: float = 1.0,
     clip_id: str | None = None,
     clip_duration: float | None = None,
 ) -> str:

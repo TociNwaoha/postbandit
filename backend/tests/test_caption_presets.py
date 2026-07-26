@@ -19,7 +19,7 @@ def test_music_video_ass_accumulates_words_and_clamps_to_clip_duration():
         video_width=720,
         video_height=1280,
         clip_id="clip-123",
-        hold_seconds=2.5,
+        hold_seconds=1.0,
         clip_duration=2.0,
     )
 

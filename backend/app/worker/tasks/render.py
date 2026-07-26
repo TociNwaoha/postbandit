@@ -168,7 +168,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                             video_height=target_height,
                             font_name="DejaVu Sans",
                             font_size=max(34, round(target_height * (82 / 1920))),
-                            hold_seconds=2.5,
+                            hold_seconds=1.0,
                             clip_id=str(clip.id),
                             clip_duration=max(0.0, float(clip.end_time) - float(clip.start_time)),
                         )
