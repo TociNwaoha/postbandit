@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { CarouselSchedulePanel } from "@/components/videos/CarouselSchedulePanel";
 import { SocialPublishPanel } from "@/components/videos/SocialPublishPanel";
+import { CaptionStylePickerCompact, type UserCaptionStyle } from "@/components/presets/CaptionStylePicker";
 import { api, ApiError } from "@/lib/api";
 import {
   buildCaptionPreviewText,
@@ -17,7 +18,6 @@ import {
   getCaptionColorVariantOptions,
   getCaptionPreviewLayout,
   getCaptionStyleMeta,
-  getCaptionStyleOptions,
   getCaptionStyleTheme,
   wrapCaptionPreviewText,
 } from "@/lib/captionPreview";
@@ -63,6 +63,13 @@ const DEFAULT_TEXT_OVERLAY: ExportOverlayTextConfig = {
   font_size: 52,
   text_color: "#FFFFFF",
   highlights: [],
+};
+const USER_STYLE_TO_EXPORT_STYLE: Record<UserCaptionStyle, CaptionStyle> = {
+  split_line: "clean_minimal",
+  thick_bold: "kinetic_bold",
+  highlight: "clean_highlight",
+  outline: "cinema_outline",
+  box_pill: "bold_boxed",
 };
 
 const exportStatusStyles: Record<string, string> = {
@@ -203,6 +210,10 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
   const [exportError, setExportError] = useState<string | null>(null);
   const [createExportLoading, setCreateExportLoading] = useState(false);
   const [createExportMessage, setCreateExportMessage] = useState<string | null>(null);
+
+  const handleUserCaptionStyleChange = useCallback((style: UserCaptionStyle) => {
+    setCaptionStyle(USER_STYLE_TO_EXPORT_STYLE[style]);
+  }, []);
 
   const [mediaDuration, setMediaDuration] = useState<number | null>(video.duration_sec ?? null);
   const [sourceAspectRatio, setSourceAspectRatio] = useState<number | null>(sourceAspectFromResolution);
@@ -373,7 +384,6 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
     [captionStyle, captionColorVariant]
   );
   const captionStyleMeta = useMemo(() => getCaptionStyleMeta(captionStyle), [captionStyle]);
-  const captionStyleOptions = useMemo(() => getCaptionStyleOptions(), []);
   const captionColorVariantOptions = useMemo(() => getCaptionColorVariantOptions(), []);
   const captionColorVariantMeta = useMemo(
     () => getCaptionColorVariantMeta(captionColorVariant),
@@ -1630,19 +1640,10 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
           Selected aspect from Framing: <span className="font-semibold text-[var(--app-text)]">{aspectRatio}</span>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="text-xs text-[var(--app-muted)]">
-            Caption Style
-            <select
-              value={captionStyle}
-              onChange={(event) => setCaptionStyle(event.target.value as CaptionStyle)}
-              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
-            >
-              {captionStyleOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+          <div className="text-xs text-[var(--app-muted)]">
+            <CaptionStylePickerCompact
+              onStyleChange={handleUserCaptionStyleChange}
+            />
             <div className="mt-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3">
               <p className="text-[11px] uppercase tracking-wide text-[var(--app-muted)]">Style preview</p>
               <p className="mt-1 text-xs text-[var(--app-muted)]">{captionStyleMeta.description}</p>
@@ -1673,7 +1674,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                 </span>
               </div>
             </div>
-          </label>
+          </div>
           <label className="text-xs text-[var(--app-muted)]">
             Caption Color
             <select
