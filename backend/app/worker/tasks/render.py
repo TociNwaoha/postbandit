@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.celery_app import celery_app
+from app.core.analytics import track
 from app.database import SyncSessionLocal
 from app.models.clip import Clip, ClipStatus
 from app.models.clip_overlay_asset import ClipOverlayAsset
@@ -292,6 +293,16 @@ def render_export(self, export_id: str, job_id: str | None = None):
                 render_job.completed_at = datetime.now(timezone.utc)
 
             db.commit()
+            track(
+                str(export.user_id),
+                "clip_exported",
+                {
+                    "clip_id": str(clip.id),
+                    "export_id": str(export.id),
+                    "aspect_ratio": _enum_value(export.aspect_ratio),
+                    "caption_format": _enum_value(export.caption_format),
+                },
+            )
             logger.info(
                 "[render] final export status update export_id=%s status=%s render_time_sec=%s",
                 export.id,

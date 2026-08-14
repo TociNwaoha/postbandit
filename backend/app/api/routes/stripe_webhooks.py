@@ -6,6 +6,7 @@ from stripe.error import SignatureVerificationError
 
 from app.billing.stripe_client import BillingConfigurationError, construct_webhook_event
 from app.billing.webhook_handlers import handle_stripe_event
+from app.core.analytics import track
 from app.database import get_db
 from app.models.processed_stripe_event import ProcessedStripeEvent
 
@@ -37,12 +38,16 @@ async def stripe_webhook(
     if existing:
         return {"received": True, "duplicate": True}
 
-    await handle_stripe_event(db, event)
+    analytics_event = await handle_stripe_event(db, event)
     db.add(ProcessedStripeEvent(event_id=event_id, event_type=event_type))
     try:
         await db.commit()
     except IntegrityError:
         await db.rollback()
         return {"received": True, "duplicate": True}
+
+    if analytics_event:
+        distinct_id, event_name, properties = analytics_event
+        track(distinct_id, event_name, properties)
 
     return {"received": True}

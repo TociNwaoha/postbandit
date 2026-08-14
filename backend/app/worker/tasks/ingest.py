@@ -10,6 +10,7 @@ from yt_dlp.utils import DownloadError
 
 from app.celery_app import celery_app
 from app.config import settings
+from app.core.analytics import track
 from app.database import SyncSessionLocal
 from app.models.job import Job, JobStatus
 from app.models.video import Video, VideoImportMode, VideoImportState, VideoSourceType, VideoStatus
@@ -345,6 +346,15 @@ def ingest_job(self, video_id: str):
                 ingest_row.completed_at = datetime.now(timezone.utc)
 
             db.commit()
+            track(
+                str(video.user_id),
+                "video_imported",
+                {
+                    "video_id": str(video.id),
+                    "source_type": video.source_type.value,
+                    "import_mode": video.import_mode.value,
+                },
+            )
             db.refresh(transcribe_row)
 
             try:

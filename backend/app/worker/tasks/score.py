@@ -10,6 +10,7 @@ from sqlalchemy import delete
 from sqlalchemy import select
 
 from app.celery_app import celery_app
+from app.core.analytics import track
 from app.database import SyncSessionLocal
 from app.models.clip import Clip, ClipStatus
 from app.models.exclude_zone import ExcludeZone
@@ -567,6 +568,15 @@ def score_job(self, video_id: str):
                 score_row.completed_at = datetime.now(timezone.utc)
 
             db.commit()
+            track(
+                str(video.user_id),
+                "clips_generated",
+                {
+                    "video_id": str(video.id),
+                    "clip_count": len(created_clips),
+                    "clip_profile": clip_profile.value,
+                },
+            )
             logger.info(
                 "[score] final db write complete video_id=%s clip_count=%s thumbnails_ok=%s thumbnails_failed=%s",
                 video_id,

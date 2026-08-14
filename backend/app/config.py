@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     stripe_pro_price_id: str = ""
     stripe_elite_price_id: str = ""
 
+    # Product analytics
+    posthog_api_key: str = ""
+    posthog_host: str = "https://us.i.posthog.com"
+
     # Backblaze B2 (S3-compatible API)
     b2_key_id: str = "placeholder"
     b2_application_key: str = "placeholder"

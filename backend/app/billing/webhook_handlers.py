@@ -85,7 +85,10 @@ def _apply_subscription(user: User, subscription: Any) -> None:
     user.platforms_allowed = get_platforms_allowed(billing_plan, status)
 
 
-async def handle_checkout_session_completed(db: AsyncSession, session: Any) -> None:
+async def handle_checkout_session_completed(
+    db: AsyncSession,
+    session: Any,
+) -> tuple[str, str, dict[str, str]] | None:
     customer_id = _get(session, "customer")
     subscription_id = _get(session, "subscription")
     user_id = _get(session, "client_reference_id") or _metadata_value(session, "user_id")
@@ -93,12 +96,21 @@ async def handle_checkout_session_completed(db: AsyncSession, session: Any) -> N
     user = await _find_user_for_customer(db, customer_id=customer_id, user_id=user_id)
     if not user:
         logger.warning("Stripe checkout completed for unknown customer/user.")
-        return
+        return None
 
     user.stripe_customer_id = customer_id
     if subscription_id:
         subscription = await retrieve_subscription(subscription_id)
         _apply_subscription(user, subscription)
+
+    return (
+        str(user.id),
+        "subscription_created",
+        {
+            "billing_plan": user.billing_plan,
+            "subscription_status": user.subscription_status,
+        },
+    )
 
 
 async def handle_subscription_updated(db: AsyncSession, subscription: Any) -> None:
@@ -144,12 +156,12 @@ async def handle_dispute_created(db: AsyncSession, charge: Any) -> None:
     user.platforms_allowed = get_platforms_allowed(user.billing_plan, user.subscription_status)
 
 
-async def handle_stripe_event(db: AsyncSession, event: Any) -> None:
+async def handle_stripe_event(db: AsyncSession, event: Any) -> tuple[str, str, dict[str, str]] | None:
     event_type = str(_get(event, "type") or "")
     data_object = _get(_get(event, "data") or {}, "object") or {}
 
     if event_type == "checkout.session.completed":
-        await handle_checkout_session_completed(db, data_object)
+        return await handle_checkout_session_completed(db, data_object)
     elif event_type == "customer.subscription.updated":
         await handle_subscription_updated(db, data_object)
     elif event_type == "customer.subscription.deleted":
@@ -162,3 +174,5 @@ async def handle_stripe_event(db: AsyncSession, event: Any) -> None:
         await handle_invoice_payment_failed(db, data_object)
     elif event_type == "charge.dispute.created":
         await handle_dispute_created(db, data_object)
+
+    return None

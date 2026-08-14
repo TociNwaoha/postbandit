@@ -26,6 +26,7 @@ from app.schemas.user import (
 )
 from app.api.deps import get_current_user
 from app.api.rate_limiter import limiter
+from app.core.analytics import track
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -145,6 +146,7 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    track(str(user.id), "trial_started", {"auth_provider": "email"})
 
     return SignupResponse(
         message="Account created successfully",
@@ -241,6 +243,7 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
         db.add(user)
         await db.commit()
         await db.refresh(user)
+        track(str(user.id), "trial_started", {"auth_provider": "google"})
 
     token = create_access_token(str(user.id))
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))

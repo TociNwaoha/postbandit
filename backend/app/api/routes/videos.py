@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.config import settings
+from app.core.analytics import track
 from app.database import get_db
 from app.models.clip import Clip
 from app.models.clip_overlay_asset import ClipOverlayAsset
@@ -549,6 +550,11 @@ async def confirm_upload(
     await db.commit()
     await db.refresh(video)
 
+    track(
+        str(video.user_id),
+        "video_imported",
+        {"video_id": str(video.id), "source_type": video.source_type.value, "import_mode": video.import_mode.value},
+    )
     await _enqueue_transcribe_job(db, video)
     return VideoConfirmUploadResponse(video_id=video.id, status=video.status)
 
@@ -615,6 +621,11 @@ async def proxy_upload(
     await db.commit()
     await db.refresh(video)
 
+    track(
+        str(video.user_id),
+        "video_imported",
+        {"video_id": str(video.id), "source_type": video.source_type.value, "import_mode": video.import_mode.value},
+    )
     await _enqueue_transcribe_job(db, video)
     await _enqueue_editor_preview_proxy_job(db, video)
     return VideoConfirmUploadResponse(video_id=video.id, status=video.status)

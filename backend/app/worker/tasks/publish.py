@@ -7,6 +7,7 @@ from pathlib import Path
 from sqlalchemy import select, update
 
 from app.celery_app import celery_app
+from app.core.analytics import track
 from app.database import SyncSessionLocal
 from app.models.connected_account import ConnectedAccount
 from app.models.export import Export, ExportStatus
@@ -249,6 +250,17 @@ def execute_publish_job(self, publish_job_id: str):
             db.commit()
 
             if publish_job.status == PublishStatus.published:
+                track(
+                    str(publish_job.user_id),
+                    "post_published",
+                    {
+                        "publish_job_id": str(publish_job.id),
+                        "clip_id": str(publish_job.clip_id) if publish_job.clip_id else None,
+                        "export_id": str(publish_job.export_id) if publish_job.export_id else None,
+                        "platform": publish_job.platform.value,
+                        "publish_mode": publish_job.publish_mode.value,
+                    },
+                )
                 if publish_job.workflow_source_post_id:
                     from app.worker.tasks.social_workflows import continue_source_workflow_after_video_ready
 
