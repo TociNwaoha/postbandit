@@ -17,7 +17,7 @@ export default function PrivacyPage() {
       <div className="mx-auto w-full max-w-4xl rounded-3xl border border-[#D6E2F5] bg-white p-6 shadow-[0_12px_28px_rgba(9,21,40,0.08)] sm:p-8">
         <header className="mb-8 border-b border-[#E2ECFA] pb-6">
           <div className="flex items-center gap-3">
-            <img src="/icon.png" alt="PostBandit logo" width={40} height={40} className="h-10 w-10 rounded-lg" />
+            <img src="/icon-512.png" alt="PostBandit logo" width={40} height={40} className="h-10 w-10 rounded-lg" />
             <p className="app-display text-2xl font-extrabold tracking-tight text-[#1D3FD0]">PostBandit</p>
           </div>
           <h1 className="app-display mt-5 text-3xl font-extrabold tracking-tight text-[#091528] sm:text-4xl">

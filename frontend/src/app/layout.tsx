@@ -4,15 +4,25 @@ import { Providers } from "./providers";
 
 const APP_TITLE = "PostBandit";
 const APP_DESCRIPTION = "AI-powered video clipping and social publishing for creators";
-const APP_ICON = "/icon.png";
+const APP_ICON = "/icon-512.png";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://postbandit.com"),
   title: APP_TITLE,
   description: APP_DESCRIPTION,
   icons: {
-    icon: "/favicon.ico",
-    apple: APP_ICON,
+    icon: [
+      { url: "/icon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icon-180.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    other: [
+      { rel: "icon", url: "/icon-512.png", sizes: "512x512" },
+    ],
   },
   openGraph: {
     title: APP_TITLE,
