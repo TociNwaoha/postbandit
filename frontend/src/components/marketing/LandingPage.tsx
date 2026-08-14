@@ -757,6 +757,9 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
             <Link href="/terms" className="transition hover:text-[rgba(255,255,255,0.84)]">
               Terms of Service
             </Link>
+            <Link href="/data-deletion" className="transition hover:text-[rgba(255,255,255,0.84)]">
+              Data Deletion
+            </Link>
             <Link href="/refunds" className="transition hover:text-[rgba(255,255,255,0.84)]">
               Refund Policy
             </Link>
