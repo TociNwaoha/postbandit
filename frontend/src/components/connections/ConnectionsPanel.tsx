@@ -10,7 +10,7 @@ import { api, ApiError } from "@/lib/api";
 import { ConnectedAccount, SocialProvider } from "@/types";
 
 import { getPlatformBrandMeta } from "./platformBrand";
-import { TwitchChannelsPanel } from "./TwitchChannelsPanel";
+import { TwitchChannelsPanel, TwitchConnectCard } from "./TwitchChannelsPanel";
 
 const statusTextStyles: Record<string, string> = {
   ready: "text-emerald-700",
@@ -285,7 +285,8 @@ export function ConnectionsPanel() {
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
-        <Card padding="sm" className="h-fit">
+        <div className="space-y-4">
+        <Card padding="sm">
           <h3 className="text-sm font-semibold text-[var(--app-text)]">Add new account</h3>
           <p className="mt-1 text-xs text-[var(--app-muted)]">
             Connect platforms with branded OAuth buttons and manage them on the right.
@@ -330,8 +331,11 @@ export function ConnectionsPanel() {
                 </div>
               );
             })}
+            <TwitchConnectCard />
           </div>
         </Card>
+        <TwitchChannelsPanel />
+        </div>
 
         <Card padding="sm">
           <h3 className="text-sm font-semibold text-[var(--app-text)]">Connected accounts</h3>
@@ -407,7 +411,6 @@ export function ConnectionsPanel() {
             })}
           </div>
         </Card>
-        <TwitchChannelsPanel />
       </div>
     </div>
   );
