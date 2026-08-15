@@ -100,6 +100,19 @@ def get_twitch_user(login: str) -> dict:
     return items[0]
 
 
+def get_live_stream(broadcaster_id: str) -> dict | None:
+    response = httpx.get(
+        f"{TWITCH_API}/streams",
+        params={"user_id": broadcaster_id},
+        headers=_twitch_headers(_app_access_token()),
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise TwitchAPIError("Twitch live-status lookup failed", response.status_code)
+    streams = response.json().get("data") or []
+    return streams[0] if streams else None
+
+
 def ensure_eventsub_subscription(*, broadcaster_id: str, event_type: str) -> None:
     token = _app_access_token()
     headers = _twitch_headers(token)

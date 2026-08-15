@@ -10,6 +10,7 @@ import { api, ApiError } from "@/lib/api";
 import { ConnectedAccount, SocialProvider } from "@/types";
 
 import { getPlatformBrandMeta } from "./platformBrand";
+import { TwitchChannelsPanel } from "./TwitchChannelsPanel";
 
 const statusTextStyles: Record<string, string> = {
   ready: "text-emerald-700",
@@ -406,6 +407,7 @@ export function ConnectionsPanel() {
             })}
           </div>
         </Card>
+        <TwitchChannelsPanel />
       </div>
     </div>
   );

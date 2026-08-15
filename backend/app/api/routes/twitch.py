@@ -11,13 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.job import Job, JobStatus
 from app.models.twitch_channel import TwitchChannel, TwitchChannelStatus
 from app.models.user import User
+from app.models.video import Video, VideoImportMode, VideoImportState, VideoSourceType, VideoStatus
 from app.services.twitch import (
     TwitchAPIError,
     TwitchConfigurationError,
     claim_event_message,
     ensure_channel_subscriptions,
+    get_live_stream,
     get_twitch_user,
     verify_eventsub_signature,
 )
@@ -49,6 +52,13 @@ class TwitchChannelResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TwitchClipRequestResponse(BaseModel):
+    video_id: uuid.UUID
+    task_id: str
+    status: str = "queued"
+    message: str
 
 
 @router.get("/twitch-channels", response_model=list[TwitchChannelResponse])
@@ -95,6 +105,71 @@ async def connect_twitch_channel(
     db.add(channel)
     await db.flush()
     return channel
+
+
+@router.post("/twitch-channels/{channel_id}/clip", response_model=TwitchClipRequestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def request_twitch_live_clip(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    channel = await db.scalar(
+        select(TwitchChannel).where(
+            TwitchChannel.id == channel_id,
+            TwitchChannel.owner_user_id == current_user.id,
+            TwitchChannel.status == TwitchChannelStatus.active,
+        )
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Twitch channel not found")
+    try:
+        stream = await asyncio.to_thread(get_live_stream, channel.twitch_broadcaster_id)
+    except TwitchAPIError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+
+    channel.is_live = bool(stream)
+    if stream:
+        channel.last_live_event_at = datetime.now(timezone.utc)
+    if not stream:
+        raise HTTPException(status_code=409, detail="This Twitch channel is not live right now")
+
+    active_job = await db.scalar(
+        select(Job)
+        .join(Video, Job.video_id == Video.id)
+        .where(
+            Video.triggering_channel_id == channel.id,
+            Job.type == "twitch_live_clip",
+            Job.status.in_([JobStatus.queued, JobStatus.running]),
+        )
+    )
+    if active_job:
+        raise HTTPException(status_code=409, detail="A live clip is already being created for this channel")
+
+    video = Video(
+        user_id=current_user.id,
+        title=f"Live clip from {channel.display_name}",
+        source_type=VideoSourceType.twitch_live,
+        source_url=f"https://www.twitch.tv/{channel.twitch_login}",
+        import_mode=VideoImportMode.server_download,
+        import_state=VideoImportState.queued,
+        status=VideoStatus.queued,
+        triggering_channel_id=channel.id,
+        triggered_by_user_id=current_user.id,
+        external_metadata_json={"twitch_live": {"broadcaster_id": channel.twitch_broadcaster_id}},
+    )
+    db.add(video)
+    await db.flush()
+    job = Job(video_id=video.id, type="twitch_live_clip", payload={"channel_id": str(channel.id)}, status=JobStatus.queued)
+    db.add(job)
+    await db.flush()
+    try:
+        from app.worker.tasks.twitch_live import create_live_clip
+
+        task = create_live_clip.apply_async(args=[str(video.id)], queue="twitch_live_clips")
+        job.celery_task_id = task.id
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Could not queue Twitch live clip") from exc
+    return TwitchClipRequestResponse(video_id=video.id, task_id=task.id, message="Twitch clip request queued")
 
 
 @router.post("/webhooks/twitch/eventsub", include_in_schema=False)
