@@ -125,7 +125,7 @@ class Video(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="videos")
+    user: Mapped["User"] = relationship("User", back_populates="videos", foreign_keys=[user_id])
     transcript_segments: Mapped[list["TranscriptSegment"]] = relationship(
         "TranscriptSegment", back_populates="video", cascade="all, delete-orphan"
     )

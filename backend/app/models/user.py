@@ -44,7 +44,12 @@ class User(Base):
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    videos: Mapped[list["Video"]] = relationship("Video", back_populates="user", cascade="all, delete-orphan")
+    videos: Mapped[list["Video"]] = relationship(
+        "Video",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="Video.user_id",
+    )
     exports: Mapped[list["Export"]] = relationship("Export", back_populates="user", cascade="all, delete-orphan")
     connected_accounts: Mapped[list["ConnectedAccount"]] = relationship(
         "ConnectedAccount", back_populates="user", cascade="all, delete-orphan"
