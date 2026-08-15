@@ -96,6 +96,21 @@ services:
       - ./data/thumbnails:/data/thumbnails
     command: celery -A app.celery_app beat --loglevel=info
 
+  twitch-live-worker:
+    build: ./backend
+    restart: always
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - clipbandit_storage:/tmp/clipbandit-storage
+      - ./data/thumbnails:/data/thumbnails
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=1 -Q twitch_live_clips
+
   frontend:
     build: ./frontend
     restart: always

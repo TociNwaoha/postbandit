@@ -27,6 +27,7 @@ celery_app = Celery(
         "app.worker.tasks.social_workflows",
         "app.worker.tasks.analytics",
         "app.worker.tasks.content_generation",
+        "app.worker.tasks.twitch_live",
     ],
 )
 
@@ -114,6 +115,7 @@ celery_app.conf.update(
         "app.worker.tasks.social_workflows.*": {"queue": "ingest"},
         "app.worker.tasks.analytics.*": {"queue": "ingest"},
         "app.worker.tasks.content_generation.*": {"queue": "ingest"},
+        "app.worker.tasks.twitch_live.*": {"queue": "twitch_live_clips"},
         "generate_daily_content": {"queue": "ingest"},
     },
     task_queues={
@@ -122,6 +124,7 @@ celery_app.conf.update(
         "score": {},
         "render": {},
         "publish": {},
+        "twitch_live_clips": {},
     },
     worker_prefetch_multiplier=1,
     task_acks_late=True,

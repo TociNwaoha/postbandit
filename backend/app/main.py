@@ -29,6 +29,7 @@ from app.api.routes import (
     social,
     storage,
     stripe_webhooks,
+    twitch,
     v1,
     videos,
     workflows,
@@ -161,5 +162,6 @@ app.include_router(developer.router, prefix="/api")
 app.include_router(v1.router, prefix="/api/v1")
 app.include_router(billing.router, prefix="/api")
 app.include_router(stripe_webhooks.router, prefix="/api")
+app.include_router(twitch.router, prefix="/api")
 
 app.include_router(content_queue.router, prefix="/api")

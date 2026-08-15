@@ -24,6 +24,8 @@ from app.models.social_workflow_source_post import SocialWorkflowSourcePost
 from app.models.api_key import ApiKey
 from app.models.processed_stripe_event import ProcessedStripeEvent
 from app.models.post_analytics import PostAnalytics
+from app.models.twitch_channel import TwitchChannel
+from app.models.twitch_service_credential import TwitchServiceCredential
 
 __all__ = [
     "User",
@@ -52,4 +54,6 @@ __all__ = [
     "ApiKey",
     "ProcessedStripeEvent",
     "PostAnalytics",
+    "TwitchChannel",
+    "TwitchServiceCredential",
 ]

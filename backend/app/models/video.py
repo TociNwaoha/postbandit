@@ -27,6 +27,7 @@ class VideoSourceType(str, enum.Enum):
     tiktok = "tiktok"
     x = "x"
     twitch = "twitch"
+    twitch_live = "twitch_live"
 
 
 class VideoStatus(str, enum.Enum):
@@ -114,6 +115,14 @@ class Video(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    twitch_clip_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    twitch_clip_slug: Mapped[str | None] = mapped_column(String(255))
+    triggering_channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("twitch_channels.id", ondelete="SET NULL"), index=True
+    )
+    triggered_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
 
     user: Mapped["User"] = relationship("User", back_populates="videos")

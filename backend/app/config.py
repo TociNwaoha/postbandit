@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     social_token_encryption_key: str = "placeholder"
     social_oauth_state_ttl_minutes: int = 15
 
+    # Twitch live clipping. The service user token is migrated into encrypted
+    # database storage on first use; the env values are bootstrap-only.
+    twitch_client_id: str = ""
+    twitch_client_secret: str = ""
+    twitch_service_access_token: str = ""
+    twitch_service_refresh_token: str = ""
+    twitch_webhook_secret: str = ""
+    twitch_eventsub_callback_url: str = "https://api.postbandit.com/api/webhooks/twitch/eventsub"
+    twitch_clip_rate_limit_per_minute: int = 12
+
     youtube_client_id: str = "placeholder"
     youtube_client_secret: str = "placeholder"
 
