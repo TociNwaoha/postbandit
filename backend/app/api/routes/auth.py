@@ -58,10 +58,6 @@ def _is_email_verified(value: object) -> bool:
     return normalized in {"true", "1", "yes"}
 
 
-def _new_user_trial_ends_at() -> datetime:
-    return datetime.utcnow() + timedelta(days=7)
-
-
 @router.get("/users/me/caption-preset")
 async def get_caption_preset(current_user: User = Depends(get_current_user)):
     return {"caption_preset": current_user.caption_preset}
@@ -141,12 +137,13 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     user = User(
         email=email,
         password_hash=pwd_context.hash(password),
-        trial_ends_at=_new_user_trial_ends_at(),
+        subscription_status="pending_checkout",
+        platforms_allowed=0,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    track(str(user.id), "trial_started", {"auth_provider": "email"})
+    track(str(user.id), "signup_started", {"auth_provider": "email"})
 
     return SignupResponse(
         message="Account created successfully",
@@ -238,12 +235,13 @@ async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_
         user = User(
             email=email,
             password_hash=pwd_context.hash(secrets.token_urlsafe(48)),
-            trial_ends_at=_new_user_trial_ends_at(),
+            subscription_status="pending_checkout",
+            platforms_allowed=0,
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        track(str(user.id), "trial_started", {"auth_provider": "google"})
+        track(str(user.id), "signup_started", {"auth_provider": "google"})
 
     token = create_access_token(str(user.id))
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))

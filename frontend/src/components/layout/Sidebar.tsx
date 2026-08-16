@@ -173,7 +173,7 @@ const aiCmoNavItems = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ locked = false }: { locked?: boolean }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
@@ -181,7 +181,7 @@ export function Sidebar() {
   const [aiCmoEnabled, setAiCmoEnabled] = useState(false);
 
   useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user || locked) return;
     let active = true;
 
     const loadAiCmoStatus = async () => {
@@ -210,7 +210,7 @@ export function Sidebar() {
       active = false;
       window.removeEventListener("ai-cmo-status-changed", onStatusChanged);
     };
-  }, [session?.user]);
+  }, [locked, session?.user]);
 
   return (
     <aside className="flex min-h-screen w-60 flex-col border-r border-[var(--app-border)] bg-white">

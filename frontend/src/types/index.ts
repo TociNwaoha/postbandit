@@ -754,6 +754,18 @@ export interface BillingStatus {
   billing_enabled: boolean;
 }
 
+export interface PublicBillingPlan {
+  tier: string;
+  name: string;
+  monthly_price_cents: number;
+  platforms_allowed: number;
+  platform_label: string;
+  storage_quota_bytes: number;
+  storage_hard_stop_bytes: number;
+  description: string;
+  trial_period_days: number;
+}
+
 export type ContentQueueStatus = "draft" | "rendering" | "ready" | "approved" | "rejected" | "posted";
 
 export interface ContentQueueItem {

@@ -70,7 +70,17 @@ export function SignupForm({ googleEnabled }: SignupFormProps) {
         return;
       }
 
-      router.push("/login?signup=success");
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        router.push("/login?signup=success");
+        return;
+      }
+      router.push("/start-trial");
+      router.refresh();
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -81,7 +91,7 @@ export function SignupForm({ googleEnabled }: SignupFormProps) {
   async function handleGoogle() {
     setError("");
     setGoogleLoading(true);
-    await signIn("google", { callbackUrl: "/dashboard" });
+    await signIn("google", { callbackUrl: "/start-trial" });
     setGoogleLoading(false);
   }
 

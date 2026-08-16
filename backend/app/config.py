@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Public URLs
     backend_public_url: str = "http://localhost:8000"
     frontend_public_url: str = "http://localhost:3001"
-    frontend_url: str = "http://localhost:3001"
+    frontend_url: str = ""
 
     # Stripe Billing
     stripe_billing_enabled: bool = False

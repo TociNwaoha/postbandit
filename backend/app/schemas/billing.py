@@ -11,6 +11,18 @@ class BillingCheckoutResponse(BaseModel):
     checkout_url: str
 
 
+class PublicBillingPlan(BaseModel):
+    tier: str
+    name: str
+    monthly_price_cents: int
+    platforms_allowed: int
+    platform_label: str
+    storage_quota_bytes: int
+    storage_hard_stop_bytes: int
+    description: str
+    trial_period_days: int
+
+
 class BillingPortalResponse(BaseModel):
     portal_url: str
 

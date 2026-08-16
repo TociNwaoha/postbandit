@@ -26,6 +26,7 @@ def validate_billing_config() -> None:
             "STRIPE_CREATOR_PRICE_ID": settings.stripe_creator_price_id,
             "STRIPE_PRO_PRICE_ID": settings.stripe_pro_price_id,
             "STRIPE_ELITE_PRICE_ID": settings.stripe_elite_price_id,
+            "FRONTEND_URL": settings.frontend_url,
         }.items()
         if not value
     ]
@@ -73,7 +74,7 @@ async def create_checkout_session(
         line_items=[{"price": price_id, "quantity": 1}],
         payment_method_collection="always",
         subscription_data={
-            "trial_period_days": 7,
+            "trial_period_days": 3,
             "metadata": {"user_id": user_id, "plan": plan},
         },
         metadata={"user_id": user_id, "plan": plan},

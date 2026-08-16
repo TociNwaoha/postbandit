@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.billing.enforcement import count_connected_platforms
-from app.billing.plans import get_platforms_allowed, get_price_id
+from app.billing.plans import TRIAL_PERIOD_DAYS, get_platforms_allowed, get_price_id, purchasable_plans
 from app.billing.stripe_client import (
     BillingConfigurationError,
     create_checkout_session,
@@ -20,6 +20,7 @@ from app.schemas.billing import (
     BillingPortalResponse,
     BillingStatusResponse,
     BillingUpgradeResponse,
+    PublicBillingPlan,
 )
 from app.services.editor_quota import refresh_user_storage_usage, to_usage_response
 
@@ -35,6 +36,24 @@ def _billing_unavailable(exc: BillingConfigurationError) -> HTTPException:
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail=str(exc),
     )
+
+
+@router.get("/plans", response_model=list[PublicBillingPlan])
+async def public_billing_plans():
+    return [
+        PublicBillingPlan(
+            tier=plan.tier,
+            name=plan.name,
+            monthly_price_cents=plan.monthly_price_cents,
+            platforms_allowed=plan.platforms_allowed,
+            platform_label=plan.platform_label,
+            storage_quota_bytes=plan.storage_quota_bytes,
+            storage_hard_stop_bytes=plan.storage_hard_stop_bytes,
+            description=plan.marketing_description,
+            trial_period_days=TRIAL_PERIOD_DAYS,
+        )
+        for plan in purchasable_plans()
+    ]
 
 
 async def _ensure_customer(user: User, db: AsyncSession) -> str:
@@ -100,6 +119,35 @@ async def create_billing_checkout(
             price_id=get_price_id(plan),
             success_url=_frontend_url("/billing?status=checkout_success"),
             cancel_url=_frontend_url("/billing?status=checkout_cancelled"),
+        )
+    except BillingConfigurationError as exc:
+        raise _billing_unavailable(exc) from exc
+
+    return BillingCheckoutResponse(checkout_url=session["url"])
+
+
+@router.post("/signup-checkout", response_model=BillingCheckoutResponse)
+async def create_signup_checkout(
+    plan: BillingPlanName = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create checkout for a new account without changing the Billing-page flow."""
+    if current_user.subscription_status != "pending_checkout":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Plan selection is only available before starting a trial.",
+        )
+
+    customer_id = await _ensure_customer(current_user, db)
+    try:
+        session = await create_checkout_session(
+            customer_id=customer_id,
+            user_id=str(current_user.id),
+            plan=plan,
+            price_id=get_price_id(plan),
+            success_url=_frontend_url("/start-trial?status=checkout_success"),
+            cancel_url=_frontend_url("/start-trial?status=checkout_cancelled"),
         )
     except BillingConfigurationError as exc:
         raise _billing_unavailable(exc) from exc

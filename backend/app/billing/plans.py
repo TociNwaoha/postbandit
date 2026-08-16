@@ -13,9 +13,11 @@ class BillingPlan:
     name: str
     monthly_price_cents: int
     platforms_allowed: int
+    platform_label: str
     storage_quota_bytes: int
     storage_hard_stop_bytes: int
     description: str
+    marketing_description: str
 
 
 PLATFORM_COUNT_ALL = 7
@@ -27,68 +29,91 @@ PLANS: dict[str, BillingPlan] = {
         name="Trial",
         monthly_price_cents=0,
         platforms_allowed=5,
+        platform_label="5 platforms",
         storage_quota_bytes=5 * GB,
         storage_hard_stop_bytes=6 * GB,
-        description="7-day trial with card required at signup.",
+        description="3-day trial with card required at signup.",
+        marketing_description="A short trial of PostBandit.",
     ),
     "creator": BillingPlan(
         tier="creator",
         name="Creator",
         monthly_price_cents=1800,
         platforms_allowed=5,
+        platform_label="Connect up to 5 platforms",
         storage_quota_bytes=5 * GB,
         storage_hard_stop_bytes=6 * GB,
         description="Creator plan with 5 connected social platforms.",
+        marketing_description="For creators starting a repeatable video-to-social workflow.",
     ),
     "pro": BillingPlan(
         tier="pro",
         name="Pro",
         monthly_price_cents=4900,
         platforms_allowed=10,
+        platform_label="Connect up to 10 platforms",
         storage_quota_bytes=25 * GB,
         storage_hard_stop_bytes=30 * GB,
         description="Pro plan with 10 connected social platforms.",
+        marketing_description="For active creators and teams publishing across more channels.",
     ),
     "elite": BillingPlan(
         tier="elite",
         name="Elite",
         monthly_price_cents=25000,
         platforms_allowed=PLATFORM_COUNT_ALL,
+        platform_label="Every supported platform",
         storage_quota_bytes=100 * GB,
         storage_hard_stop_bytes=120 * GB,
         description="Elite plan with every supported social platform.",
+        marketing_description="For serious operators managing high-volume content systems.",
     ),
     "past_due": BillingPlan(
         tier="past_due",
         name="Past Due",
         monthly_price_cents=0,
         platforms_allowed=0,
+        platform_label="No platforms",
         storage_quota_bytes=0,
         storage_hard_stop_bytes=0,
         description="Payment issue. Billing must be resolved to continue connecting platforms.",
+        marketing_description="",
     ),
     "cancelled": BillingPlan(
         tier="cancelled",
         name="Cancelled",
         monthly_price_cents=0,
         platforms_allowed=0,
+        platform_label="No platforms",
         storage_quota_bytes=0,
         storage_hard_stop_bytes=0,
         description="Subscription cancelled.",
+        marketing_description="",
     ),
     "expired": BillingPlan(
         tier="expired",
         name="Expired",
         monthly_price_cents=0,
         platforms_allowed=0,
+        platform_label="No platforms",
         storage_quota_bytes=0,
         storage_hard_stop_bytes=0,
         description="Trial expired.",
+        marketing_description="",
     ),
 }
 
+PURCHASABLE_PLAN_TIERS = ("creator", "pro", "elite")
+TRIAL_PERIOD_DAYS = 3
+
+
+def purchasable_plans() -> tuple[BillingPlan, ...]:
+    return tuple(PLANS[tier] for tier in PURCHASABLE_PLAN_TIERS)
+
 
 def _effective_plan(plan_tier: str, subscription_status: str | None = None) -> BillingPlan:
+    if subscription_status == "pending_checkout":
+        return PLANS["past_due"]
     if subscription_status in {"past_due", "unpaid", "incomplete_expired"}:
         return PLANS["past_due"]
     if subscription_status == "canceled":

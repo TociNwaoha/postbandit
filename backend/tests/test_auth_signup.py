@@ -44,6 +44,9 @@ async def test_signup_creates_user_with_hashed_password():
     assert response.message == "Account created successfully"
     assert db.added is not None
     assert db.added.password_hash != "testpass123"
+    assert db.added.subscription_status == "pending_checkout"
+    assert db.added.platforms_allowed == 0
+    assert db.added.trial_ends_at is None
     assert db.committed is True
     assert db.refreshed is True
 

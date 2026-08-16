@@ -8,34 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { api, ApiError } from "@/lib/api";
-import { BillingStatus } from "@/types";
-
-const plans = [
-  {
-    id: "creator",
-    name: "Creator",
-    price: "$18/mo",
-    platforms: "5 platforms",
-    storage: "5GB storage",
-    points: ["7-day trial", "Connect 5 social platforms", "5GB storage with 6GB hard stop"],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: "$49/mo",
-    platforms: "10 platforms",
-    storage: "25GB storage",
-    points: ["7-day trial", "Connect up to 10 platforms", "25GB storage with 30GB hard stop"],
-  },
-  {
-    id: "elite",
-    name: "Elite",
-    price: "$250/mo",
-    platforms: "Every supported platform",
-    storage: "100GB storage",
-    points: ["7-day trial", "Full platform access", "100GB storage for high-volume workflows"],
-  },
-];
+import { BillingStatus, PublicBillingPlan } from "@/types";
 
 function formatDate(value: string | null) {
   if (!value) return "Not set";
@@ -53,9 +26,14 @@ function formatBytes(bytes: number) {
   return `${Math.round(gb * 10) / 10}GB`;
 }
 
+function formatMonthlyPrice(cents: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100) + "/mo";
+}
+
 export function BillingPage() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [plans, setPlans] = useState<PublicBillingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +53,12 @@ export function BillingPage() {
     setLoading(true);
     setError(null);
     try {
-      setStatus(await api.get<BillingStatus>("/api/billing/status"));
+      const [billingStatus, planRows] = await Promise.all([
+        api.get<BillingStatus>("/api/billing/status"),
+        api.get<PublicBillingPlan[]>("/api/billing/plans"),
+      ]);
+      setStatus(billingStatus);
+      setPlans(planRows);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load billing status");
     } finally {
@@ -183,19 +166,19 @@ export function BillingPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {plans.map((plan) => {
-          const current = status?.plan_tier === plan.id;
+          const current = status?.plan_tier === plan.tier;
           return (
-            <Card key={plan.id} className={current ? "border-[#1D3FD0]" : ""}>
+            <Card key={plan.tier} className={current ? "border-[#1D3FD0]" : ""}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-xl font-bold text-[var(--app-text)]">{plan.name}</h3>
-                  <p className="mt-1 text-sm text-[var(--app-muted)]">{plan.platforms}</p>
-                  <p className="mt-1 text-sm text-[var(--app-muted)]">{plan.storage}</p>
+                  <p className="mt-1 text-sm text-[var(--app-muted)]">{plan.platform_label}</p>
+                  <p className="mt-1 text-sm text-[var(--app-muted)]">{formatBytes(plan.storage_quota_bytes)} storage</p>
                 </div>
-                <p className="text-xl font-bold text-[var(--app-text)]">{plan.price}</p>
+                <p className="text-xl font-bold text-[var(--app-text)]">{formatMonthlyPrice(plan.monthly_price_cents)}</p>
               </div>
               <ul className="mt-5 space-y-2 text-sm text-[var(--app-muted)]">
-                {plan.points.map((point) => (
+                {[`${plan.trial_period_days}-day trial`, plan.platform_label, `${formatBytes(plan.storage_quota_bytes)} storage with ${formatBytes(plan.storage_hard_stop_bytes)} hard stop`].map((point) => (
                   <li key={point}>- {point}</li>
                 ))}
               </ul>
@@ -203,8 +186,8 @@ export function BillingPage() {
                 type="button"
                 className="mt-6 w-full"
                 variant={current ? "secondary" : "primary"}
-                loading={busyAction === `checkout-${plan.id}`}
-                onClick={() => void startCheckout(plan.id)}
+                loading={busyAction === `checkout-${plan.tier}`}
+                onClick={() => void startCheckout(plan.tier)}
               >
                 {current ? "Restart checkout" : `Start ${plan.name}`}
               </Button>

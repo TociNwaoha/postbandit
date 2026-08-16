@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { MascotSection } from "@/components/landing/MascotSection";
+import { api } from "@/lib/api";
+import { PublicBillingPlan } from "@/types";
 
 type LandingPageProps = {
   displayClassName?: string;
@@ -52,54 +54,6 @@ const featureCards = [
     title: "Ship everywhere from one queue",
     body: "Connect your accounts once, then publish with platform-specific controls and transparent delivery outcomes.",
     bullets: ["Per-platform destination selection", "Scheduling + retries", "Published URL tracking and history"],
-  },
-];
-
-const pricing = [
-  {
-    plan: "Creator",
-    price: "$18",
-    note: "/mo",
-    desc: "For creators starting a repeatable video-to-social workflow.",
-    items: [
-      "7-day trial with card required",
-      "Connect up to 5 platforms",
-      "5GB included storage",
-      "AI clips, captions, and platform copy",
-      "Scheduling calendar and publish history",
-    ],
-    cta: "Get started",
-    featured: false,
-  },
-  {
-    plan: "Pro",
-    price: "$49",
-    note: "/mo",
-    desc: "For active creators and teams publishing across more channels.",
-    items: [
-      "Connect up to 10 platforms",
-      "25GB included storage",
-      "Social repurpose workflows",
-      "AI CMO carousel drafts",
-      "Priority publishing queue",
-    ],
-    cta: "Try now for free",
-    featured: true,
-  },
-  {
-    plan: "Elite",
-    price: "$250",
-    note: "/mo",
-    desc: "For serious operators managing high-volume content systems.",
-    items: [
-      "Every supported social platform",
-      "100GB included storage",
-      "Highest workflow limits",
-      "Advanced automation and API access",
-      "Priority human support",
-    ],
-    cta: "Get started",
-    featured: false,
   },
 ];
 
@@ -299,6 +253,19 @@ function SectionHeading({
 
 export function LandingPage({ displayClassName = "marketing-display", bodyClassName = "marketing-body" }: LandingPageProps) {
   const [publishingIndex, setPublishingIndex] = useState(0);
+  const [plans, setPlans] = useState<PublicBillingPlan[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void api.get<PublicBillingPlan[]>("/api/billing/plans").then((rows) => {
+      if (active) setPlans(rows);
+    }).catch(() => {
+      // Keep the rest of the marketing page available if billing is unavailable.
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const revealObserver = new IntersectionObserver(
@@ -328,6 +295,17 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
     if (publishingIndex >= platformRows.length) return 0;
     return publishingIndex;
   }, [publishingIndex]);
+  const pricing = plans.map((plan) => ({
+    ...plan,
+    featured: plan.tier === "pro",
+    items: [
+      `${plan.trial_period_days}-day trial with card required`,
+      plan.platform_label,
+      `${Math.round(plan.storage_quota_bytes / 1024 / 1024 / 1024)}GB included storage`,
+      "AI clips, captions, and platform copy",
+      "Scheduling calendar and publish history",
+    ],
+  }));
 
   return (
     <div className={`${bodyClassName} bg-[#F6FAFF] text-[#091528]`}>
@@ -597,14 +575,14 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
           <SectionHeading
             tag="Pricing"
             title="Simple, fair pricing"
-            body="Start with a 7-day trial. No hidden fees, no per-post charges, and plan limits are visible before you publish."
+            body={`Start with a ${plans[0]?.trial_period_days ?? 3}-day trial. No hidden fees, no per-post charges, and plan limits are visible before you publish.`}
             displayClassName={displayClassName}
           />
 
-          <div className="mt-12 grid gap-6 md:grid-cols-[1fr_1.06fr_1fr]">
+          <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
             {pricing.map((plan) => (
               <article
-                key={plan.plan}
+                key={plan.tier}
                 className={`sr rounded-2xl border p-7 ${
                   plan.featured
                     ? "-mt-1 border-[#1D3FD0] bg-[#1D3FD0] text-white shadow-[0_14px_36px_rgba(29,63,208,0.32)]"
@@ -617,14 +595,14 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
                   </span>
                 ) : null}
                 <p className={`mt-2 text-xs font-bold uppercase tracking-[0.08em] ${plan.featured ? "text-white/75" : "text-[#7A94B0]"}`}>
-                  {plan.plan}
+                  {plan.name}
                 </p>
                 <p className={`${displayClassName} mt-3`}>
-                  <span className="align-top text-[22px]">{plan.price.charAt(0)}</span>
-                  <span className="text-[50px] font-extrabold leading-none">{plan.price.slice(1)}</span>
-                  <span className={`ml-1 text-sm ${plan.featured ? "text-white/70" : "text-[#7A94B0]"}`}>{plan.note}</span>
+                  <span className="align-top text-[22px]">$</span>
+                  <span className="text-[50px] font-extrabold leading-none">{plan.monthly_price_cents / 100}</span>
+                  <span className={`ml-1 text-sm ${plan.featured ? "text-white/70" : "text-[#7A94B0]"}`}>/mo</span>
                 </p>
-                <p className={`mt-3 text-sm leading-6 ${plan.featured ? "text-white/82" : "text-[#4A6080]"}`}>{plan.desc}</p>
+                <p className={`mt-3 text-sm leading-6 ${plan.featured ? "text-white/82" : "text-[#4A6080]"}`}>{plan.description}</p>
                 <ul className={`mt-5 space-y-2.5 text-sm ${plan.featured ? "text-white/92" : "text-[#415A7A]"}`}>
                   {plan.items.map((item) => (
                     <li key={item} className="flex items-start gap-2.5">
@@ -649,7 +627,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
                       : "border border-[#D6E2F5] text-[#16356B] hover:bg-[#F4F8FF]"
                   }`}
                 >
-                  {plan.cta}
+                  {plan.featured ? "Try now for free" : "Get started"}
                 </Link>
               </article>
             ))}
