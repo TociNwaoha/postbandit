@@ -150,7 +150,7 @@ function LockedWorkspacePrompt({ onStartTrial }: { onStartTrial: () => void }) {
         </div>
         <p className="mt-6 text-sm font-bold uppercase tracking-[0.12em] text-[#1D3FD0]">Workspace locked</p>
         <h2 className="app-display mt-3 text-3xl font-extrabold tracking-[-0.03em] text-[#091528]">Start your free trial to unlock PostBandit</h2>
-        <p className="mt-4 text-sm leading-6 text-[#4A6080]">Choose a plan and add a card to begin your 3-day trial. You can return to this step whenever you are ready.</p>
+        <p className="mt-4 text-sm leading-6 text-[#4A6080]">Choose a plan and add a card to begin your 7-day trial. You can return to this step whenever you are ready.</p>
         <button type="button" onClick={onStartTrial} className="mt-7 rounded-xl bg-[#1D3FD0] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#1633B8]">Start your free trial</button>
         <div className="mt-7 border-t border-[#E3EAF8] pt-5">
           <button type="button" onClick={() => setShowDelete((visible) => !visible)} className="text-xs font-semibold text-[#6A7C99] underline underline-offset-4 hover:text-red-700">Delete this account</button>

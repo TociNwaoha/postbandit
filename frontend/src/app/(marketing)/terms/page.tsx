@@ -59,7 +59,7 @@ export default function TermsPage() {
               PostBandit offers paid subscription plans (Repurposer, Creator, Pro, and Agency) with different feature sets and usage limits. Current pricing is displayed at postbandit.com/pricing.
             </p>
             <p className="mt-2">
-              New subscribers receive a 3-day free trial. A valid payment method is required to start your trial. You will not be charged until the trial period ends. If you cancel before the trial ends, you will not be charged.
+              New subscribers receive a 7-day free trial. A valid payment method is required to start your trial. You will not be charged until the trial period ends. If you cancel before the trial ends, you will not be charged.
             </p>
             <p className="mt-2">
               Subscriptions are billed monthly on the same date as your trial end date. We use Stripe to process payments. By subscribing, you authorize us to charge your payment method on a recurring basis until you cancel.

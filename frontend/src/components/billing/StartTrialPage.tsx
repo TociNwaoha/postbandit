@@ -78,7 +78,7 @@ export function StartTrialPage() {
           <p className="inline-flex rounded-full border border-[#BDD0FF] bg-white/85 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-[#1D3FD0]">
             Choose your plan
           </p>
-          <h1 className="app-display mt-5 text-4xl font-extrabold tracking-[-0.035em] sm:text-5xl">Start your {plans[0]?.trial_period_days ?? 3}-day free trial</h1>
+          <h1 className="app-display mt-5 text-4xl font-extrabold tracking-[-0.035em] sm:text-5xl">Start your {plans[0]?.trial_period_days ?? 7}-day free trial</h1>
           <p className="mt-4 text-base leading-7 text-[#4A6080]">Choose the plan that fits your workflow. A card is required to start, and you will not be charged if you cancel before the trial ends.</p>
         </div>
 
