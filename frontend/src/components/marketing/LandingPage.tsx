@@ -117,14 +117,14 @@ function PlatformBadge({ platform, size = "regular" }: { platform: string; size?
 function WorkflowDiagram({ displayClassName }: { displayClassName: string }) {
   return (
     <div className="sr mt-10 overflow-hidden rounded-[28px] border border-[#D6E2F5] bg-[#F6FAFF] p-5 shadow-[0_18px_48px_rgba(9,21,40,0.08)]">
-      <div className="grid items-stretch gap-4 lg:grid-cols-[1fr_auto_1.08fr_auto_1.28fr]">
-        <div className="rounded-2xl border border-[#D6E2F5] bg-white p-5">
+      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.08fr)_auto_minmax(0,1.28fr)]">
+        <div className="min-w-0 rounded-2xl border border-[#D6E2F5] bg-white p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#7A94B0]">Source post</p>
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-3 flex items-center gap-3">
             <PlatformBadge platform="instagram" size="large" />
-            <div>
-              <p className={`${displayClassName} text-xl font-bold tracking-[-0.5px] text-[#091528]`}>Instagram Reel</p>
-              <p className="text-sm text-[#5A7192]">Detected from a connected source account</p>
+            <div className="min-w-0">
+              <p className={`${displayClassName} text-lg font-bold tracking-[-0.4px] text-[#091528]`}>Instagram Reel</p>
+              <p className="mt-0.5 text-xs leading-5 text-[#5A7192]">Detected from a connected source account</p>
             </div>
           </div>
         </div>
@@ -133,13 +133,13 @@ function WorkflowDiagram({ displayClassName }: { displayClassName: string }) {
           <ArrowRightIcon className="h-8 w-8" />
         </div>
 
-        <div className="rounded-2xl border border-[#BFD1F3] bg-white p-5 shadow-[inset_0_0_0_1px_rgba(29,63,208,0.08)]">
+        <div className="min-w-0 rounded-2xl border border-[#BFD1F3] bg-white p-4 shadow-[inset_0_0_0_1px_rgba(29,63,208,0.08)]">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#1D3FD0]">PostBandit workflow</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+          <div className="mt-3 grid grid-cols-3 gap-2">
             {["Import media", "Generate export", "Write platform copy"].map((step, index) => (
-              <div key={step} className="rounded-xl border border-[#E0EAF9] bg-[#FAFCFF] p-3">
-                <p className="text-[11px] font-bold text-[#1D3FD0]">0{index + 1}</p>
-                <p className="mt-1 text-sm font-semibold text-[#18325D]">{step}</p>
+              <div key={step} className="aspect-square min-w-0 overflow-hidden rounded-lg border border-[#E0EAF9] bg-[#FAFCFF] p-2">
+                <p className="text-[10px] font-bold leading-3 text-[#1D3FD0]">0{index + 1}</p>
+                <p className="mt-1 text-[10px] font-semibold leading-3 text-[#18325D]">{step}</p>
               </div>
             ))}
           </div>
@@ -149,20 +149,20 @@ function WorkflowDiagram({ displayClassName }: { displayClassName: string }) {
           <ArrowRightIcon className="h-8 w-8" />
         </div>
 
-        <div className="rounded-2xl border border-[#D6E2F5] bg-white p-5">
+        <div className="min-w-0 rounded-2xl border border-[#D6E2F5] bg-white p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#7A94B0]">Republished to</p>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {workflowDestinations.map((destination) => (
-              <div key={destination.key} className="flex items-center gap-2 rounded-xl border border-[#E0EAF9] bg-[#FBFDFF] px-3 py-2.5">
+              <div key={destination.key} className="flex min-w-0 items-center gap-2 rounded-xl border border-[#E0EAF9] bg-[#FBFDFF] px-2.5 py-2">
                 <PlatformBadge platform={destination.key} />
-                <span className="text-sm font-semibold text-[#18325D]">{destination.label}</span>
+                <span className="min-w-0 truncate text-xs font-semibold text-[#18325D]">{destination.label}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <p className="mt-4 text-center text-sm leading-6 text-[#5A7192]">
+      <p className="mt-4 text-center text-xs leading-5 text-[#5A7192]">
         Example: PostBandit detects an Instagram post, imports the reusable video when the official API allows it, prepares the export, and creates destination jobs for TikTok, X, Facebook, and YouTube.
       </p>
     </div>
