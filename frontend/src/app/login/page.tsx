@@ -21,7 +21,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <main
       className="relative min-h-[100dvh] overflow-hidden bg-[linear-gradient(180deg,#1D3FD0_0%,#1734AE_100%)] text-white"
-      style={{ fontFamily: '"Plus Jakarta Sans", Inter, sans-serif' }}
+      style={{ fontFamily: "var(--font-body), Inter, system-ui, sans-serif" }}
     >
       <div className="pointer-events-none absolute inset-0">
         <div
@@ -59,14 +59,14 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
             </div>
             <span
               className="text-3xl font-extrabold tracking-tight text-white"
-              style={{ fontFamily: '"Bricolage Grotesque", Inter, sans-serif' }}
+              style={{ fontFamily: "var(--font-display), Inter, system-ui, sans-serif" }}
             >
               PostBandit
             </span>
           </div>
           <h1
             className="mt-6 text-4xl font-extrabold leading-tight tracking-[-0.03em] md:text-5xl"
-            style={{ fontFamily: '"Bricolage Grotesque", Inter, sans-serif' }}
+            style={{ fontFamily: "var(--font-display), Inter, system-ui, sans-serif" }}
           >
             Sign in and keep your publishing workflow moving.
           </h1>

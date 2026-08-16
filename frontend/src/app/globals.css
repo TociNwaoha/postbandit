@@ -31,11 +31,11 @@ body {
 }
 
 .app-display {
-  font-family: "Bricolage Grotesque", Inter, system-ui, sans-serif;
+  font-family: var(--font-display), Inter, system-ui, sans-serif;
 }
 
 .app-body {
-  font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+  font-family: var(--font-body), Inter, system-ui, sans-serif;
 }
 
 .app-card {
@@ -91,7 +91,7 @@ body {
 
   background-color: var(--editor-bg);
   color: var(--editor-text);
-  font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+  font-family: var(--font-body), Inter, system-ui, sans-serif;
 }
 
 .editor-workspace input,

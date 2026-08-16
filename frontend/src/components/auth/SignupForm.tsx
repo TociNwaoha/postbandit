@@ -102,7 +102,7 @@ export function SignupForm({ googleEnabled, betaAccessCode }: SignupFormProps) {
     <div className="w-full max-w-md rounded-2xl border border-[#D6E2F5] bg-white p-7 text-[#091528] shadow-[0_10px_40px_rgba(9,21,40,0.12)]">
       <h1
         className="text-2xl font-extrabold tracking-tight"
-        style={{ fontFamily: '"Bricolage Grotesque", Inter, sans-serif' }}
+        style={{ fontFamily: "var(--font-display), Inter, system-ui, sans-serif" }}
       >
         Create your account
       </h1>
