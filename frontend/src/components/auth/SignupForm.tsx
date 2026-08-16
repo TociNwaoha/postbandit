@@ -10,12 +10,14 @@ type SignupResponse = {
   user?: {
     id: string;
     email: string;
+    subscription_status?: string;
   };
   detail?: string;
 };
 
 interface SignupFormProps {
   googleEnabled: boolean;
+  betaAccessCode?: string;
 }
 
 function GoogleIcon({ className = "" }: { className?: string }) {
@@ -41,7 +43,7 @@ function GoogleIcon({ className = "" }: { className?: string }) {
   );
 }
 
-export function SignupForm({ googleEnabled }: SignupFormProps) {
+export function SignupForm({ googleEnabled, betaAccessCode }: SignupFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -59,7 +61,7 @@ export function SignupForm({ googleEnabled }: SignupFormProps) {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, beta_access_code: betaAccessCode }),
       });
 
       const payload = (await res.json()) as SignupResponse;
@@ -79,7 +81,7 @@ export function SignupForm({ googleEnabled }: SignupFormProps) {
         router.push("/login?signup=success");
         return;
       }
-      router.push("/start-trial");
+      router.push(payload.user?.subscription_status === "beta_active" ? "/dashboard" : "/start-trial");
       router.refresh();
     } catch {
       setError("Network error. Please try again.");
@@ -91,7 +93,8 @@ export function SignupForm({ googleEnabled }: SignupFormProps) {
   async function handleGoogle() {
     setError("");
     setGoogleLoading(true);
-    await signIn("google", { callbackUrl: "/start-trial" });
+    const callbackUrl = betaAccessCode ? `/signup?beta=${encodeURIComponent(betaAccessCode)}` : "/start-trial";
+    await signIn("google", { callbackUrl });
     setGoogleLoading(false);
   }
 

@@ -1,8 +1,11 @@
 import pytest
+import uuid
+from datetime import datetime, timezone
 from fastapi import HTTPException
 
-from app.api.routes.auth import signup
-from app.schemas.user import SignupRequest
+from app.api.routes.auth import activate_beta_access, signup
+from app.config import settings
+from app.schemas.user import BetaActivationRequest, SignupRequest
 
 
 class _ScalarResult:
@@ -30,6 +33,13 @@ class _FakeSession:
         self.committed = True
 
     async def refresh(self, _entity):
+        _entity.id = _entity.id or uuid.uuid4()
+        _entity.tier = _entity.tier or "starter"
+        _entity.videos_used = _entity.videos_used or 0
+        _entity.billing_plan = _entity.billing_plan or "trial"
+        _entity.is_beta_tester = bool(_entity.is_beta_tester)
+        _entity.created_at = _entity.created_at or datetime.now(timezone.utc)
+        _entity.updated_at = _entity.updated_at or datetime.now(timezone.utc)
         self.refreshed = True
 
 
@@ -74,3 +84,48 @@ async def test_signup_rejects_short_password():
 
     assert err.value.status_code == 400
     assert err.value.detail == "Password must be at least 8 characters"
+
+
+@pytest.mark.asyncio
+async def test_signup_with_valid_beta_code_skips_checkout(monkeypatch):
+    monkeypatch.setattr(settings, "beta_access_code", "shared-beta-code")
+    db = _FakeSession(existing_user=None)
+    request = SignupRequest(email="beta@example.com", password="testpass123", beta_access_code="shared-beta-code")
+
+    response = await signup(request, db=db)
+
+    assert response.user.subscription_status == "beta_active"
+    assert db.added.is_beta_tester is True
+    assert db.added.beta_expires_at is not None
+    assert db.added.stripe_customer_id is None
+    assert db.added.stripe_subscription_id is None
+
+
+@pytest.mark.asyncio
+async def test_beta_activation_does_not_create_stripe_objects(monkeypatch):
+    monkeypatch.setattr(settings, "beta_access_code", "shared-beta-code")
+    db = _FakeSession(existing_user=None)
+    user = type(
+        "PendingUser",
+        (),
+        {
+            "subscription_status": "pending_checkout",
+            "stripe_customer_id": None,
+            "stripe_subscription_id": None,
+            "billing_plan": "trial",
+            "platforms_allowed": 0,
+        },
+    )()
+
+    response = await activate_beta_access(
+        BetaActivationRequest(beta_access_code="shared-beta-code"),
+        db=db,
+        current_user=user,
+    )
+
+    assert response.message == "Beta access activated"
+    assert user.subscription_status == "beta_active"
+    assert user.is_beta_tester is True
+    assert user.beta_expires_at is not None
+    assert user.stripe_customer_id is None
+    assert user.stripe_subscription_id is None

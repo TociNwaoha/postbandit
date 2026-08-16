@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { SignupForm } from "@/components/auth/SignupForm";
+import { BetaSignupActivation } from "@/components/auth/BetaSignupActivation";
 
 interface SignupPageProps {
   searchParams?: {
     account?: string;
+    beta?: string;
   };
 }
 
 export default function SignupPage({ searchParams }: SignupPageProps) {
   const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
   const accountDeleted = searchParams?.account === "deleted";
+  const betaAccessCode = searchParams?.beta?.trim() || undefined;
 
   return (
     <main
@@ -74,7 +77,8 @@ export default function SignupPage({ searchParams }: SignupPageProps) {
 
         <section className="relative z-10 flex justify-center md:justify-end">
           <div className="w-full max-w-md">
-            <SignupForm googleEnabled={googleEnabled} />
+            {betaAccessCode ? <BetaSignupActivation betaAccessCode={betaAccessCode} /> : null}
+            <SignupForm googleEnabled={googleEnabled} betaAccessCode={betaAccessCode} />
             {accountDeleted ? (
               <div className="mt-4 rounded-lg border border-amber-300/35 bg-amber-400/15 px-3 py-2 text-sm text-amber-100">
                 Your account was deleted successfully.

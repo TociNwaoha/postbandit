@@ -30,6 +30,8 @@ class User(Base):
     billing_plan: Mapped[str] = mapped_column(String(50), default="trial", nullable=False)
     subscription_status: Mapped[str] = mapped_column(String(50), default="trialing", nullable=False)
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_beta_tester: Mapped[bool] = mapped_column(default=False, nullable=False)
+    beta_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     billing_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     billing_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     platforms_allowed: Mapped[int] = mapped_column(Integer, default=5, nullable=False)

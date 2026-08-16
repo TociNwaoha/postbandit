@@ -6,13 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from passlib.context import CryptContext
 from jose import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.database import get_db
 from app.config import settings
 from app.models.user import User
 from app.schemas.user import (
     GoogleLoginRequest,
+    BetaActivationRequest,
     LoginRequest,
     MessageResponse,
     DeleteAccountRequest,
@@ -26,6 +27,7 @@ from app.schemas.user import (
 )
 from app.api.deps import get_current_user
 from app.api.rate_limiter import limiter
+from app.billing.plans import get_platforms_allowed
 from app.core.analytics import track
 
 router = APIRouter()
@@ -33,6 +35,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 CAPTION_PRESETS = {"music_video"}
 CAPTION_STYLES = {"split_line", "thick_bold", "highlight", "outline", "box_pill"}
+BETA_ACCESS_DAYS = 30
 
 
 def create_access_token(user_id: str) -> str:
@@ -56,6 +59,19 @@ def _is_email_verified(value: object) -> bool:
         return value
     normalized = str(value or "").strip().lower()
     return normalized in {"true", "1", "yes"}
+
+
+def _has_valid_beta_access_code(value: str | None) -> bool:
+    configured_code = (settings.beta_access_code or "").strip()
+    submitted_code = (value or "").strip()
+    return bool(configured_code) and bool(submitted_code) and secrets.compare_digest(submitted_code, configured_code)
+
+
+def _activate_beta_access(user: User) -> None:
+    user.is_beta_tester = True
+    user.beta_expires_at = datetime.now(timezone.utc) + timedelta(days=BETA_ACCESS_DAYS)
+    user.subscription_status = "beta_active"
+    user.platforms_allowed = get_platforms_allowed(user.billing_plan, user.subscription_status)
 
 
 @router.get("/users/me/caption-preset")
@@ -140,6 +156,8 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
         subscription_status="pending_checkout",
         platforms_allowed=0,
     )
+    if _has_valid_beta_access_code(body.beta_access_code):
+        _activate_beta_access(user)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -149,6 +167,25 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
         message="Account created successfully",
         user=UserResponse.model_validate(user),
     )
+
+
+@router.post("/auth/beta/activate", response_model=MessageResponse)
+async def activate_beta_access(
+    body: BetaActivationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Complete a beta Google signup after its OAuth callback returns."""
+    if not _has_valid_beta_access_code(body.beta_access_code):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid beta access code")
+    if current_user.subscription_status != "pending_checkout":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Beta access is only available before checkout")
+    if current_user.stripe_customer_id or current_user.stripe_subscription_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Beta access is not available after Stripe checkout begins")
+
+    _activate_beta_access(current_user)
+    await db.commit()
+    return MessageResponse(message="Beta access activated")
 
 
 @router.post("/auth/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)

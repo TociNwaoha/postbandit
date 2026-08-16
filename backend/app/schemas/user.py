@@ -15,6 +15,8 @@ class UserBase(BaseModel):
     billing_plan: str = "trial"
     subscription_status: str = "trialing"
     trial_ends_at: datetime | None = None
+    is_beta_tester: bool = False
+    beta_expires_at: datetime | None = None
     billing_period_start: datetime | None = None
     billing_period_end: datetime | None = None
     platforms_allowed: int = 5
@@ -53,6 +55,11 @@ class GoogleLoginRequest(BaseModel):
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
+    beta_access_code: str | None = None
+
+
+class BetaActivationRequest(BaseModel):
+    beta_access_code: str
 
 
 class SignupResponse(BaseModel):

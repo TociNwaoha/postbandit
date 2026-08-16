@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -15,6 +17,7 @@ bearer_scheme = HTTPBearer()
 PENDING_CHECKOUT_ALLOWED_PATHS = {
     ("GET", "/api/billing/status"),
     ("POST", "/api/billing/signup-checkout"),
+    ("POST", "/api/auth/beta/activate"),
     ("POST", "/api/auth/me/delete"),
 }
 
@@ -45,6 +48,14 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
+    if user.subscription_status == "beta_active" and user.beta_expires_at:
+        beta_expires_at = user.beta_expires_at
+        if beta_expires_at.tzinfo is None:
+            beta_expires_at = beta_expires_at.replace(tzinfo=timezone.utc)
+        if beta_expires_at <= datetime.now(timezone.utc):
+            user.subscription_status = "pending_checkout"
+            user.platforms_allowed = 0
+            await db.commit()
     if (
         user.subscription_status == "pending_checkout"
         and (request.method, request.url.path) not in PENDING_CHECKOUT_ALLOWED_PATHS

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     stripe_pro_price_id: str = ""
     stripe_elite_price_id: str = ""
 
+    # Shared beta invite. Leave empty to disable beta signup access.
+    beta_access_code: str = ""
+
     # Product analytics
     posthog_api_key: str = ""
     posthog_host: str = "https://us.i.posthog.com"
