@@ -15,6 +15,7 @@ class UserStorageUsage(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     quota_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    hard_stop_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     used_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     raw_video_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     editor_asset_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

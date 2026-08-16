@@ -27,7 +27,7 @@ from app.schemas.user import (
 )
 from app.api.deps import get_current_user
 from app.api.rate_limiter import limiter
-from app.billing.plans import get_platforms_allowed
+from app.billing.plans import get_plan
 from app.core.analytics import track
 
 router = APIRouter()
@@ -68,10 +68,13 @@ def _has_valid_beta_access_code(value: str | None) -> bool:
 
 
 def _activate_beta_access(user: User) -> None:
+    creator_plan = get_plan("creator")
     user.is_beta_tester = True
     user.beta_expires_at = datetime.now(timezone.utc) + timedelta(days=BETA_ACCESS_DAYS)
     user.subscription_status = "beta_active"
-    user.platforms_allowed = get_platforms_allowed(user.billing_plan, user.subscription_status)
+    user.platforms_allowed = creator_plan.platforms_allowed
+    user.beta_storage_quota_bytes = creator_plan.storage_quota_bytes
+    user.beta_storage_hard_stop_bytes = creator_plan.storage_hard_stop_bytes
 
 
 @router.get("/users/me/caption-preset")
@@ -186,6 +189,20 @@ async def activate_beta_access(
     _activate_beta_access(current_user)
     await db.commit()
     return MessageResponse(message="Beta access activated")
+
+
+@router.post("/auth/beta/welcome-seen", response_model=MessageResponse)
+async def mark_beta_welcome_seen(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_beta_tester or current_user.subscription_status != "beta_active":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Beta access is not active")
+
+    if current_user.beta_welcome_seen_at is None:
+        current_user.beta_welcome_seen_at = datetime.now(timezone.utc)
+        await db.commit()
+    return MessageResponse(message="Beta welcome acknowledged")
 
 
 @router.post("/auth/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)

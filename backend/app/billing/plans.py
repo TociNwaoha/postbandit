@@ -4,7 +4,7 @@ from typing import Literal
 from app.config import settings
 
 
-PlanTier = Literal["trial", "repurposer", "creator", "pro", "elite"]
+PlanTier = Literal["trial", "repurposer", "creator", "pro", "agency"]
 
 
 @dataclass(frozen=True)
@@ -68,15 +68,15 @@ PLANS: dict[str, BillingPlan] = {
         description="Pro plan with 10 connected social platforms.",
         marketing_description="For active creators and teams publishing across more channels.",
     ),
-    "elite": BillingPlan(
-        tier="elite",
-        name="Elite",
-        monthly_price_cents=25000,
+    "agency": BillingPlan(
+        tier="agency",
+        name="Agency",
+        monthly_price_cents=9900,
         platforms_allowed=PLATFORM_COUNT_ALL,
         platform_label="Every supported platform",
         storage_quota_bytes=100 * GB,
         storage_hard_stop_bytes=120 * GB,
-        description="Elite plan with every supported social platform.",
+        description="Agency plan with every supported social platform.",
         marketing_description="For serious operators managing high-volume content systems.",
     ),
     "past_due": BillingPlan(
@@ -114,12 +114,16 @@ PLANS: dict[str, BillingPlan] = {
     ),
 }
 
-PURCHASABLE_PLAN_TIERS = ("repurposer", "creator", "pro", "elite")
+PURCHASABLE_PLAN_TIERS = ("repurposer", "creator", "pro", "agency")
 TRIAL_PERIOD_DAYS = 3
 
 
 def purchasable_plans() -> tuple[BillingPlan, ...]:
     return tuple(PLANS[tier] for tier in PURCHASABLE_PLAN_TIERS)
+
+
+def get_plan(plan_tier: str) -> BillingPlan:
+    return PLANS.get(plan_tier, PLANS["trial"])
 
 
 def _effective_plan(plan_tier: str, subscription_status: str | None = None) -> BillingPlan:
@@ -129,7 +133,7 @@ def _effective_plan(plan_tier: str, subscription_status: str | None = None) -> B
         return PLANS["past_due"]
     if subscription_status == "canceled":
         return PLANS["cancelled"]
-    return PLANS.get(plan_tier, PLANS["trial"])
+    return get_plan(plan_tier)
 
 
 def get_platforms_allowed(plan_tier: str, subscription_status: str | None = None) -> int:
@@ -154,8 +158,8 @@ def get_price_id(plan: str) -> str:
         return settings.stripe_creator_price_id
     if plan == "pro":
         return settings.stripe_pro_price_id
-    if plan == "elite":
-        return settings.stripe_elite_price_id
+    if plan == "agency":
+        return settings.stripe_agency_price_id
     raise ValueError("Unsupported billing plan")
 
 
@@ -166,6 +170,6 @@ def plan_from_price_id(price_id: str | None) -> str:
         return "creator"
     if price_id and price_id == settings.stripe_pro_price_id:
         return "pro"
-    if price_id and price_id == settings.stripe_elite_price_id:
-        return "elite"
+    if price_id and price_id == settings.stripe_agency_price_id:
+        return "agency"
     return "trial"

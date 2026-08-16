@@ -13,6 +13,8 @@ export interface User {
   billing_plan?: string;
   subscription_status?: string;
   trial_ends_at?: string | null;
+  is_beta_tester?: boolean;
+  beta_welcome_seen_at?: string | null;
   billing_period_start?: string | null;
   billing_period_end?: string | null;
   platforms_allowed?: number;
@@ -27,6 +29,7 @@ export interface OnboardingStatus {
   tier: UserTier;
   metadata: Record<string, unknown>;
   should_onboard: boolean;
+  is_beta_active: boolean;
 }
 
 export interface OnboardingProfilePatch {
@@ -738,6 +741,8 @@ export interface BillingStatus {
   plan_tier: string;
   subscription_status: string;
   trial_ends_at: string | null;
+  is_beta_tester: boolean;
+  beta_welcome_seen_at: string | null;
   billing_period_start: string | null;
   billing_period_end: string | null;
   platforms_allowed: number;
@@ -761,7 +766,6 @@ export interface PublicBillingPlan {
   platforms_allowed: number;
   platform_label: string;
   storage_quota_bytes: number;
-  storage_hard_stop_bytes: number;
   description: string;
   trial_period_days: number;
 }

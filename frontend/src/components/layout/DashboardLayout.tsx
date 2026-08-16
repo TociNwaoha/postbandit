@@ -19,6 +19,8 @@ export function DashboardLayout({ title, children }: DashboardLayoutProps) {
   const router = useRouter();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
   const [locked, setLocked] = useState(false);
+  const [showBetaWelcome, setShowBetaWelcome] = useState(false);
+  const [refreshAccess, setRefreshAccess] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -29,6 +31,10 @@ export function DashboardLayout({ title, children }: DashboardLayoutProps) {
         if (!active) return;
         if (billing.subscription_status === "pending_checkout") {
           setLocked(true);
+          return;
+        }
+        if (billing.is_beta_tester && !billing.beta_welcome_seen_at) {
+          setShowBetaWelcome(true);
           return;
         }
         const status = await api.get<OnboardingStatus>("/api/onboarding/status");
@@ -48,7 +54,14 @@ export function DashboardLayout({ title, children }: DashboardLayoutProps) {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [refreshAccess, router]);
+
+  async function acknowledgeBetaWelcome() {
+    await api.post("/api/auth/beta/welcome-seen", {});
+    setShowBetaWelcome(false);
+    setCheckingOnboarding(true);
+    setRefreshAccess((value) => value + 1);
+  }
 
   if (checkingOnboarding) {
     return (
@@ -66,6 +79,38 @@ export function DashboardLayout({ title, children }: DashboardLayoutProps) {
         <TrialBanner />
         <main className="flex-1 px-8 py-6 overflow-auto">{locked ? <LockedWorkspacePrompt onStartTrial={() => router.push("/start-trial")} /> : children}</main>
       </div>
+      {showBetaWelcome ? <BetaWelcomeModal onAcknowledge={acknowledgeBetaWelcome} /> : null}
+    </div>
+  );
+}
+
+function BetaWelcomeModal({ onAcknowledge }: { onAcknowledge: () => Promise<void> }) {
+  const [acknowledging, setAcknowledging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function acknowledge() {
+    setAcknowledging(true);
+    setError(null);
+    try {
+      await onAcknowledge();
+    } catch {
+      setError("Could not save your acknowledgment. Please try again.");
+    } finally {
+      setAcknowledging(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 px-4" role="dialog" aria-modal="true" aria-labelledby="beta-welcome-title">
+      <section className="w-full max-w-md rounded-3xl border border-[#C7D8FF] bg-white p-8 text-center shadow-[0_24px_70px_rgba(9,21,40,0.24)]">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#1D3FD0]">PostBandit beta</p>
+        <h2 id="beta-welcome-title" className="app-display mt-3 text-3xl font-extrabold tracking-[-0.03em] text-[#091528]">You are in.</h2>
+        <p className="mt-4 text-sm leading-6 text-[#4A6080]">You have full access to PostBandit for 30 days. We are glad to have you helping shape what comes next.</p>
+        {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
+        <button type="button" onClick={() => void acknowledge()} disabled={acknowledging} className="mt-7 w-full rounded-xl bg-[#1D3FD0] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#1633B8] disabled:cursor-not-allowed disabled:opacity-60">
+          {acknowledging ? "Saving..." : "Got it"}
+        </button>
+      </section>
     </div>
   );
 }

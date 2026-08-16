@@ -9,6 +9,12 @@ from app.models.connected_account import ConnectedAccount, SocialPlatform
 from app.models.user import User
 
 
+def get_user_platforms_allowed(user: User) -> int:
+    if user.subscription_status == "beta_active" and user.platforms_allowed is not None:
+        return int(user.platforms_allowed)
+    return get_platforms_allowed(user.billing_plan, user.subscription_status)
+
+
 async def count_connected_platforms(db: AsyncSession, user_id: uuid.UUID) -> int:
     result = await db.execute(
         select(func.count(func.distinct(ConnectedAccount.platform))).where(ConnectedAccount.user_id == user_id)
@@ -34,7 +40,7 @@ async def enforce_platform_limit(
     if await user_has_platform(db, user.id, platform):
         return
 
-    limit = get_platforms_allowed(user.billing_plan, user.subscription_status)
+    limit = get_user_platforms_allowed(user)
     current = await count_connected_platforms(db, user.id)
     if current < limit:
         return

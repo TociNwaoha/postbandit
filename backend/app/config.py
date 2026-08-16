@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     stripe_repurposer_price_id: str = ""
     stripe_creator_price_id: str = ""
     stripe_pro_price_id: str = ""
-    stripe_elite_price_id: str = ""
+    stripe_agency_price_id: str = ""
 
     # Shared beta invite. Leave empty to disable beta signup access.
     beta_access_code: str = ""

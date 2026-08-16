@@ -97,6 +97,9 @@ async def test_signup_with_valid_beta_code_skips_checkout(monkeypatch):
     assert response.user.subscription_status == "beta_active"
     assert db.added.is_beta_tester is True
     assert db.added.beta_expires_at is not None
+    assert db.added.platforms_allowed == 5
+    assert db.added.beta_storage_quota_bytes == 5 * 1024 * 1024 * 1024
+    assert db.added.beta_storage_hard_stop_bytes == 6 * 1024 * 1024 * 1024
     assert db.added.stripe_customer_id is None
     assert db.added.stripe_subscription_id is None
 
@@ -127,5 +130,8 @@ async def test_beta_activation_does_not_create_stripe_objects(monkeypatch):
     assert user.subscription_status == "beta_active"
     assert user.is_beta_tester is True
     assert user.beta_expires_at is not None
+    assert user.platforms_allowed == 5
+    assert user.beta_storage_quota_bytes == 5 * 1024 * 1024 * 1024
+    assert user.beta_storage_hard_stop_bytes == 6 * 1024 * 1024 * 1024
     assert user.stripe_customer_id is None
     assert user.stripe_subscription_id is None

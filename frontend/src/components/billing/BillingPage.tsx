@@ -143,9 +143,7 @@ export function BillingPage() {
                       }}
                     />
                   </div>
-                  <p className="mt-2 text-xs text-[var(--app-muted)]">
-                    Hard stop: {formatBytes(status.storage_hard_stop_bytes)}. Raw sources, editor assets, and render outputs count toward storage.
-                  </p>
+                  <p className="mt-2 text-xs text-[var(--app-muted)]">Raw sources, editor assets, and render outputs count toward storage.</p>
                 </div>
                 <p className="mt-1 text-sm text-[var(--app-muted)]">Trial ends: {formatDate(status.trial_ends_at)}</p>
               </>
@@ -178,7 +176,7 @@ export function BillingPage() {
                 <p className="text-xl font-bold text-[var(--app-text)]">{formatMonthlyPrice(plan.monthly_price_cents)}</p>
               </div>
               <ul className="mt-5 space-y-2 text-sm text-[var(--app-muted)]">
-                {[`${plan.trial_period_days}-day trial`, plan.platform_label, `${formatBytes(plan.storage_quota_bytes)} storage with ${formatBytes(plan.storage_hard_stop_bytes)} hard stop`].map((point) => (
+                {[`${plan.trial_period_days}-day trial`, plan.platform_label, `${formatBytes(plan.storage_quota_bytes)} storage`].map((point) => (
                   <li key={point}>- {point}</li>
                 ))}
               </ul>

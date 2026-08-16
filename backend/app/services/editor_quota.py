@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.billing.plans import get_storage_limits, storage_hard_stop_from_quota_bytes
+from app.billing.plans import get_storage_limits
 from app.models.editor_asset import EditorAsset
 from app.models.editor_render import EditorRender, EditorRenderStatus
 from app.models.clip_overlay_asset import ClipOverlayAsset
@@ -22,11 +22,17 @@ async def get_user_storage_limits(db: AsyncSession, user_id: uuid.UUID) -> tuple
     user = await db.get(User, user_id)
     if user is None:
         return get_storage_limits("trial", "trialing")
+    if (
+        user.subscription_status == "beta_active"
+        and user.beta_storage_quota_bytes is not None
+        and user.beta_storage_hard_stop_bytes is not None
+    ):
+        return int(user.beta_storage_quota_bytes), int(user.beta_storage_hard_stop_bytes)
     return get_storage_limits(user.billing_plan, user.subscription_status)
 
 
 async def refresh_user_storage_usage(db: AsyncSession, user_id: uuid.UUID) -> UserStorageUsage:
-    quota_bytes, _hard_stop_bytes = await get_user_storage_limits(db, user_id)
+    quota_bytes, hard_stop_bytes = await get_user_storage_limits(db, user_id)
     unconfirmed_upload_placeholder = and_(
         Video.source_type == VideoSourceType.upload,
         Video.status == VideoStatus.queued,
@@ -77,6 +83,7 @@ async def refresh_user_storage_usage(db: AsyncSession, user_id: uuid.UUID) -> Us
         usage = UserStorageUsage(
             user_id=user_id,
             quota_bytes=quota_bytes,
+            hard_stop_bytes=hard_stop_bytes,
             used_bytes=used_bytes,
             raw_video_bytes=int(raw_video_bytes),
             editor_asset_bytes=int(editor_asset_bytes),
@@ -85,6 +92,7 @@ async def refresh_user_storage_usage(db: AsyncSession, user_id: uuid.UUID) -> Us
         db.add(usage)
     else:
         usage.quota_bytes = quota_bytes
+        usage.hard_stop_bytes = hard_stop_bytes
         usage.used_bytes = used_bytes
         usage.raw_video_bytes = int(raw_video_bytes)
         usage.editor_asset_bytes = int(editor_asset_bytes)
@@ -96,7 +104,7 @@ async def refresh_user_storage_usage(db: AsyncSession, user_id: uuid.UUID) -> Us
 
 def to_usage_response(usage: UserStorageUsage) -> UserStorageUsageResponse:
     quota_bytes = int(usage.quota_bytes or 0)
-    hard_stop_bytes = storage_hard_stop_from_quota_bytes(quota_bytes)
+    hard_stop_bytes = int(usage.hard_stop_bytes or 0)
     warning = int(usage.used_bytes or 0) >= int(usage.quota_bytes or 0)
     blocked = int(usage.used_bytes or 0) >= hard_stop_bytes
     return UserStorageUsageResponse(
@@ -120,7 +128,7 @@ async def enforce_storage_hard_stop(
 ) -> UserStorageUsage:
     usage = await refresh_user_storage_usage(db, user_id)
     projected = int(usage.used_bytes or 0) + max(0, int(incoming_bytes))
-    hard_stop = storage_hard_stop_from_quota_bytes(int(usage.quota_bytes or 0))
+    hard_stop = int(usage.hard_stop_bytes or 0)
     if projected >= hard_stop:
         over_by = projected - hard_stop
         raise HTTPException(

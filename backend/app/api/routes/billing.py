@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.billing.enforcement import count_connected_platforms
+from app.billing.enforcement import count_connected_platforms, get_user_platforms_allowed
 from app.billing.plans import TRIAL_PERIOD_DAYS, get_platforms_allowed, get_price_id, purchasable_plans
 from app.billing.stripe_client import (
     BillingConfigurationError,
@@ -48,7 +48,6 @@ async def public_billing_plans():
             platforms_allowed=plan.platforms_allowed,
             platform_label=plan.platform_label,
             storage_quota_bytes=plan.storage_quota_bytes,
-            storage_hard_stop_bytes=plan.storage_hard_stop_bytes,
             description=plan.marketing_description,
             trial_period_days=TRIAL_PERIOD_DAYS,
         )
@@ -78,15 +77,14 @@ async def billing_status(
     current_user: User = Depends(get_current_user),
 ):
     connected = await count_connected_platforms(db, current_user.id)
-    current_user.platforms_allowed = get_platforms_allowed(
-        current_user.billing_plan,
-        current_user.subscription_status,
-    )
+    current_user.platforms_allowed = get_user_platforms_allowed(current_user)
     storage_usage = to_usage_response(await refresh_user_storage_usage(db, current_user.id))
     return BillingStatusResponse(
         plan_tier=current_user.billing_plan,
         subscription_status=current_user.subscription_status,
         trial_ends_at=current_user.trial_ends_at,
+        is_beta_tester=current_user.is_beta_tester,
+        beta_welcome_seen_at=current_user.beta_welcome_seen_at,
         billing_period_start=current_user.billing_period_start,
         billing_period_end=current_user.billing_period_end,
         platforms_allowed=current_user.platforms_allowed,

@@ -27,7 +27,7 @@ def validate_billing_config() -> None:
             "STRIPE_REPURPOSER_PRICE_ID": settings.stripe_repurposer_price_id,
             "STRIPE_CREATOR_PRICE_ID": settings.stripe_creator_price_id,
             "STRIPE_PRO_PRICE_ID": settings.stripe_pro_price_id,
-            "STRIPE_ELITE_PRICE_ID": settings.stripe_elite_price_id,
+            "STRIPE_AGENCY_PRICE_ID": settings.stripe_agency_price_id,
             "FRONTEND_URL": settings.frontend_url,
         }.items()
         if not value

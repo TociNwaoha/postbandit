@@ -74,7 +74,7 @@ def _apply_subscription(user: User, subscription: Any) -> None:
     user.billing_plan = billing_plan
     if billing_plan == "creator":
         user.tier = UserTier.creator
-    elif billing_plan in {"pro", "elite"}:
+    elif billing_plan in {"pro", "agency"}:
         user.tier = UserTier.agency
     else:
         user.tier = UserTier.starter

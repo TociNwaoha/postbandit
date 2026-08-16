@@ -16,6 +16,7 @@ class OnboardingStatusResponse(BaseModel):
     tier: UserTier
     metadata: dict[str, Any]
     should_onboard: bool
+    is_beta_active: bool
 
 
 class OnboardingProfilePatch(BaseModel):

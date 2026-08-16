@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-BillingPlanName = Literal["repurposer", "creator", "pro", "elite"]
+BillingPlanName = Literal["repurposer", "creator", "pro", "agency"]
 
 
 class BillingCheckoutResponse(BaseModel):
@@ -18,7 +18,6 @@ class PublicBillingPlan(BaseModel):
     platforms_allowed: int
     platform_label: str
     storage_quota_bytes: int
-    storage_hard_stop_bytes: int
     description: str
     trial_period_days: int
 
@@ -37,6 +36,8 @@ class BillingStatusResponse(BaseModel):
     plan_tier: str
     subscription_status: str
     trial_ends_at: datetime | None
+    is_beta_tester: bool
+    beta_welcome_seen_at: datetime | None
     billing_period_start: datetime | None
     billing_period_end: datetime | None
     platforms_allowed: int

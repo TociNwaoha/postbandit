@@ -56,7 +56,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-[#091528]">3. Subscriptions and Billing</h2>
             <p className="mt-2">
-              PostBandit offers paid subscription plans (Repurposer, Creator, Pro, and Elite) with different feature sets and usage limits. Current pricing is displayed at postbandit.com/pricing.
+              PostBandit offers paid subscription plans (Repurposer, Creator, Pro, and Agency) with different feature sets and usage limits. Current pricing is displayed at postbandit.com/pricing.
             </p>
             <p className="mt-2">
               New subscribers receive a 3-day free trial. A valid payment method is required to start your trial. You will not be charged until the trial period ends. If you cancel before the trial ends, you will not be charged.
@@ -119,7 +119,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-[#091528]">8. API Access</h2>
             <p className="mt-2">
-              API access is available on Pro and Elite plans. By using the PostBandit API, you agree to keep your API keys confidential, stay within the rate limits of your plan, use the API only to automate your own PostBandit workflows, and accept that exceeding rate limits will result in temporary blocking until your limit window resets. We reserve the right to revoke API access for abuse or violation of these terms.
+              API access is available on Pro and Agency plans. By using the PostBandit API, you agree to keep your API keys confidential, stay within the rate limits of your plan, use the API only to automate your own PostBandit workflows, and accept that exceeding rate limits will result in temporary blocking until your limit window resets. We reserve the right to revoke API access for abuse or violation of these terms.
             </p>
           </section>
 

@@ -13,6 +13,7 @@ import {
   ConnectedAccount,
   OnboardingRole,
   OnboardingStatus,
+  PublicBillingPlan,
   SocialProvider,
   UserTier,
 } from "@/types";
@@ -23,15 +24,6 @@ type RoleOption = {
   id: OnboardingRole;
   title: string;
   description: string;
-};
-
-type PlanOption = {
-  id: UserTier;
-  title: string;
-  price: string;
-  description: string;
-  badge?: string;
-  features: string[];
 };
 
 interface OnboardingFlowProps {
@@ -78,31 +70,6 @@ const roleOptions: RoleOption[] = [
   { id: "founder", title: "Founder / Business", description: "Building a brand, business, or offer" },
   { id: "agency", title: "Agency", description: "Managing content for clients or multiple brands" },
   { id: "team", title: "Team / Enterprise", description: "Coordinating a larger publishing workflow" },
-];
-
-const planOptions: PlanOption[] = [
-  {
-    id: "starter",
-    title: "Starter",
-    price: "$9/mo",
-    description: "For testing a simple repurposing workflow.",
-    features: ["5 video imports / month", "20 AI clips / month", "Connect up to 5 platforms"],
-  },
-  {
-    id: "creator",
-    title: "Creator",
-    price: "$29/mo",
-    description: "For active creators publishing every week.",
-    badge: "Recommended",
-    features: ["25 video imports / month", "100 AI clips / month", "Scheduling and auto-posting"],
-  },
-  {
-    id: "agency",
-    title: "Agency",
-    price: "$59/mo",
-    description: "For teams and agencies managing multiple brands.",
-    features: ["Unlimited video imports", "Multiple brand workflows", "Priority support"],
-  },
 ];
 
 const platformOptions = ["instagram", "threads", "linkedin", "tiktok", "youtube", "x"];
@@ -497,29 +464,43 @@ function BrandStep({ status }: { status: OnboardingStatus | null }) {
   );
 }
 
-function PlanStep({ selected, onSelect }: { selected: UserTier; onSelect: (value: UserTier) => void }) {
+function formatMonthlyPrice(cents: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100) + "/mo";
+}
+
+function formatStorage(bytes: number) {
+  return `${Math.round(bytes / 1024 / 1024 / 1024)}GB storage`;
+}
+
+function legacyTierForPlan(plan: string): UserTier {
+  if (plan === "creator") return "creator";
+  if (plan === "pro" || plan === "agency") return "agency";
+  return "starter";
+}
+
+function PlanStep({ plans, selected, onSelect }: { plans: PublicBillingPlan[]; selected: string; onSelect: (value: string) => void }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {planOptions.map((plan) => {
-        const active = selected === plan.id;
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {plans.map((plan) => {
+        const active = selected === plan.tier;
         return (
           <button
-            key={plan.id}
+            key={plan.tier}
             type="button"
-            onClick={() => onSelect(plan.id)}
-            className={`relative flex min-h-[410px] flex-col rounded-3xl border p-6 text-left shadow-sm transition ${
+            onClick={() => onSelect(plan.tier)}
+            className={`relative flex min-h-[360px] flex-col rounded-3xl border p-6 text-left shadow-sm transition ${
               active
                 ? "border-[#1D3FD0] bg-white shadow-[0_22px_70px_rgba(29,63,208,0.16)] ring-2 ring-[#1D3FD0]/15"
                 : "border-[#D6E2F5] bg-white hover:border-[#9DB5FF]"
             }`}
           >
-            {plan.badge ? <span className="absolute right-5 top-5 rounded-full bg-[#E9EFFF] px-3 py-1 text-xs font-bold text-[#1D3FD0]">{plan.badge}</span> : null}
-            <span className="text-xl font-extrabold text-[#091528]">{plan.title}</span>
-            <span className="mt-5 text-4xl font-extrabold tracking-tight text-[#091528]">{plan.price}</span>
+            {plan.tier === "pro" ? <span className="absolute right-5 top-5 rounded-full bg-[#E9EFFF] px-3 py-1 text-xs font-bold text-[#1D3FD0]">Most popular</span> : null}
+            <span className="text-xl font-extrabold text-[#091528]">{plan.name}</span>
+            <span className="mt-5 text-4xl font-extrabold tracking-tight text-[#091528]">{formatMonthlyPrice(plan.monthly_price_cents)}</span>
             <span className="mt-3 min-h-12 text-sm leading-6 text-[#5F708F]">{plan.description}</span>
             <span className="mt-5 h-px w-full bg-[#E3EAF8]" />
             <span className="mt-5 space-y-3">
-              {plan.features.map((feature) => (
+              {[plan.platform_label, formatStorage(plan.storage_quota_bytes), `${plan.trial_period_days}-day trial`].map((feature) => (
                 <span key={feature} className="flex items-start gap-2 text-sm font-medium text-[#233252]">
                   <svg className="mt-0.5 h-4 w-4 shrink-0 text-[#1D3FD0]" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path d="M4.5 10.6 8 14l7.5-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -534,7 +515,7 @@ function PlanStep({ selected, onSelect }: { selected: UserTier; onSelect: (value
           </button>
         );
       })}
-      <p className="lg:col-span-3 text-center text-sm text-[#6A7C99]">
+      <p className="md:col-span-2 xl:col-span-4 text-center text-sm text-[#6A7C99]">
         This is onboarding only. No payment is collected and no subscription is activated here.
       </p>
     </div>
@@ -569,7 +550,8 @@ export function OnboardingFlow({ step }: OnboardingFlowProps) {
   const router = useRouter();
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [role, setRole] = useState<OnboardingRole | null>(null);
-  const [tier, setTier] = useState<UserTier>("creator");
+  const [plans, setPlans] = useState<PublicBillingPlan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState("creator");
   const [loading, setLoading] = useState(step !== "thank-you");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -580,11 +562,21 @@ export function OnboardingFlow({ step }: OnboardingFlowProps) {
     async function load() {
       setLoading(true);
       try {
-        const data = await api.get<OnboardingStatus>("/api/onboarding/status");
+        const [data, planRows] = await Promise.all([
+          api.get<OnboardingStatus>("/api/onboarding/status"),
+          step === "plans" ? api.get<PublicBillingPlan[]>("/api/billing/plans") : Promise.resolve([]),
+        ]);
         if (!active) return;
         setStatus(data);
         setRole(data.role);
-        setTier(data.tier || "creator");
+        setPlans(planRows);
+        const savedPlan = typeof data.metadata.selected_plan === "string" ? data.metadata.selected_plan : "creator";
+        setSelectedPlan(planRows.some((plan) => plan.tier === savedPlan) ? savedPlan : "creator");
+        if (step === "plans" && data.is_beta_active) {
+          await api.post<OnboardingStatus>("/api/onboarding/complete", {});
+          if (active) go("/onboarding/thank-you");
+          return;
+        }
       } catch (err) {
         if (active) setError(err instanceof ApiError ? err.message : "Failed to load onboarding status");
       } finally {
@@ -610,7 +602,6 @@ export function OnboardingFlow({ step }: OnboardingFlowProps) {
     const data = await api.patch<OnboardingStatus>("/api/onboarding/profile", payload);
     setStatus(data);
     setRole(data.role);
-    setTier(data.tier);
   }
 
   async function next() {
@@ -624,9 +615,15 @@ export function OnboardingFlow({ step }: OnboardingFlowProps) {
       } else if (step === "connect") {
         go("/onboarding/brand");
       } else if (step === "brand") {
-        go("/onboarding/plans");
+        if (status?.is_beta_active) {
+          await api.post<OnboardingStatus>("/api/onboarding/complete", {});
+          go("/onboarding/thank-you");
+          router.refresh();
+        } else {
+          go("/onboarding/plans");
+        }
       } else if (step === "plans") {
-        await saveProfile({ tier, metadata: { selected_plan: tier } });
+        await saveProfile({ tier: legacyTierForPlan(selectedPlan), metadata: { selected_plan: selectedPlan } });
         await api.post<OnboardingStatus>("/api/onboarding/complete", {});
         go("/onboarding/thank-you");
         router.refresh();
@@ -666,7 +663,7 @@ export function OnboardingFlow({ step }: OnboardingFlowProps) {
       {step === "start" ? <RoleStep selected={role} onSelect={setRole} /> : null}
       {step === "connect" ? <ConnectStep /> : null}
       {step === "brand" ? <BrandStep status={status} /> : null}
-      {step === "plans" ? <PlanStep selected={tier} onSelect={setTier} /> : null}
+      {step === "plans" ? <PlanStep plans={plans} selected={selectedPlan} onSelect={setSelectedPlan} /> : null}
     </Shell>
   );
 }

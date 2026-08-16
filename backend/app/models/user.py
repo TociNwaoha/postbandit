@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum as SAEnum, Integer, String
+from sqlalchemy import BigInteger, DateTime, Enum as SAEnum, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,9 @@ class User(Base):
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_beta_tester: Mapped[bool] = mapped_column(default=False, nullable=False)
     beta_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    beta_welcome_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    beta_storage_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    beta_storage_hard_stop_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     billing_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     billing_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     platforms_allowed: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
