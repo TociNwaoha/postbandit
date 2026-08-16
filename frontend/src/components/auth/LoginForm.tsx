@@ -78,7 +78,7 @@ export function LoginForm({ googleEnabled = false }: LoginFormProps) {
     <Card className="rounded-2xl border-[#D6E2F5] p-7 shadow-[0_10px_40px_rgba(9,21,40,0.12)]">
       <h2
         className="mb-1 text-2xl font-extrabold tracking-tight text-[#091528]"
-        style={{ fontFamily: '"Bricolage Grotesque", Inter, sans-serif' }}
+        style={{ fontFamily: "var(--font-display), Inter, system-ui, sans-serif" }}
       >
         Sign in
       </h2>

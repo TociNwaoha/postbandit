@@ -1,6 +1,19 @@
 import type { Metadata } from "next";
+import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+
+const display = Bricolage_Grotesque({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-display",
+});
+
+const body = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-body",
+});
 
 const APP_TITLE = "PostBandit";
 const APP_DESCRIPTION = "AI-powered video clipping and social publishing for creators";
@@ -53,7 +66,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={`dark ${display.variable} ${body.variable}`}>
       <body className="bg-[#0F172A] text-white antialiased">
         <Providers>{children}</Providers>
       </body>

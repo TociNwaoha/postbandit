@@ -1,9 +1,14 @@
+import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetaInstagramReviewPanel } from "@/components/review/MetaInstagramReviewPanel";
 import { authOptions } from "@/lib/auth";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function MetaInstagramReviewPage() {
   const session = await getServerSession(authOptions);

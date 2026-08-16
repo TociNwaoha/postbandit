@@ -752,11 +752,11 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
 
       <style jsx global>{`
         .marketing-display {
-          font-family: "Bricolage Grotesque", Inter, sans-serif;
+          font-family: var(--font-display), Inter, system-ui, sans-serif;
         }
 
         .marketing-body {
-          font-family: "Plus Jakarta Sans", Inter, sans-serif;
+          font-family: var(--font-body), Inter, system-ui, sans-serif;
         }
 
         .hero-grid {
