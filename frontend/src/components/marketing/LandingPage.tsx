@@ -281,7 +281,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
     nodes.forEach((node) => revealObserver.observe(node));
 
     return () => revealObserver.disconnect();
-  }, []);
+  }, [plans.length]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
