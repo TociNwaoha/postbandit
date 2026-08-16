@@ -29,7 +29,7 @@ export default function RefundPolicyPage() {
           <section>
             <h2 className="text-xl font-semibold text-[#091528]">Free Trial</h2>
             <p className="mt-2">
-              All PostBandit plans include a 3-day free trial. A valid payment method is required to start your trial. You will not be charged during the trial period. If you cancel before your trial ends, you will not be charged anything.
+              All PostBandit plans include a 7-day free trial. A valid payment method is required to start your trial. You will not be charged during the trial period. If you cancel before your trial ends, you will not be charged anything.
             </p>
           </section>
 

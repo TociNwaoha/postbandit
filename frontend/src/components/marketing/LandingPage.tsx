@@ -575,7 +575,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
           <SectionHeading
             tag="Pricing"
             title="Simple, fair pricing"
-            body={`Start with a ${plans[0]?.trial_period_days ?? 3}-day trial. No hidden fees, no per-post charges, and plan limits are visible before you publish.`}
+            body={`Start with a ${plans[0]?.trial_period_days ?? 7}-day trial. No hidden fees, no per-post charges, and plan limits are visible before you publish.`}
             displayClassName={displayClassName}
           />
 

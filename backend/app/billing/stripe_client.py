@@ -76,7 +76,7 @@ async def create_checkout_session(
         line_items=[{"price": price_id, "quantity": 1}],
         payment_method_collection="always",
         subscription_data={
-            "trial_period_days": 3,
+            "trial_period_days": 7,
             "metadata": {"user_id": user_id, "plan": plan},
         },
         metadata={"user_id": user_id, "plan": plan},

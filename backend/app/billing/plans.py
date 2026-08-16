@@ -32,7 +32,7 @@ PLANS: dict[str, BillingPlan] = {
         platform_label="5 platforms",
         storage_quota_bytes=5 * GB,
         storage_hard_stop_bytes=6 * GB,
-        description="3-day trial with card required at signup.",
+        description="7-day trial with card required at signup.",
         marketing_description="A short trial of PostBandit.",
     ),
     "creator": BillingPlan(
@@ -115,7 +115,7 @@ PLANS: dict[str, BillingPlan] = {
 }
 
 PURCHASABLE_PLAN_TIERS = ("repurposer", "creator", "pro", "agency")
-TRIAL_PERIOD_DAYS = 3
+TRIAL_PERIOD_DAYS = 7
 
 
 def purchasable_plans() -> tuple[BillingPlan, ...]:

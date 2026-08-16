@@ -1,4 +1,4 @@
-from app.billing.plans import get_platforms_allowed, plan_from_price_id
+from app.billing.plans import TRIAL_PERIOD_DAYS, get_platforms_allowed, plan_from_price_id
 from app.config import settings
 
 
@@ -8,6 +8,10 @@ def test_platform_limits_by_plan():
     assert get_platforms_allowed("creator", "active") == 5
     assert get_platforms_allowed("pro", "active") == 10
     assert get_platforms_allowed("agency", "active") == 7
+
+
+def test_standard_trial_length_is_seven_days():
+    assert TRIAL_PERIOD_DAYS == 7
 
 
 def test_restricted_status_blocks_new_platforms():
