@@ -56,7 +56,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-[#091528]">3. Subscriptions and Billing</h2>
             <p className="mt-2">
-              PostBandit offers paid subscription plans (Creator, Pro, and Elite) with different feature sets and usage limits. Current pricing is displayed at postbandit.com/pricing.
+              PostBandit offers paid subscription plans (Repurposer, Creator, Pro, and Elite) with different feature sets and usage limits. Current pricing is displayed at postbandit.com/pricing.
             </p>
             <p className="mt-2">
               New subscribers receive a 3-day free trial. A valid payment method is required to start your trial. You will not be charged until the trial period ends. If you cancel before the trial ends, you will not be charged.

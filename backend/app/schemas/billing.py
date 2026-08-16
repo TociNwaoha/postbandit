@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-BillingPlanName = Literal["creator", "pro", "elite"]
+BillingPlanName = Literal["repurposer", "creator", "pro", "elite"]
 
 
 class BillingCheckoutResponse(BaseModel):

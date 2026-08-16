@@ -3,6 +3,7 @@ from typing import Any
 import stripe
 from fastapi.concurrency import run_in_threadpool
 
+from app.billing.plans import plan_from_price_id
 from app.config import settings
 
 
@@ -23,6 +24,7 @@ def validate_billing_config() -> None:
             "STRIPE_SECRET_KEY": settings.stripe_secret_key,
             "STRIPE_PUBLISHABLE_KEY": settings.stripe_publishable_key,
             "STRIPE_WEBHOOK_SECRET": settings.stripe_webhook_secret,
+            "STRIPE_REPURPOSER_PRICE_ID": settings.stripe_repurposer_price_id,
             "STRIPE_CREATOR_PRICE_ID": settings.stripe_creator_price_id,
             "STRIPE_PRO_PRICE_ID": settings.stripe_pro_price_id,
             "STRIPE_ELITE_PRICE_ID": settings.stripe_elite_price_id,
@@ -105,7 +107,9 @@ async def retrieve_subscription(subscription_id: str) -> Any:
 async def update_subscription_price(*, subscription_id: str, price_id: str) -> Any:
     subscription = await retrieve_subscription(subscription_id)
     item_id = subscription["items"]["data"][0]["id"]
-    plan = "elite" if price_id == settings.stripe_elite_price_id else "pro" if price_id == settings.stripe_pro_price_id else "creator"
+    plan = plan_from_price_id(price_id)
+    if plan == "trial":
+        raise BillingConfigurationError("Unsupported Stripe price for subscription update.")
     return await run_in_threadpool(
         stripe.Subscription.modify,
         subscription_id,

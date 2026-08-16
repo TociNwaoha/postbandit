@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_repurposer_price_id: str = ""
     stripe_creator_price_id: str = ""
     stripe_pro_price_id: str = ""
     stripe_elite_price_id: str = ""

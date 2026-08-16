@@ -4,7 +4,7 @@ from typing import Literal
 from app.config import settings
 
 
-PlanTier = Literal["trial", "creator", "pro", "elite"]
+PlanTier = Literal["trial", "repurposer", "creator", "pro", "elite"]
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,17 @@ PLANS: dict[str, BillingPlan] = {
         storage_hard_stop_bytes=6 * GB,
         description="Creator plan with 5 connected social platforms.",
         marketing_description="For creators starting a repeatable video-to-social workflow.",
+    ),
+    "repurposer": BillingPlan(
+        tier="repurposer",
+        name="Repurposer",
+        monthly_price_cents=900,
+        platforms_allowed=3,
+        platform_label="Connect up to 3 platforms",
+        storage_quota_bytes=2 * GB,
+        storage_hard_stop_bytes=(12 * GB) // 5,
+        description="Repurposer plan with 3 connected social platforms.",
+        marketing_description="For creators repurposing video across a focused set of channels.",
     ),
     "pro": BillingPlan(
         tier="pro",
@@ -103,7 +114,7 @@ PLANS: dict[str, BillingPlan] = {
     ),
 }
 
-PURCHASABLE_PLAN_TIERS = ("creator", "pro", "elite")
+PURCHASABLE_PLAN_TIERS = ("repurposer", "creator", "pro", "elite")
 TRIAL_PERIOD_DAYS = 3
 
 
@@ -137,6 +148,8 @@ def storage_hard_stop_from_quota_bytes(quota_bytes: int) -> int:
 
 
 def get_price_id(plan: str) -> str:
+    if plan == "repurposer":
+        return settings.stripe_repurposer_price_id
     if plan == "creator":
         return settings.stripe_creator_price_id
     if plan == "pro":
@@ -147,6 +160,8 @@ def get_price_id(plan: str) -> str:
 
 
 def plan_from_price_id(price_id: str | None) -> str:
+    if price_id and price_id == settings.stripe_repurposer_price_id:
+        return "repurposer"
     if price_id and price_id == settings.stripe_creator_price_id:
         return "creator"
     if price_id and price_id == settings.stripe_pro_price_id:
