@@ -5,12 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
 import { MascotSection } from "@/components/landing/MascotSection";
-import { api } from "@/lib/api";
 import { PublicBillingPlan } from "@/types";
 
 type LandingPageProps = {
   displayClassName?: string;
   bodyClassName?: string;
+  initialPlans?: PublicBillingPlan[];
 };
 
 type PlatformKey = "youtube" | "tiktok" | "instagram" | "x" | "threads";
@@ -189,21 +189,13 @@ function SectionHeading({
   );
 }
 
-export function LandingPage({ displayClassName = "marketing-display", bodyClassName = "marketing-body" }: LandingPageProps) {
+export function LandingPage({
+  displayClassName = "marketing-display",
+  bodyClassName = "marketing-body",
+  initialPlans = [],
+}: LandingPageProps) {
   const [publishingIndex, setPublishingIndex] = useState(0);
-  const [plans, setPlans] = useState<PublicBillingPlan[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    void api.get<PublicBillingPlan[]>("/api/billing/plans").then((rows) => {
-      if (active) setPlans(rows);
-    }).catch(() => {
-      // Keep the rest of the marketing page available if billing is unavailable.
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const plans = initialPlans;
 
   useEffect(() => {
     const revealObserver = new IntersectionObserver(
