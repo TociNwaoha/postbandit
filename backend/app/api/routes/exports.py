@@ -61,13 +61,13 @@ def _normalize_frame_zoom(value: float | None) -> float:
     return round(min(3.0, max(1.0, float(value))), 4)
 
 
-def _derived_download_url(storage_key: str | None) -> str | None:
+def _derived_download_url(storage_key: str | None, download_name: str | None = None) -> str | None:
     if not storage_key:
         return None
     try:
         if not object_storage_client.file_exists(storage_key):
             return None
-        return object_storage_client.get_presigned_download_url(storage_key)
+        return object_storage_client.get_presigned_download_url(storage_key, download_name=download_name)
     except Exception as exc:
         logger.warning("[exports] failed to derive download URL for key=%s: %s", storage_key, exc)
         return None
@@ -108,10 +108,12 @@ def _to_response(
     reused: bool = False,
 ) -> ExportResponse:
     download_url = None
+    view_url = None
     srt_download_url = None
     if export.status == ExportStatus.ready:
-        download_url = _derived_download_url(export.storage_key)
-        srt_download_url = _derived_download_url(export.srt_key)
+        download_url = _derived_download_url(export.storage_key, f"postbandit-export-{export.id}.mp4")
+        view_url = _derived_download_url(export.storage_key)
+        srt_download_url = _derived_download_url(export.srt_key, f"postbandit-captions-{export.id}.srt")
 
     return ExportResponse(
         id=export.id,
@@ -134,6 +136,7 @@ def _to_response(
         storage_key=export.storage_key,
         srt_key=export.srt_key,
         download_url=download_url,
+        view_url=view_url,
         srt_download_url=srt_download_url,
         url_expires_at=export.url_expires_at,
         status=export.status,

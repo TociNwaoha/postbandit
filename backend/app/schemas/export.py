@@ -93,6 +93,7 @@ class ExportResponse(BaseModel):
     storage_key: str | None
     srt_key: str | None
     download_url: str | None
+    view_url: str | None = None
     srt_download_url: str | None = None
     url_expires_at: datetime | None
     status: ExportStatus

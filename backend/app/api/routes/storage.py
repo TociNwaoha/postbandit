@@ -2,7 +2,7 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.services.object_storage import object_storage_client
@@ -72,7 +72,7 @@ async def local_upload(
 
 
 @router.api_route("/storage/local/{key:path}", methods=["GET", "HEAD"])
-async def local_download(key: str, request: Request):
+async def local_download(key: str, request: Request, download: bool = Query(False)):
     try:
         file_path = object_storage_client.local_fallback_path(key)
     except ValueError:
@@ -93,7 +93,7 @@ async def local_download(key: str, request: Request):
     common_headers = {
         "Accept-Ranges": "bytes",
         "Content-Type": media_type,
-        "Content-Disposition": f'inline; filename="{file_path.name}"',
+        "Content-Disposition": f'{"attachment" if download else "inline"}; filename="{file_path.name}"',
     }
 
     range_header = request.headers.get("range")

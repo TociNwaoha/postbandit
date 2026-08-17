@@ -292,6 +292,7 @@ export interface Export {
   storage_key: string | null;
   srt_key: string | null;
   download_url: string | null;
+  view_url?: string | null;
   srt_download_url?: string | null;
   url_expires_at: string | null;
   status: ExportStatus;

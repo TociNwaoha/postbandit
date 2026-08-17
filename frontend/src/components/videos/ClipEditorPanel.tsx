@@ -1799,17 +1799,25 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                   <div className="mt-3 flex flex-wrap items-center gap-4">
                     <a
                       href={item.download_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      download
                       className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                     >
                       Download export
                     </a>
+                    {item.view_url ? (
+                      <a
+                        href={item.view_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
+                      >
+                        View export
+                      </a>
+                    ) : null}
                     {item.srt_download_url ? (
                       <a
                         href={item.srt_download_url}
-                        target="_blank"
-                        rel="noreferrer"
+                        download
                         className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                       >
                         Download captions (.srt)
