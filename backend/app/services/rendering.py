@@ -401,19 +401,28 @@ def render_video_clip(
     return output_path
 
 
-def resolve_output_dimensions(aspect_ratio: str, source_path: str) -> tuple[int, int]:
+def resolve_output_dimensions(
+    aspect_ratio: str,
+    source_path: str,
+    render_quality: str = "720p",
+) -> tuple[int, int]:
+    if render_quality not in {"720p", "1080p"}:
+        raise ValueError(f"Unsupported render quality: {render_quality}")
+
+    short_edge = 1080 if render_quality == "1080p" else 720
+    long_edge = 1920 if render_quality == "1080p" else 1280
     normalized = (aspect_ratio or "").strip()
     if normalized == "1:1":
-        return 720, 720
+        return short_edge, short_edge
     if normalized == "9:16":
-        return 720, 1280
+        return short_edge, long_edge
     if normalized == "16:9":
-        return 1280, 720
+        return long_edge, short_edge
     if normalized == "original":
         source_width, source_height = _probe_video_dimensions(source_path)
         if source_width <= 0 or source_height <= 0:
             raise ValueError("Unable to resolve source dimensions for original aspect export")
-        max_dim = 1280
+        max_dim = long_edge
         scale = min(1.0, max_dim / float(max(source_width, source_height)))
         target_width = _ensure_even(int(round(source_width * scale)))
         target_height = _ensure_even(int(round(source_height * scale)))

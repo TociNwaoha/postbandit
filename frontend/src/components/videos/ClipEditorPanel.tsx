@@ -27,6 +27,7 @@ import {
   CaptionColorVariant,
   CaptionFormat,
   CaptionStyle,
+  BillingStatus,
   Clip,
   ClipOverlayAsset,
   Export,
@@ -40,6 +41,7 @@ interface ClipEditorPanelProps {
   initialClip: Clip;
   initialExports: Export[];
   initialScheduleAt?: string;
+  billingStatus: BillingStatus;
 }
 
 const ACTIVE_EXPORT_STATUSES = new Set(["queued", "rendering"]);
@@ -176,7 +178,7 @@ async function uploadClipOverlayAsset(clipId: string, file: File): Promise<ClipO
   return (await response.json()) as ClipOverlayAsset;
 }
 
-export function ClipEditorPanel({ video, initialClip, initialExports, initialScheduleAt }: ClipEditorPanelProps) {
+export function ClipEditorPanel({ video, initialClip, initialExports, initialScheduleAt, billingStatus }: ClipEditorPanelProps) {
   const sourceAspectFromResolution = parseResolutionAspectRatio(video.resolution);
   const [clip, setClip] = useState<Clip>(initialClip);
   const [clipStart, setClipStart] = useState<string>(initialClip.start_time.toFixed(2));
@@ -186,6 +188,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("original");
+  const [renderQuality, setRenderQuality] = useState<"720p" | "1080p">("720p");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold_boxed");
   const [captionColorVariant, setCaptionColorVariant] = useState<CaptionColorVariant>("classic");
   const [captionFormat, setCaptionFormat] = useState<CaptionFormat>("burned_in");
@@ -881,6 +884,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
       const created = await api.post<Export>("/api/exports", {
         clip_id: clip.id,
         aspect_ratio: aspectRatio,
+        render_quality: renderQuality,
         caption_style: captionStyle,
         caption_color_variant: captionColorVariant,
         caption_format: captionFormat,
@@ -1640,6 +1644,22 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
           Selected aspect from Framing: <span className="font-semibold text-[var(--app-text)]">{aspectRatio}</span>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="text-xs text-[var(--app-muted)]">
+            Export Quality
+            <select
+              value={renderQuality}
+              onChange={(event) => setRenderQuality(event.target.value as "720p" | "1080p")}
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+            >
+              <option value="720p">720p (default)</option>
+              <option value="1080p" disabled={billingStatus.plan_tier === "repurposer"}>
+                {billingStatus.plan_tier === "repurposer" ? "1080p (Upgrade to Creator)" : "1080p (Full HD)"}
+              </option>
+            </select>
+            <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+              Previews remain 720p. {billingStatus.plan_tier === "repurposer" ? "Upgrade to Creator for 1080p exports." : "1080p creates a larger final file."}
+            </p>
+          </label>
           <div className="text-xs text-[var(--app-muted)]">
             <CaptionStylePickerCompact
               onStyleChange={handleUserCaptionStyleChange}
@@ -1781,7 +1801,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                   <div className="text-sm text-[var(--app-text)]">
                     <p className="font-medium">Export {item.id.slice(0, 8)}</p>
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
-                      {item.aspect_ratio} • {formatCaptionStyleLabel(item.caption_style)} •{" "}
+                      {item.aspect_ratio} • {item.render_quality} • {formatCaptionStyleLabel(item.caption_style)} •{" "}
                       {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format} •{" "}
                       {item.caption_cadence}
                     </p>

@@ -277,6 +277,7 @@ export interface Export {
   retry_of_export_id: string | null;
   user_id: string;
   aspect_ratio: AspectRatio;
+  render_quality: "720p" | "1080p";
   caption_style: CaptionStyle | null;
   caption_color_variant: CaptionColorVariant;
   caption_format: CaptionFormat;

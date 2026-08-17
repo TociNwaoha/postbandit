@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.models.export import (
     AspectRatio,
@@ -52,6 +53,7 @@ class ExportOverlayTextConfig(BaseModel):
 class ExportCreate(BaseModel):
     clip_id: uuid.UUID
     aspect_ratio: AspectRatio
+    render_quality: Literal["720p", "1080p"] = "720p"
     caption_style: CaptionStyle | None = None
     caption_color_variant: CaptionColorVariant | None = None
     caption_format: CaptionFormat = CaptionFormat.burned_in
@@ -78,6 +80,7 @@ class ExportResponse(BaseModel):
     retry_of_export_id: uuid.UUID | None
     user_id: uuid.UUID
     aspect_ratio: AspectRatio
+    render_quality: Literal["720p", "1080p"]
     caption_style: CaptionStyle | None
     caption_color_variant: CaptionColorVariant
     caption_format: CaptionFormat

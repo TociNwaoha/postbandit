@@ -72,6 +72,7 @@ class Export(Base):
         ),
         nullable=False,
     )
+    render_quality: Mapped[str] = mapped_column(String(10), default="720p", nullable=False)
     caption_style: Mapped[CaptionStyle | None] = mapped_column(SAEnum(CaptionStyle, name="caption_style"))
     caption_color_variant: Mapped[CaptionColorVariant | None] = mapped_column(
         SAEnum(CaptionColorVariant, name="caption_color_variant")

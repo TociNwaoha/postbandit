@@ -262,7 +262,7 @@ export function ExportsLibrary({
                       {item.video_title || "Untitled video"} • Export {shortId(item.id)}
                     </p>
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
-                      {item.clip_title || `Clip ${shortId(item.clip_id)}`} • {item.aspect_ratio} •{" "}
+                      {item.clip_title || `Clip ${shortId(item.clip_id)}`} • {item.aspect_ratio} • {item.render_quality} •{" "}
                       {formatCaptionStyleLabel(item.caption_style)} •{" "}
                       {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format} •{" "}
                       {item.caption_cadence}

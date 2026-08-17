@@ -6,7 +6,7 @@ import { ClipEditorShell } from "@/components/editor/ClipEditorShell";
 import { ClipEditorPanel } from "@/components/videos/ClipEditorPanel";
 import { authOptions } from "@/lib/auth";
 import { SERVER_API_URL } from "@/lib/serverApi";
-import { Clip, Export, Video } from "@/types";
+import { BillingStatus, Clip, Export, Video } from "@/types";
 
 async function fetchWithAuth(path: string, token: string) {
   return fetch(`${SERVER_API_URL}${path}`, {
@@ -47,10 +47,11 @@ export default async function ClipEditorPage({ params, searchParams }: PageProps
   const token = (session as any)?.accessToken;
   if (!token) redirect("/login");
 
-  const [videoRes, clipRes, exportsRes] = await Promise.all([
+  const [videoRes, clipRes, exportsRes, billingRes] = await Promise.all([
     fetchWithAuth(`/api/videos/${params.id}`, token),
     fetchWithAuth(`/api/clips/${params.clipId}`, token),
     fetchWithAuth(`/api/exports?clip_id=${encodeURIComponent(params.clipId)}`, token),
+    fetchWithAuth("/api/billing/status", token),
   ]);
 
   if (
@@ -91,6 +92,7 @@ export default async function ClipEditorPage({ params, searchParams }: PageProps
   const video = (await videoRes.json()) as Video;
   const clip = (await clipRes.json()) as Clip;
   const exports = (await exportsRes.json()) as Export[];
+  const billingStatus = billingRes.ok ? (await billingRes.json()) as BillingStatus : null;
   if (clip.video_id !== video.id) {
     notFound();
   }
@@ -105,6 +107,7 @@ export default async function ClipEditorPage({ params, searchParams }: PageProps
       initialClip={clip}
       initialExports={exports}
       initialScheduleAt={typeof searchParams?.scheduleAt === "string" ? searchParams.scheduleAt : undefined}
+      billingStatus={billingStatus || ({ plan_tier: "repurposer" } as BillingStatus)}
     />
   );
 }
