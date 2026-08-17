@@ -266,6 +266,7 @@ export interface ExportOverlayTextConfig {
   text: string;
   x: number;
   y: number;
+  width: number;
   font_size: number;
   text_color: string;
   highlights: ExportOverlayTextHighlight[];

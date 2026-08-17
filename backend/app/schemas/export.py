@@ -30,6 +30,7 @@ class ExportOverlayTextConfig(BaseModel):
     text: str = Field(min_length=1, max_length=280)
     x: float = Field(default=0.5, ge=0, le=1)
     y: float = Field(default=0.2, ge=0, le=1)
+    width: float = Field(default=0.82, ge=0.2, le=0.92)
     font_size: int = Field(default=52, ge=16, le=160)
     text_color: str = Field(default="#FFFFFF", pattern=HEX_COLOR_PATTERN)
     highlights: list[ExportOverlayTextHighlight] = Field(default_factory=list, max_length=100)
