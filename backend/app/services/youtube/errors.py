@@ -81,6 +81,14 @@ def classify_yt_dlp_error(error: Exception | str) -> YtErrorClassification:
             False,
             "embed_only",
         )
+    if any(marker in lower for marker in ["private video", "members-only", "members only", "private"]):
+        return _classify(
+            raw,
+            YT_PRIVATE_OR_MEMBERS_ONLY,
+            "This video is private or members-only and cannot be server-imported.",
+            False,
+            "upload_manual",
+        )
     if any(
         marker in lower
         for marker in [
@@ -97,14 +105,6 @@ def classify_yt_dlp_error(error: Exception | str) -> YtErrorClassification:
             "This video requires sign-in to download from server. Keep as embed or upload manually.",
             False,
             "embed_only",
-        )
-    if any(marker in lower for marker in ["private video", "members-only", "members only", "private"]):
-        return _classify(
-            raw,
-            YT_PRIVATE_OR_MEMBERS_ONLY,
-            "This video is private or members-only and cannot be server-imported.",
-            False,
-            "upload_manual",
         )
     if any(marker in lower for marker in ["geo", "country", "region", "not available in your country"]):
         return _classify(

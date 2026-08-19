@@ -1,5 +1,7 @@
 # PostBandit
 
+[![Python CI](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml)
+
 [postbandit.com](https://postbandit.com) · [Repository](https://github.com/TociNwaoha/postbandit)
 
 PostBandit is a video-repurposing system for creators and teams that turns uploaded or imported source video into captioned clips and platform-specific publishing jobs.
@@ -50,7 +52,7 @@ The repository contains Meta-review UI and TikTok publishing code, but does not 
 
 ## Testing
 
-Backend tests live in `backend/tests` and run with `pytest`. The repository’s CI setup and 165-test result currently live on the separate [`ci/test-suite`](https://github.com/TociNwaoha/postbandit/tree/ci/test-suite) branch, not on `main`; merge that branch before advertising a default-branch CI status badge.
+Backend tests live in `backend/tests` and run with `pytest`. The suite currently reports 165 passed tests and 1 skipped test. GitHub Actions runs the suite with coverage on every push and pull request.
 
 ## Local development
 

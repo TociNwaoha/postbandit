@@ -199,7 +199,9 @@ def test_stale_queued_cleanup_recovers_when_file_exists(monkeypatch):
     assert video.external_metadata_json.get("upload_confirmed") is True
     assert video.error_message is None
     assert enqueued == [video_id]
-    assert session.commits == 2
+    # The enqueue helper is mocked here. The production helper manages its
+    # own transaction; this branch itself commits once after restoring status.
+    assert session.commits == 1
 
 
 def test_stale_queued_cleanup_respects_dry_run(monkeypatch):
