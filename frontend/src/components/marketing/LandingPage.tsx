@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { getPlatformBrandMeta } from "@/components/connections/platformBrand";
 import { MascotSection } from "@/components/landing/MascotSection";
 import { api } from "@/lib/api";
 import { PublicBillingPlan } from "@/types";
@@ -27,14 +28,6 @@ const platformRows: PlatformRow[] = [
   { name: "X (Twitter)", handle: "@postbandit", key: "x" },
   { name: "Threads", handle: "@postbandit", key: "threads" },
 ];
-
-const platformColors: Record<PlatformKey, string> = {
-  youtube: "#FF0000",
-  tiktok: "#161722",
-  instagram: "#E1306C",
-  x: "#0F1419",
-  threads: "#161722",
-};
 
 const featureCards = [
   {
@@ -111,52 +104,13 @@ function StarIcon({ className = "" }: { className?: string }) {
   );
 }
 
-function PlatformIcon({ platform, className = "" }: { platform: string; className?: string }) {
-  if (platform === "youtube") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden className={className}>
-        <rect x="2.5" y="6" width="19" height="12" rx="3.5" fill="currentColor" />
-        <path d="M10 9.2v5.6l5-2.8-5-2.8Z" fill="#fff" />
-      </svg>
-    );
-  }
-
-  if (platform === "instagram") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden className={className}>
-        <rect x="4" y="4" width="16" height="16" rx="4.5" fill="none" stroke="currentColor" strokeWidth="2" />
-        <circle cx="12" cy="12" r="3.6" fill="none" stroke="currentColor" strokeWidth="2" />
-        <circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" />
-      </svg>
-    );
-  }
-
-  if (platform === "x") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden className={className}>
-        <path d="M4 4h4.8l4.2 5.7L18.4 4H20l-6.2 7.1L20.5 20h-4.8l-4.6-6.2L5.6 20H4l6.8-7.8L4 4Z" fill="currentColor" />
-      </svg>
-    );
-  }
-
-  if (platform === "threads") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden className={className}>
-        <path
-          d="M15.6 10.7c-.2-2.5-1.9-3.8-4.8-3.8-2.7 0-4.6 1.5-4.6 3.8 0 2 1.2 3.3 3.6 3.8l1.8.4c1 .2 1.4.6 1.4 1.2 0 .8-.8 1.4-2 1.4-1.3 0-2.2-.7-2.3-1.8H6.2c.2 2.5 2 4 5 4 3.1 0 5.2-1.6 5.2-4 0-1.9-1.1-3.2-3.5-3.7l-1.9-.4c-1-.2-1.4-.6-1.4-1.2 0-.7.7-1.2 1.8-1.2 1.3 0 2.1.6 2.2 1.6h2Z"
-          fill="currentColor"
-        />
-      </svg>
-    );
-  }
+function PlatformBadge({ platform, size = "regular" }: { platform: string; size?: "regular" | "large" }) {
+  const brand = getPlatformBrandMeta(platform);
 
   return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className}>
-      <path
-        d="M12.6 3.3c.6 0 1.2.2 1.6.8l.7 1.1a3 3 0 0 0 1.7 1.2l1.3.3c1.2.3 1.8 1.6 1.2 2.7l-.6 1.1a3 3 0 0 0-.3 2.1l.3 1.3c.3 1.2-.8 2.3-2 2.1l-1.3-.3a3 3 0 0 0-2.1.3l-1.1.6c-1.1.6-2.4 0-2.7-1.2l-.3-1.3a3 3 0 0 0-1.2-1.7l-1.1-.7c-1-.7-1-2.1 0-2.8l1.1-.7A3 3 0 0 0 9 6.3l.3-1.3c.2-1 1-1.7 2-1.7Z"
-        fill="currentColor"
-      />
-    </svg>
+    <span className={`inline-flex shrink-0 items-center justify-center ${size === "large" ? "h-12 w-12 rounded-2xl" : "h-9 w-9 rounded-lg"} ${brand.badgeClassName}`}>
+      {brand.icon}
+    </span>
   );
 }
 
@@ -167,9 +121,7 @@ function WorkflowDiagram({ displayClassName }: { displayClassName: string }) {
         <div className="rounded-2xl border border-[#D6E2F5] bg-white p-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#7A94B0]">Source post</p>
           <div className="mt-4 flex items-center gap-3">
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FACC15] via-[#E1306C] to-[#5851DB] text-white shadow-[0_12px_28px_rgba(225,48,108,0.22)]">
-              <PlatformIcon platform="instagram" className="h-6 w-6" />
-            </span>
+            <PlatformBadge platform="instagram" size="large" />
             <div>
               <p className={`${displayClassName} text-xl font-bold tracking-[-0.5px] text-[#091528]`}>Instagram Reel</p>
               <p className="text-sm text-[#5A7192]">Detected from a connected source account</p>
@@ -202,21 +154,7 @@ function WorkflowDiagram({ displayClassName }: { displayClassName: string }) {
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {workflowDestinations.map((destination) => (
               <div key={destination.key} className="flex items-center gap-2 rounded-xl border border-[#E0EAF9] bg-[#FBFDFF] px-3 py-2.5">
-                <span
-                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${
-                    destination.key === "youtube"
-                      ? "bg-[#FF0000] text-white"
-                      : destination.key === "tiktok" || destination.key === "x"
-                        ? "bg-[#111827] text-white"
-                        : "bg-[#1877F2] text-white"
-                  }`}
-                >
-                  {destination.key === "facebook" ? (
-                    <span className="text-lg font-bold leading-none">f</span>
-                  ) : (
-                    <PlatformIcon platform={destination.key} className="h-4.5 w-4.5" />
-                  )}
-                </span>
+                <PlatformBadge platform={destination.key} />
                 <span className="text-sm font-semibold text-[#18325D]">{destination.label}</span>
               </div>
             ))}
@@ -403,12 +341,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
                       } ${done ? "opacity-65" : "opacity-100"}`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <span
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg"
-                          style={{ color: platformColors[platform.key], backgroundColor: "#F4F8FF" }}
-                        >
-                          <PlatformIcon platform={platform.key} className="h-4 w-4" />
-                        </span>
+                        <PlatformBadge platform={platform.key} />
                         <div>
                           <p className="text-[13px] font-medium text-[#102341]">{platform.name}</p>
                           <p className="text-[11px] text-[#7A94B0]">{platform.handle}</p>
@@ -457,10 +390,9 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
             {platformRows.map((platform) => (
               <span
                 key={platform.key}
-                className="inline-flex items-center gap-2 text-sm font-semibold"
-                style={{ color: platformColors[platform.key], opacity: 0.58 }}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#415A7A] opacity-70"
               >
-                <PlatformIcon platform={platform.key} className="h-[18px] w-[18px]" />
+                <PlatformBadge platform={platform.key} />
                 {platform.name.replace(" Shorts", "")}
               </span>
             ))}
