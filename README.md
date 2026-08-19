@@ -1,6 +1,6 @@
 # PostBandit
 
-[![Python CI](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml/badge.svg?branch=ci%2Ftest-suite)](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml?query=branch%3Aci%2Ftest-suite)
+[![Python CI](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml)
 
 AI-powered content workflow platform — import video, generate clips, publish everywhere.
 
