@@ -583,7 +583,7 @@ export function LandingPage({ displayClassName = "marketing-display", bodyClassN
             {pricing.map((plan) => (
               <article
                 key={plan.tier}
-                className={`sr rounded-2xl border p-7 ${
+                className={`sr on rounded-2xl border p-7 ${
                   plan.featured
                     ? "-mt-1 border-[#1D3FD0] bg-[#1D3FD0] text-white shadow-[0_14px_36px_rgba(29,63,208,0.32)]"
                     : "border-[#D6E2F5] bg-white"
