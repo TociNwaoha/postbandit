@@ -13,12 +13,17 @@ yarn-error.log*
 
 # Python
 __pycache__/
+**pycache**/
 *.py[cod]
+*.pyc
 *$py.class
 *.egg-info/
 dist/
 build/
 .venv/
+backend/.coverage
+.coverage
+htmlcov/
 venv/
 env/
 

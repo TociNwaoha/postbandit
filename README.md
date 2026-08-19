@@ -1,5 +1,7 @@
 # PostBandit
 
+[![Python CI](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml/badge.svg?branch=ci%2Ftest-suite)](https://github.com/TociNwaoha/postbandit/actions/workflows/ci.yml?query=branch%3Aci%2Ftest-suite)
+
 AI-powered content workflow platform — import video, generate clips, publish everywhere.
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
