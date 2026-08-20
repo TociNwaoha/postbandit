@@ -48,6 +48,7 @@ class VideoImportMode(str, enum.Enum):
 class ClipProfile(str, enum.Enum):
     viral = "viral"
     sermon = "sermon"
+    longform_extended = "longform_extended"
 
 
 class VideoImportState(str, enum.Enum):

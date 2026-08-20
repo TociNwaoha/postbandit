@@ -494,9 +494,14 @@ export function UploadModal({ isOpen, onClose, onUploaded }: UploadModalProps) {
             >
               <option value="viral">Viral (short-form, higher clip count)</option>
               <option value="sermon">Long-form Speaking (fewer, longer clips)</option>
+              <option value="longform_extended">Extended (90s-3min, complete thoughts)</option>
             </select>
             <p className="mt-2 text-xs text-[var(--app-muted)]">
-              Long-form Speaking targets approximately 60-180 second clips that preserve full message context.
+              {clipProfile === "viral"
+                ? "Viral targets 15-40 second clips for short, punchy moments."
+                : clipProfile === "sermon"
+                  ? "Long-form Speaking targets approximately 60-180 second clips that preserve full message context."
+                  : "Extended — For full thoughts: setup, point, and the line it lands on. 90 seconds to 3 minutes. Best for sermons and teaching."}
             </p>
           </div>
           {activeTab === "upload" ? (

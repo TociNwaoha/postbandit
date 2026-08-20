@@ -112,7 +112,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
   const canGenerateByStatus = !["queued", "downloading", "transcribing"].includes(video.status);
   const canGenerateByMedia = Boolean(video.storage_key);
   const generationDisabled = batchLoading || !canGenerateByStatus || !canGenerateByMedia;
-  const selectedBatchLabel = batchProfile === "sermon" ? "Long-form Speaking" : "Viral";
+  const selectedBatchLabel = batchProfile === "sermon" ? "Long-form Speaking" : batchProfile === "longform_extended" ? "Extended" : "Viral";
   const rawSourceCountdown = rawSourceCountdownLabel(video.raw_source_days_remaining);
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
             <span className="text-[var(--app-subtle)]">Duration:</span> {formatDuration(video.duration_sec)}
           </p>
           <p>
-            <span className="text-[var(--app-subtle)]">Clip profile:</span> {video.clip_profile === "sermon" ? "Long-form Speaking" : "Viral"}
+            <span className="text-[var(--app-subtle)]">Clip profile:</span> {video.clip_profile === "sermon" ? "Long-form Speaking" : video.clip_profile === "longform_extended" ? "Extended" : "Viral"}
           </p>
           <p>
             <span className="text-[var(--app-subtle)]">Resolution:</span> {video.resolution || "Unknown"}
@@ -284,8 +284,16 @@ export function VideoDetailPanel({ video, transcript, transcriptError, clips, cl
                 >
                   <option value="viral">Viral</option>
                   <option value="sermon">Long-form Speaking</option>
+                  <option value="longform_extended">Extended (90s-3min)</option>
                 </select>
               </label>
+              <p className="max-w-xs text-xs text-[var(--app-muted)]">
+                {batchProfile === "viral"
+                  ? "Viral — 15s-40s."
+                  : batchProfile === "sermon"
+                    ? "Long-form Speaking — 60s-3min."
+                    : "Extended — For full thoughts: setup, point, and the line it lands on. 90 seconds to 3 minutes. Best for sermons and teaching."}
+              </p>
               <button
                 type="button"
                 onClick={() => void handleGenerateBatch()}

@@ -268,7 +268,7 @@ export function VideoList({ videos, loading, error, onRefresh, onOpenUpload }: V
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[var(--app-muted)]">
                   {formatDuration(video.duration_sec) && <span>{formatDuration(video.duration_sec)}</span>}
                   {video.clip_count > 0 && <span>{video.clip_count} clips</span>}
-                  <span>Profile: {video.clip_profile === "sermon" ? "Long-form Speaking" : "Viral"}</span>
+                  <span>Profile: {video.clip_profile === "sermon" ? "Long-form Speaking" : video.clip_profile === "longform_extended" ? "Extended" : "Viral"}</span>
                   <span>{formatRelativeTime(video.created_at)}</span>
                   {rawSourceCountdown ? (
                     <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">

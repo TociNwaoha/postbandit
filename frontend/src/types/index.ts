@@ -39,7 +39,7 @@ export interface OnboardingProfilePatch {
 }
 
 export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram" | "facebook" | "tiktok" | "x" | "twitch" | "twitch_live";
-export type ClipProfile = "viral" | "sermon";
+export type ClipProfile = "viral" | "sermon" | "longform_extended";
 export type VideoStatus =
   | "queued"
   | "downloading"

@@ -10,6 +10,11 @@ from app.models.video import ClipProfile
 
 LONG_FORM_CLIP_PROFILE_ALIASES = {"long_form_speaking"}
 
+EXTENDED_MIN_SECONDS = 90.0
+EXTENDED_TARGET_MIN = 105.0
+EXTENDED_TARGET_MAX = 160.0
+EXTENDED_HARD_MAX = 175.0
+
 
 TERMINAL_PUNCTUATION_RE = re.compile(r"[.!?][\"')\]]*$")
 
@@ -76,6 +81,8 @@ class AudioEnergyProfile:
 class ClipSelectionProfile:
     clip_profile: ClipProfile
     min_duration_sec: float
+    target_min_duration_sec: float
+    target_max_duration_sec: float
     max_duration_sec: float
     min_words: int
     top_n: int
@@ -92,6 +99,8 @@ CLIP_SELECTION_PROFILES: dict[ClipProfile, ClipSelectionProfile] = {
     ClipProfile.viral: ClipSelectionProfile(
         clip_profile=ClipProfile.viral,
         min_duration_sec=15.0,
+        target_min_duration_sec=25.0,
+        target_max_duration_sec=32.0,
         max_duration_sec=40.0,
         min_words=20,
         top_n=10,
@@ -106,11 +115,29 @@ CLIP_SELECTION_PROFILES: dict[ClipProfile, ClipSelectionProfile] = {
     ClipProfile.sermon: ClipSelectionProfile(
         clip_profile=ClipProfile.sermon,
         min_duration_sec=60.0,
+        target_min_duration_sec=90.0,
+        target_max_duration_sec=130.0,
         max_duration_sec=180.0,
         min_words=90,
         top_n=12,
         max_overlap_ratio=0.70,
         pause_gap_sec=2.0,
+        chunk_merge_gap_sec=3.0,
+        hook_weight=0.45,
+        energy_weight=0.55,
+        hook_word_bonus_min=50,
+        hook_word_bonus_max=340,
+    ),
+    ClipProfile.longform_extended: ClipSelectionProfile(
+        clip_profile=ClipProfile.longform_extended,
+        min_duration_sec=EXTENDED_MIN_SECONDS,
+        target_min_duration_sec=EXTENDED_TARGET_MIN,
+        target_max_duration_sec=EXTENDED_TARGET_MAX,
+        max_duration_sec=EXTENDED_HARD_MAX,
+        min_words=90,
+        top_n=12,
+        max_overlap_ratio=0.70,
+        pause_gap_sec=2.5,
         chunk_merge_gap_sec=3.0,
         hook_weight=0.45,
         energy_weight=0.55,
@@ -128,6 +155,8 @@ def get_clip_selection_profile(profile_value: str | ClipProfile | None) -> ClipS
         normalized = profile_value.strip().lower().replace("-", "_").replace(" ", "_")
         if normalized == ClipProfile.sermon.value or normalized in LONG_FORM_CLIP_PROFILE_ALIASES:
             return CLIP_SELECTION_PROFILES[ClipProfile.sermon]
+        if normalized == ClipProfile.longform_extended.value:
+            return CLIP_SELECTION_PROFILES[ClipProfile.longform_extended]
 
     return CLIP_SELECTION_PROFILES[ClipProfile.viral]
 
@@ -363,7 +392,7 @@ def select_top_candidates(
         reverse=True,
     )
 
-    if clip_profile != ClipProfile.sermon:
+    if clip_profile not in {ClipProfile.sermon, ClipProfile.longform_extended}:
         selected: list[CandidateWindow] = []
         for candidate in ranked:
             if _has_too_much_overlap(candidate, selected, max_overlap_ratio):
@@ -373,10 +402,12 @@ def select_top_candidates(
                 break
         return selected
 
+    profile = CLIP_SELECTION_PROFILES[clip_profile]
+
     def _duration_band(duration: float) -> str:
-        if duration <= 90.0:
+        if duration <= profile.target_min_duration_sec:
             return "short"
-        if duration <= 130.0:
+        if duration <= profile.target_max_duration_sec:
             return "medium"
         return "long"
 
