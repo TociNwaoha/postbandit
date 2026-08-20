@@ -98,6 +98,8 @@ class VideoUploadUrlRequest(BaseModel):
             normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
             if normalized == "long_form_speaking":
                 return ClipProfile.sermon.value
+            if normalized == ClipProfile.longform_extended.value:
+                return ClipProfile.longform_extended.value
         return value
 
 
@@ -129,6 +131,8 @@ class VideoImportYoutubeRequest(BaseModel):
             normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
             if normalized == "long_form_speaking":
                 return ClipProfile.sermon.value
+            if normalized == ClipProfile.longform_extended.value:
+                return ClipProfile.longform_extended.value
         return value
 
 
@@ -142,6 +146,8 @@ class VideoGenerateClipsRequest(BaseModel):
             normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
             if normalized == "long_form_speaking":
                 return ClipProfile.sermon.value
+            if normalized == ClipProfile.longform_extended.value:
+                return ClipProfile.longform_extended.value
         return value
 
 

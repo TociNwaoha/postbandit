@@ -2,6 +2,10 @@ from app.models.video import ClipProfile
 from app.schemas.video import VideoImportYoutubeRequest, VideoUploadUrlRequest
 from app.services.scoring import (
     CandidateWindow,
+    EXTENDED_HARD_MAX,
+    EXTENDED_MIN_SECONDS,
+    EXTENDED_TARGET_MAX,
+    EXTENDED_TARGET_MIN,
     calculate_hook_score,
     get_clip_selection_profile,
     select_top_candidates,
@@ -40,6 +44,36 @@ def test_sermon_hook_bonus_handles_longer_windows():
         hook_word_bonus_max=340,
     )
     assert sermon_score > viral_score
+
+
+def test_extended_clip_profile_values():
+    profile = get_clip_selection_profile("longform_extended")
+
+    assert profile.clip_profile == ClipProfile.longform_extended
+    assert profile.min_duration_sec == EXTENDED_MIN_SECONDS == 90.0
+    assert profile.target_min_duration_sec == EXTENDED_TARGET_MIN == 105.0
+    assert profile.target_max_duration_sec == EXTENDED_TARGET_MAX == 160.0
+    assert profile.max_duration_sec == EXTENDED_HARD_MAX == 175.0
+    assert profile.pause_gap_sec == 2.5
+    assert profile.chunk_merge_gap_sec == 3.0
+    assert profile.hook_weight == 0.45
+    assert profile.energy_weight == 0.55
+
+
+def test_extended_request_profile_is_accepted():
+    upload_request = VideoUploadUrlRequest(
+        filename="example.mp4",
+        file_size=1024,
+        content_type="video/mp4",
+        clip_profile="longform_extended",
+    )
+    import_request = VideoImportYoutubeRequest(
+        url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        clip_profile="longform_extended",
+    )
+
+    assert upload_request.clip_profile == ClipProfile.longform_extended
+    assert import_request.clip_profile == ClipProfile.longform_extended
 
 
 def test_long_form_speaking_alias_maps_to_sermon_profile():
@@ -154,3 +188,18 @@ def test_sermon_balanced_selector_still_respects_overlap_rules():
     assert primary_short in selected
     assert overlapping_short not in selected
     assert len(selected) == 3
+
+
+def test_extended_balanced_selector_uses_extended_duration_bands():
+    selected = select_top_candidates(
+        candidates=[
+            _make_candidate(start=0.0, duration=95.0, score=1.0),
+            _make_candidate(start=300.0, duration=120.0, score=0.9),
+            _make_candidate(start=700.0, duration=170.0, score=0.8),
+        ],
+        top_n=3,
+        max_overlap_ratio=0.70,
+        clip_profile=ClipProfile.longform_extended,
+    )
+
+    assert {round(candidate.duration) for candidate in selected} == {95, 120, 170}

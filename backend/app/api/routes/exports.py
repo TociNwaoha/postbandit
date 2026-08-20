@@ -61,13 +61,13 @@ def _normalize_frame_zoom(value: float | None) -> float:
     return round(min(3.0, max(1.0, float(value))), 4)
 
 
-def _derived_download_url(storage_key: str | None) -> str | None:
+def _derived_download_url(storage_key: str | None, download_name: str | None = None) -> str | None:
     if not storage_key:
         return None
     try:
         if not object_storage_client.file_exists(storage_key):
             return None
-        return object_storage_client.get_presigned_download_url(storage_key)
+        return object_storage_client.get_presigned_download_url(storage_key, download_name=download_name)
     except Exception as exc:
         logger.warning("[exports] failed to derive download URL for key=%s: %s", storage_key, exc)
         return None
@@ -108,10 +108,12 @@ def _to_response(
     reused: bool = False,
 ) -> ExportResponse:
     download_url = None
+    view_url = None
     srt_download_url = None
     if export.status == ExportStatus.ready:
-        download_url = _derived_download_url(export.storage_key)
-        srt_download_url = _derived_download_url(export.srt_key)
+        download_url = _derived_download_url(export.storage_key, f"postbandit-export-{export.id}.mp4")
+        view_url = _derived_download_url(export.storage_key)
+        srt_download_url = _derived_download_url(export.srt_key, f"postbandit-captions-{export.id}.srt")
 
     return ExportResponse(
         id=export.id,
@@ -119,6 +121,7 @@ def _to_response(
         retry_of_export_id=export.retry_of_export_id,
         user_id=export.user_id,
         aspect_ratio=export.aspect_ratio,
+        render_quality=export.render_quality,
         caption_style=export.caption_style,
         caption_color_variant=_resolve_caption_color_variant(export.caption_color_variant),
         caption_format=export.caption_format,
@@ -134,6 +137,7 @@ def _to_response(
         storage_key=export.storage_key,
         srt_key=export.srt_key,
         download_url=download_url,
+        view_url=view_url,
         srt_download_url=srt_download_url,
         url_expires_at=export.url_expires_at,
         status=export.status,
@@ -348,10 +352,11 @@ async def create_export(
     current_user: User = Depends(get_current_user),
 ):
     logger.info(
-        "[exports] create requested user_id=%s clip_id=%s aspect_ratio=%s caption_style=%s caption_color_variant=%s caption_format=%s caption_cadence=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s overlay_image_asset_id=%s overlay_text=%s",
+        "[exports] create requested user_id=%s clip_id=%s aspect_ratio=%s render_quality=%s caption_style=%s caption_color_variant=%s caption_format=%s caption_cadence=%s caption_vertical_position=%s caption_scale=%s frame_anchor_x=%s frame_anchor_y=%s frame_zoom=%s overlay_image_asset_id=%s overlay_text=%s",
         current_user.id,
         body.clip_id,
         body.aspect_ratio,
+        body.render_quality,
         body.caption_style,
         body.caption_color_variant,
         body.caption_format,
@@ -387,6 +392,15 @@ async def create_export(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
     clip, video = clip_video_row
 
+    if body.render_quality == "1080p" and current_user.billing_plan == "repurposer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "export_quality_requires_creator",
+                "message": "1080p exports require the Creator plan or higher.",
+            },
+        )
+
     if body.overlay_image_asset_id:
         asset_result = await db.execute(
             select(ClipOverlayAsset).where(
@@ -408,6 +422,7 @@ async def create_export(
             Export.user_id == current_user.id,
             Export.clip_id == body.clip_id,
             Export.aspect_ratio == body.aspect_ratio,
+            Export.render_quality == body.render_quality,
             Export.caption_style == body.caption_style,
             Export.caption_format == body.caption_format,
             Export.caption_cadence == body.caption_cadence,
@@ -459,6 +474,7 @@ async def create_export(
         retry_of_export_id=None,
         user_id=current_user.id,
         aspect_ratio=body.aspect_ratio,
+        render_quality=body.render_quality,
         caption_style=body.caption_style,
         caption_color_variant=caption_color_variant,
         caption_format=body.caption_format,
@@ -483,6 +499,7 @@ async def create_export(
             "export_id": str(export.id),
             "clip_id": str(body.clip_id),
             "aspect_ratio": _enum_value(body.aspect_ratio),
+            "render_quality": body.render_quality,
             "caption_style": _enum_value(body.caption_style) if body.caption_style else None,
             "caption_color_variant": _enum_value(caption_color_variant),
             "caption_format": _enum_value(body.caption_format),
@@ -532,6 +549,7 @@ async def retry_export(
         retry_of_export_id=original_export.id,
         user_id=current_user.id,
         aspect_ratio=original_export.aspect_ratio,
+        render_quality=original_export.render_quality,
         caption_style=original_export.caption_style,
         caption_color_variant=_resolve_caption_color_variant(original_export.caption_color_variant),
         caption_format=original_export.caption_format,
@@ -556,6 +574,7 @@ async def retry_export(
             "export_id": str(retry_export_row.id),
             "clip_id": str(clip.id),
             "aspect_ratio": _enum_value(retry_export_row.aspect_ratio),
+            "render_quality": retry_export_row.render_quality,
             "caption_style": _enum_value(retry_export_row.caption_style) if retry_export_row.caption_style else None,
             "caption_color_variant": _enum_value(
                 _resolve_caption_color_variant(retry_export_row.caption_color_variant)

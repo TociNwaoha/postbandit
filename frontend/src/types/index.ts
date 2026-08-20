@@ -39,7 +39,7 @@ export interface OnboardingProfilePatch {
 }
 
 export type VideoSourceType = "upload" | "youtube" | "youtube_single" | "youtube_playlist" | "instagram" | "facebook" | "tiktok" | "x" | "twitch" | "twitch_live";
-export type ClipProfile = "viral" | "sermon";
+export type ClipProfile = "viral" | "sermon" | "longform_extended";
 export type VideoStatus =
   | "queued"
   | "downloading"
@@ -266,6 +266,7 @@ export interface ExportOverlayTextConfig {
   text: string;
   x: number;
   y: number;
+  width: number;
   font_size: number;
   text_color: string;
   highlights: ExportOverlayTextHighlight[];
@@ -277,6 +278,7 @@ export interface Export {
   retry_of_export_id: string | null;
   user_id: string;
   aspect_ratio: AspectRatio;
+  render_quality: "720p" | "1080p";
   caption_style: CaptionStyle | null;
   caption_color_variant: CaptionColorVariant;
   caption_format: CaptionFormat;
@@ -292,6 +294,7 @@ export interface Export {
   storage_key: string | null;
   srt_key: string | null;
   download_url: string | null;
+  view_url?: string | null;
   srt_download_url?: string | null;
   url_expires_at: string | null;
   status: ExportStatus;

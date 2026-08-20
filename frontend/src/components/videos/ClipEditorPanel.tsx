@@ -27,6 +27,7 @@ import {
   CaptionColorVariant,
   CaptionFormat,
   CaptionStyle,
+  BillingStatus,
   Clip,
   ClipOverlayAsset,
   Export,
@@ -40,6 +41,7 @@ interface ClipEditorPanelProps {
   initialClip: Clip;
   initialExports: Export[];
   initialScheduleAt?: string;
+  billingStatus: BillingStatus;
 }
 
 const ACTIVE_EXPORT_STATUSES = new Set(["queued", "rendering"]);
@@ -49,6 +51,8 @@ const CAPTION_SCALE_MIN = 0.25;
 const CAPTION_SCALE_MAX = 2;
 const OVERLAY_IMAGE_WIDTH_MIN = 0.05;
 const OVERLAY_IMAGE_WIDTH_MAX = 0.8;
+const OVERLAY_TEXT_WIDTH_MIN = 0.2;
+const OVERLAY_TEXT_WIDTH_MAX = 0.92;
 const HIGHLIGHT_COLORS = ["#FACC15", "#22D3EE", "#FB7185", "#4ADE80", "#C084FC"];
 const DEFAULT_IMAGE_OVERLAY: ExportOverlayImageConfig = {
   x: 0.82,
@@ -60,6 +64,7 @@ const DEFAULT_TEXT_OVERLAY: ExportOverlayTextConfig = {
   text: "",
   x: 0.5,
   y: 0.2,
+  width: 0.82,
   font_size: 52,
   text_color: "#FFFFFF",
   highlights: [],
@@ -176,7 +181,7 @@ async function uploadClipOverlayAsset(clipId: string, file: File): Promise<ClipO
   return (await response.json()) as ClipOverlayAsset;
 }
 
-export function ClipEditorPanel({ video, initialClip, initialExports, initialScheduleAt }: ClipEditorPanelProps) {
+export function ClipEditorPanel({ video, initialClip, initialExports, initialScheduleAt, billingStatus }: ClipEditorPanelProps) {
   const sourceAspectFromResolution = parseResolutionAspectRatio(video.resolution);
   const [clip, setClip] = useState<Clip>(initialClip);
   const [clipStart, setClipStart] = useState<string>(initialClip.start_time.toFixed(2));
@@ -186,6 +191,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("original");
+  const [renderQuality, setRenderQuality] = useState<"720p" | "1080p">("720p");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold_boxed");
   const [captionColorVariant, setCaptionColorVariant] = useState<CaptionColorVariant>("classic");
   const [captionFormat, setCaptionFormat] = useState<CaptionFormat>("burned_in");
@@ -223,6 +229,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
   const [isFrameDragging, setIsFrameDragging] = useState(false);
   const [isCaptionDragging, setIsCaptionDragging] = useState(false);
   const [isCaptionResizing, setIsCaptionResizing] = useState(false);
+  const [isTextOverlayResizing, setIsTextOverlayResizing] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const framedVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -241,13 +248,15 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
     startScale: 1,
   });
   const overlayInteractionRef = useRef<{
-    mode: "image-drag" | "image-resize" | "text-drag" | null;
+    mode: "image-drag" | "image-resize" | "text-drag" | "text-resize" | null;
     startClientX: number;
     startWidth: number;
+    startX: number;
   }>({
     mode: null,
     startClientX: 0,
     startWidth: DEFAULT_IMAGE_OVERLAY.width,
+    startX: DEFAULT_TEXT_OVERLAY.x,
   });
   const replayStopAtRef = useRef<number | null>(null);
   const replayActiveRef = useRef<boolean>(false);
@@ -623,7 +632,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
   };
 
   const startOverlayInteraction = (
-    mode: "image-drag" | "image-resize" | "text-drag",
+    mode: "image-drag" | "image-resize" | "text-drag" | "text-resize",
     event: PointerEvent<HTMLElement>
   ) => {
     event.preventDefault();
@@ -632,8 +641,10 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
     overlayInteractionRef.current = {
       mode,
       startClientX: event.clientX,
-      startWidth: overlayImageConfig.width,
+      startWidth: mode === "text-resize" ? overlayTextConfig.width : overlayImageConfig.width,
+      startX: overlayTextConfig.x,
     };
+    if (mode === "text-resize") setIsTextOverlayResizing(true);
   };
 
   const handleOverlayPointerMove = (event: PointerEvent<HTMLElement>) => {
@@ -657,12 +668,32 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
       return;
     }
 
+    if (interaction.mode === "text-resize") {
+      const widthDelta = (event.clientX - interaction.startClientX) / rect.width;
+      const width = clamp(
+        interaction.startWidth + widthDelta,
+        OVERLAY_TEXT_WIDTH_MIN,
+        OVERLAY_TEXT_WIDTH_MAX
+      );
+      const x = clamp(
+        interaction.startX + (width - interaction.startWidth) / 2,
+        width / 2,
+        1 - width / 2
+      );
+      setOverlayTextConfig((current) => ({ ...current, width, x }));
+      return;
+    }
+
     const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
     if (interaction.mode === "image-drag") {
       setOverlayImageConfig((current) => ({ ...current, x, y }));
     } else {
-      setOverlayTextConfig((current) => ({ ...current, x, y }));
+      setOverlayTextConfig((current) => ({
+        ...current,
+        x: clamp(x, current.width / 2, 1 - current.width / 2),
+        y,
+      }));
     }
   };
 
@@ -671,6 +702,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     overlayInteractionRef.current.mode = null;
+    setIsTextOverlayResizing(false);
   };
 
   const handleOverlayUpload = async (file: File) => {
@@ -881,6 +913,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
       const created = await api.post<Export>("/api/exports", {
         clip_id: clip.id,
         aspect_ratio: aspectRatio,
+        render_quality: renderQuality,
         caption_style: captionStyle,
         caption_color_variant: captionColorVariant,
         caption_format: captionFormat,
@@ -1149,10 +1182,13 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
 
                 {overlayTextConfig.text.trim() ? (
                   <div
-                    className="absolute z-30 max-w-[82%] cursor-move touch-none select-none text-center font-bold leading-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] ring-1 ring-white/60"
+                    className={`absolute z-30 cursor-move touch-none select-none text-center font-bold leading-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)] ring-1 ring-white/60 ${
+                      isTextOverlayResizing ? "ring-2 ring-[#1D3FD0]" : ""
+                    }`}
                     style={{
                       left: `${overlayTextConfig.x * 100}%`,
                       top: `${overlayTextConfig.y * 100}%`,
+                      width: `${overlayTextConfig.width * 100}%`,
                       color: overlayTextConfig.text_color,
                       fontSize: `${clamp(overlayTextConfig.font_size * 0.46, 12, 74)}px`,
                       transform: "translate(-50%, -50%)",
@@ -1174,6 +1210,14 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                         </span>
                       );
                     })}
+                    <div
+                      aria-label="Resize text box"
+                      className="absolute -right-2 top-1/2 h-5 w-5 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-[#1D3FD0]"
+                      onPointerDown={(event) => startOverlayInteraction("text-resize", event)}
+                      onPointerMove={handleOverlayPointerMove}
+                      onPointerUp={stopOverlayInteraction}
+                      onPointerCancel={stopOverlayInteraction}
+                    />
                   </div>
                 ) : null}
 
@@ -1616,7 +1660,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                     </>
                   ) : null}
                   <p className="text-[11px] text-[var(--app-subtle)]">
-                    Drag the text directly in the framed preview. It remains visible for the full clip.
+                    Drag the text to position it. Drag the right-side handle in the preview to widen or narrow the text box.
                   </p>
                 </div>
               ) : null}
@@ -1640,6 +1684,22 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
           Selected aspect from Framing: <span className="font-semibold text-[var(--app-text)]">{aspectRatio}</span>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="text-xs text-[var(--app-muted)]">
+            Export Quality
+            <select
+              value={renderQuality}
+              onChange={(event) => setRenderQuality(event.target.value as "720p" | "1080p")}
+              className="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-2.5 py-1.5 text-sm text-[var(--app-text)] focus:border-[#1D3FD0] focus:outline-none"
+            >
+              <option value="720p">720p (default)</option>
+              <option value="1080p" disabled={billingStatus.plan_tier === "repurposer"}>
+                {billingStatus.plan_tier === "repurposer" ? "1080p (Upgrade to Creator)" : "1080p (Full HD)"}
+              </option>
+            </select>
+            <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+              Previews remain 720p. {billingStatus.plan_tier === "repurposer" ? "Upgrade to Creator for 1080p exports." : "1080p creates a larger final file."}
+            </p>
+          </label>
           <div className="text-xs text-[var(--app-muted)]">
             <CaptionStylePickerCompact
               onStyleChange={handleUserCaptionStyleChange}
@@ -1781,7 +1841,7 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                   <div className="text-sm text-[var(--app-text)]">
                     <p className="font-medium">Export {item.id.slice(0, 8)}</p>
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
-                      {item.aspect_ratio} • {formatCaptionStyleLabel(item.caption_style)} •{" "}
+                      {item.aspect_ratio} • {item.render_quality} • {formatCaptionStyleLabel(item.caption_style)} •{" "}
                       {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format} •{" "}
                       {item.caption_cadence}
                     </p>
@@ -1799,17 +1859,25 @@ export function ClipEditorPanel({ video, initialClip, initialExports, initialSch
                   <div className="mt-3 flex flex-wrap items-center gap-4">
                     <a
                       href={item.download_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      download
                       className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                     >
                       Download export
                     </a>
+                    {item.view_url ? (
+                      <a
+                        href={item.view_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
+                      >
+                        View export
+                      </a>
+                    ) : null}
                     {item.srt_download_url ? (
                       <a
                         href={item.srt_download_url}
-                        target="_blank"
-                        rel="noreferrer"
+                        download
                         className="inline-flex text-xs text-[#1D3FD0] hover:text-[#1633B8]"
                       >
                         Download captions (.srt)

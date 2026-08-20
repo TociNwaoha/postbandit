@@ -262,7 +262,7 @@ export function ExportsLibrary({
                       {item.video_title || "Untitled video"} • Export {shortId(item.id)}
                     </p>
                     <p className="mt-1 text-xs text-[var(--app-muted)]">
-                      {item.clip_title || `Clip ${shortId(item.clip_id)}`} • {item.aspect_ratio} •{" "}
+                      {item.clip_title || `Clip ${shortId(item.clip_id)}`} • {item.aspect_ratio} • {item.render_quality} •{" "}
                       {formatCaptionStyleLabel(item.caption_style)} •{" "}
                       {formatCaptionColorVariantLabel(item.caption_color_variant)} • {item.caption_format} •{" "}
                       {item.caption_cadence}
@@ -288,18 +288,26 @@ export function ExportsLibrary({
                   {item.status === "ready" && item.download_url ? (
                     <a
                       href={item.download_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      download
                       className="text-sm text-[#1D3FD0] hover:text-[#1633B8]"
                     >
                       Download MP4
                     </a>
                   ) : null}
+                  {item.status === "ready" && item.view_url ? (
+                    <a
+                      href={item.view_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-[#1D3FD0] hover:text-[#1633B8]"
+                    >
+                      View export
+                    </a>
+                  ) : null}
                   {item.status === "ready" && item.srt_download_url ? (
                     <a
                       href={item.srt_download_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      download
                       className="text-sm text-[#1D3FD0] hover:text-[#1633B8]"
                     >
                       Download SRT

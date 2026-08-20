@@ -35,7 +35,8 @@ def render_highlighted_text_layer(
     draw = ImageDraw.Draw(canvas)
     words = text.split()
     space_width = _text_width(draw, " ", font)
-    max_line_width = target_width * 0.82
+    text_box_width = max(0.2, min(0.92, float(config.get("width", 0.82))))
+    max_line_width = target_width * text_box_width
 
     lines: list[list[tuple[int, str, float]]] = []
     current: list[tuple[int, str, float]] = []

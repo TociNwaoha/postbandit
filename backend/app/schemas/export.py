@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.models.export import (
     AspectRatio,
@@ -29,6 +30,7 @@ class ExportOverlayTextConfig(BaseModel):
     text: str = Field(min_length=1, max_length=280)
     x: float = Field(default=0.5, ge=0, le=1)
     y: float = Field(default=0.2, ge=0, le=1)
+    width: float = Field(default=0.82, ge=0.2, le=0.92)
     font_size: int = Field(default=52, ge=16, le=160)
     text_color: str = Field(default="#FFFFFF", pattern=HEX_COLOR_PATTERN)
     highlights: list[ExportOverlayTextHighlight] = Field(default_factory=list, max_length=100)
@@ -52,6 +54,7 @@ class ExportOverlayTextConfig(BaseModel):
 class ExportCreate(BaseModel):
     clip_id: uuid.UUID
     aspect_ratio: AspectRatio
+    render_quality: Literal["720p", "1080p"] = "720p"
     caption_style: CaptionStyle | None = None
     caption_color_variant: CaptionColorVariant | None = None
     caption_format: CaptionFormat = CaptionFormat.burned_in
@@ -78,6 +81,7 @@ class ExportResponse(BaseModel):
     retry_of_export_id: uuid.UUID | None
     user_id: uuid.UUID
     aspect_ratio: AspectRatio
+    render_quality: Literal["720p", "1080p"]
     caption_style: CaptionStyle | None
     caption_color_variant: CaptionColorVariant
     caption_format: CaptionFormat
@@ -93,6 +97,7 @@ class ExportResponse(BaseModel):
     storage_key: str | None
     srt_key: str | None
     download_url: str | None
+    view_url: str | None = None
     srt_download_url: str | None = None
     url_expires_at: datetime | None
     status: ExportStatus

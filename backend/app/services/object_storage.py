@@ -237,17 +237,26 @@ class ObjectStorageClient:
             logger.error("Failed to generate B2 presigned POST for %s: %s", key, exc)
             raise
 
-    def get_presigned_download_url(self, key: str, expiry: int = 86400) -> str:
+    def get_presigned_download_url(
+        self,
+        key: str,
+        expiry: int = 86400,
+        download_name: str | None = None,
+    ) -> str:
         if self._local_file_exists(key):
             self._log_local_fallback(key, "presigned_download_url_hot")
             encoded_key = quote(key.lstrip("/"), safe="/")
-            return f"{_local_api_base_url()}/api/storage/local/{encoded_key}"
+            download_query = "?download=true" if download_name else ""
+            return f"{_local_api_base_url()}/api/storage/local/{encoded_key}{download_query}"
 
         if self.remote_file_exists(key):
             try:
+                params = {"Bucket": self.bucket_name, "Key": key}
+                if download_name:
+                    params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
                 return self._get_client().generate_presigned_url(
                     "get_object",
-                    Params={"Bucket": self.bucket_name, "Key": key},
+                    Params=params,
                     ExpiresIn=expiry,
                 )
             except ClientError as exc:
@@ -257,7 +266,8 @@ class ObjectStorageClient:
         if self._local_file_exists(key):
             self._log_local_fallback(key, "presigned_download_url")
             encoded_key = quote(key.lstrip("/"), safe="/")
-            return f"{_local_api_base_url()}/api/storage/local/{encoded_key}"
+            download_query = "?download=true" if download_name else ""
+            return f"{_local_api_base_url()}/api/storage/local/{encoded_key}{download_query}"
 
         raise FileNotFoundError(f"Storage key not found: {key}")
 

@@ -131,6 +131,8 @@ def _resolve_clip_profile(value: ClipProfile | str | None) -> ClipProfile:
         normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
         if normalized == ClipProfile.sermon.value or normalized in LONG_FORM_CLIP_PROFILE_ALIASES:
             return ClipProfile.sermon
+        if normalized == ClipProfile.longform_extended.value:
+            return ClipProfile.longform_extended
     return ClipProfile.viral
 
 

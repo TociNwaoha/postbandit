@@ -115,7 +115,11 @@ def render_export(self, export_id: str, job_id: str | None = None):
             if not has_video_stream(str(source_path)):
                 raise RenderPipelineError("Source media is audio-only and cannot be exported as video")
             aspect_ratio_value = _enum_value(export.aspect_ratio)
-            target_width, target_height = resolve_output_dimensions(aspect_ratio_value, str(source_path))
+            target_width, target_height = resolve_output_dimensions(
+                aspect_ratio_value,
+                str(source_path),
+                export.render_quality,
+            )
 
             srt_local_path: Path | None = None
             ass_local_path: Path | None = None
@@ -300,6 +304,7 @@ def render_export(self, export_id: str, job_id: str | None = None):
                     "clip_id": str(clip.id),
                     "export_id": str(export.id),
                     "aspect_ratio": _enum_value(export.aspect_ratio),
+                    "render_quality": export.render_quality,
                     "caption_format": _enum_value(export.caption_format),
                 },
             )
