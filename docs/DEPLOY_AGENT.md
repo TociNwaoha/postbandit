@@ -34,7 +34,9 @@ next. A failure after a multi-branch merge is undiagnosable.
 ## Before every deploy
 
 1. `git log --oneline origin/main..HEAD` on the VPS — **any output means STOP**, push first
-2. Confirm target SHA is on origin/main: `git branch -r --contains <SHA>`
+2. Confirm the target SHA is the merge commit on `origin/main` produced by the merge
+   step — not the builder's branch SHA, which will not exist on the VPS remote until
+   after the merge is pushed: `git branch -r --contains <SHA>`
 3. Preserve rollback: `docker tag clipbandit-frontend:latest clipbandit-frontend:pre-<date>`
 
 ## Merging
@@ -75,8 +77,11 @@ Every report states: SHA deployed, services rebuilt, services NOT rebuilt, conta
 health, and the result of every verification check. If you cannot verify something, say
 so — never infer that a check passed.
 
-If `git status` on the VPS shows changes you did not make, another agent has touched it.
-STOP and report.
+- Check for other agents' work with `git status --porcelain --untracked-files=no`.
+  Only modified TRACKED files indicate another agent has touched this repo — STOP and
+  report if any appear.
+- These untracked entries are EXPECTED on the VPS and are never a blocker:
+  `data/` (Docker bind mount), `.env*` files. Never stage, commit, or delete them.
 
 ## Escalate rather than decide
 
