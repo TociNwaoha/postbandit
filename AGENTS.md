@@ -73,3 +73,21 @@ Blog and marketing content must not claim unshipped features. Currently NOT ship
 auto speaker tracking/reframe, Zoom integration. Plan limits: Repurposer $9 (2 GiB,
 3 platforms), Creator $18 (5 GiB, 5 platforms), Pro $49, Agency $99. Verify against
 `backend/app/billing/plans.py` before writing any number publicly.
+
+## Handoff — every builder task ends with this
+
+Agents cannot communicate with each other. The human relays work between sessions.
+When your work is pushed, output exactly this block so it can be pasted into the deploy
+session verbatim:
+
+- **Branch:** `<name>/<task>`
+- **Commits:** SHA + message for each
+- **What changed:** one line
+- **Files touched:** full list
+- **Migrations:** yes/no — if yes, name them
+- **Services affected:** frontend / backend / workers / none
+- **Verified locally:** what you ran and the result
+- **Known conflicts:** branches likely to conflict, and in which files
+- **Ready to deploy:** yes / no / needs human review
+
+Do not summarize or abbreviate this block. It is the only record the deploy agent gets.
