@@ -653,6 +653,9 @@ export function LandingPage({
           </p>
 
           <div className="flex items-center gap-6 text-sm text-[rgba(255,255,255,0.46)]">
+            <Link href="/blog" className="transition hover:text-[rgba(255,255,255,0.84)]">
+              Blog
+            </Link>
             <Link href="/privacy" className="transition hover:text-[rgba(255,255,255,0.84)]">
               Privacy Policy
             </Link>
